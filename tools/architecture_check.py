@@ -35,6 +35,10 @@ ALLOW_PREFIX = [
 # 窗口监控属合法用途（监控职责，非执行输入）。
 FORBIDDEN_RUNTIME_IMPORTS = {"pyautogui", "mss", "pynput", "mouse", "keyboard"}
 
+# Sprint A（目标3 补强）：runtime 核心禁止直接 import March7th 包（module.*）与
+# 浏览器自动化（selenium）——runtime 只产 ActionIntent，适配细节在 drivers 层。
+FORBIDDEN_EXTERNAL_PREFIXES = ("module.", "selenium", "March7th")
+
 # 豁免模块（适配层，允许上述 import）
 RUNTIME_ADAPTER_MODULES = {
     "runtime.drivers",
@@ -121,6 +125,9 @@ def check_file(path: Path, root: Path):
             if top in FORBIDDEN_RUNTIME_IMPORTS or mod in FORBIDDEN_RUNTIME_IMPORTS:
                 violations.append(
                     f"{rel} 禁止 {rel_mod} → {mod}（runtime 核心不得感知物理输入/屏幕捕获）")
+            if any(mod.startswith(p) for p in FORBIDDEN_EXTERNAL_PREFIXES):
+                violations.append(
+                    f"{rel} 禁止 {rel_mod} → {mod}（runtime 核心不得直连外部适配层/浏览器自动化）")
     for mod in _resolve_imports(tree, path, root):
         for bad_from, bad_to in FORBIDDEN:
             if _is_or_below(rel_mod, bad_from) and _is_or_below(mod, bad_to):

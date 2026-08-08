@@ -97,6 +97,7 @@ class WorkflowOrchestrator:
         # #20-7：决策层——Planner 输入 Observation 输出 ActionIntent（零坐标）
         self.planner = Planner()
         self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
+        self.vision_gate = None  # Sprint B：内容可信度门（None=跳过）
 
     @property
     def executor(self):
@@ -307,6 +308,24 @@ class WorkflowOrchestrator:
         if not isinstance(observation, Observation):
             return ExecutionResult(success=False, error="observer:bad_return",
                                    retryable=False, category="F3")
+        # Sprint B：VisionGate 内容可信度门——不信任则压低置信，Planner 拒绝行动
+        if self.vision_gate is not None:
+            gate = self.vision_gate.validate(
+                frame_quality=getattr(observation, "frame_quality", None),
+                ocr_texts=observation.text,
+                vlm={"ui_state": observation.ui_state,
+                     "room": observation.room,
+                     "confidence": observation.confidence})
+            if not gate["valid"]:
+                self._emit("observation",
+                           context={"observer": observation.source,
+                                    "target": target,
+                                    "gate": "VISION_UNTRUSTED",
+                                    "reason": gate["reason"],
+                                    **observation.to_context()})
+                return ExecutionResult(success=False, error="vision_untrusted",
+                                       retryable=False, category="F3",
+                                       code=ErrorCode.VISION_UNTRUSTED)
         intent = self.planner.decide(observation, target)
         if intent.action == ActionType.WAIT.value:
             self._emit("observation",

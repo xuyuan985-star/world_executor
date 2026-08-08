@@ -1,14 +1,15 @@
-"""统一门禁入口（目标 3：CI 门禁）——一条命令跑完所有可自动化检查。
+﻿"""统一门禁入口（目标 3：CI 门禁）——一条命令跑完所有可自动化检查。
 
     python tools/run_gate.py            # 全量（smoke 需 mock 即可跑）
     python tools/run_gate.py --skip-smoke   # 跳过 orchestrator 冒烟
 
 流程：
-  [1/5] architecture lint（依赖方向 + 环 + 动态导入 + 危险调用）
-  [2/5] security scan（quarantine 自检 + 脱敏单测）
-  [3/5] unit checks（AST 全源码 + 关键单测断言）
-  [4/5] smoke orchestrator（mock driver 5 场景；真机相关标记 SKIP(real device)）
-  [5/5] dry_run（知识包逻辑验证）
+  [1/6] architecture lint（依赖方向 + 环 + 动态导入 + 危险调用）
+  [2/6] security scan（quarantine 自检 + 脱敏单测）
+  [3/6] unit checks（AST 全源码 + 关键单测断言）
+  [4/6] replay test（行为回放回归）
+  [5/6] smoke orchestrator（mock driver 9 场景；真机相关标记 SKIP(real device)）
+  [6/6] dry_run（知识包逻辑验证）
 
 任一失败 → 非零退出 + GATE FAIL。
 """
@@ -65,6 +66,9 @@ def run():
         assert code_of("bogus") is ErrorCode.UNKNOWN
         return True, "AST + ErrorCode"
 
+    def replay():
+        return py("tests/replay/test_action_replay.py")
+
     def smoke():
         return py("tools/smoke_orchestrator.py")
 
@@ -76,12 +80,13 @@ def run():
             ("architecture", architecture, False),
             ("security", security, False),
             ("unit checks", units, False),
+            ("replay test", replay, False),
             ("smoke", smoke, args.skip_smoke),
             ("dry_run", dryrun, False)], start=1):
         if skip:
-            print(f"[{order}/5] {name} ... SKIP")
+            print(f"[{order}/6] {name} ... SKIP")
             continue
-        print(f"[{order}/5] {name} ...")
+        print(f"[{order}/6] {name} ...")
         ok, detail = func()
         if ok:
             print(f"  PASS {detail or ''}")
@@ -94,3 +99,4 @@ def run():
 
 if __name__ == "__main__":
     sys.exit(run())
+

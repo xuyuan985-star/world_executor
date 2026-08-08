@@ -28,6 +28,7 @@ class ErrorCode(str, Enum):
     MOVE_ABORTED = "move_aborted"             # 移动被 emergency/stall 中断
     MOVE_STUCK = "move_stuck"                 # 移动卡死（目标不动）
     PRECONDITION_BLOCKED = "precondition"     # 动作前置条件不满足
+    VISION_UNTRUSTED = "vision_untrusted"     # Sprint B：画面内容不可信（多信号不足）
     UNKNOWN = "unknown_error"                 # 未归类（兜底）
 
 
@@ -47,6 +48,7 @@ SUBCLASS_BY_CODE = {
     ErrorCode.MOVE_ABORTED: "F2_COORD",
     ErrorCode.MOVE_STUCK: "F2_COORD",
     ErrorCode.PRECONDITION_BLOCKED: "F3",
+    ErrorCode.VISION_UNTRUSTED: "F3",
 }
 
 # code → retryable（permanent 失败不重试；transient 可重试）
@@ -54,7 +56,7 @@ PERMANENT_CODES = {
     ErrorCode.OBS_MISSING, ErrorCode.OBS_STALE, ErrorCode.OBS_LOW_CONFIDENCE,
     ErrorCode.INVALID_BBOX, ErrorCode.TEMPLATE_MISSING, ErrorCode.METHOD_UNKNOWN,
     ErrorCode.EXECUTOR_EXCEPTION, ErrorCode.PERMISSION_BLOCKED,
-    ErrorCode.GATE_BLOCKED,
+    ErrorCode.GATE_BLOCKED, ErrorCode.VISION_UNTRUSTED,
 }
 
 # code → 恢复建议（reobserve / alternative / retry / abort）
