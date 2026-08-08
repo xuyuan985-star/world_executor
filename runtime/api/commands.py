@@ -12,6 +12,7 @@ class MissionSpec:
     knowledge_dir: str
     target_ids: Optional[list] = None
     mode: str = "dry"  # dry | real（企划 v0.12.2 门槛 G3 前置）
+    natural_mode: bool = True  # #44：False → 确定性执行（delay=0，可复现测试）
 
 
 class RuntimeAPI:
@@ -49,9 +50,14 @@ class RuntimeAPI:
                                             "targets": targets, "mode": spec.mode}))
             if spec.mode == "real":
                 from runtime.orchestrator import WorkflowOrchestrator
-                orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=execution_id)
-                results = orch.run_mission(targets)
+                orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=execution_id,
+                                            use_vlm=True)
+                results, completed = orch.run_mission(targets)
                 result = "all_done" if all(results.values()) else "some_failed"
+                bus.publish(make_event("mission_summary", execution_id,
+                                       context={"results": results,
+                                                "completed_targets": completed,
+                                                "records": orch.session_summary()}))
             else:
                 result = dry_run.dry_run(spec.knowledge_dir, targets, bus=bus,
                                          execution_id=execution_id)

@@ -33,7 +33,31 @@ class March7thInputBackend(InputBackend):
         return self._wrap("move", self.auto.mouse_move, int(x), int(y))
 
     def press_key(self, key, wait_time=0.2):
-        return self._wrap("press_key", self.auto.press_key, key, wait_time)
+        """#43：March7th 原语 keyDown→sleep→keyUp 无 finally 释放——
+        异常时按键会卡死。此处包一层兜底 keyUp 释放（pyautogui 由 March7th 依赖保证可用）。"""
+        try:
+            self.auto.press_key(key, wait_time)
+            return InputResult(success=True, action="press_key", backend=self.name,
+                               method="key")
+        except Exception as e:
+            try:
+                import pyautogui
+                pyautogui.keyUp(key)
+            except Exception:
+                pass
+            return InputResult(success=False, action="press_key", backend=self.name,
+                               error=f"{type(e).__name__}: {e}")
+
+    def release_key(self, key):
+        """#42：兜底 keyup（防卡键），pyautogui 由 March7th 依赖保证可用。"""
+        try:
+            import pyautogui
+            pyautogui.keyUp(key)
+            return InputResult(success=True, action="release_key", backend=self.name,
+                               method="key")
+        except Exception as e:
+            return InputResult(success=False, action="release_key", backend=self.name,
+                               error=f"{type(e).__name__}: {e}")
 
     def execute(self, intent):
         """执行 ActionIntent（不接触坐标的动作语义）。"""

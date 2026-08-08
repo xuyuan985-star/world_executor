@@ -2,6 +2,9 @@
 
 - EmergencyMonitor 随 run 启停；human_intervention → ABORT_REQUEST + 目标 interrupted。
 - 失败（retry 用尽）→ EVENT_INTERRUPTED → 一次 recovery → 仍败 → fail_recorded + target failed。
+- #32：只重试 retryable 失败（模板缺/低置信/非幂等动作不重试）。
+- #42：紧急介入先按 esc + 释放按键（防卡键），再中断。
+- #38/#48：TargetRecord 跟踪每目标生命周期；run_mission 返回 (results, completed)。
 - 状态机联动语义见企划 v0.12.2 §2.2。
 """
 import threading
@@ -9,24 +12,46 @@ import time
 
 from runtime.decision.action import ActionIntent
 from runtime.events.schema import make_event
+from runtime.execution import ExecutionResult
 from runtime.state_machine import Event, State, StateMachine
+
+TARGET_ALIVE = ("running", "succeeded", "failed")
+
+
+class TargetRecord:
+    """#38：单目标生命周期记录——attempts/结果/失败分类，会话结束可统计。"""
+
+    def __init__(self, target_id):
+        self.target_id = target_id
+        self.status = "pending"
+        self.attempts = 0
+        self.last_error = None
+        self.category = None
+
+    def to_dict(self):
+        return {"target": self.target_id, "status": self.status,
+                "attempts": self.attempts, "error": self.last_error,
+                "category": self.category}
 
 
 class WorkflowOrchestrator:
-    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True):
+    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
         self.use_vlm = use_vlm
+        self.natural_mode = natural_mode   # #44：False → 确定性执行（delay=0）
         self._executor = None
         self._machine = None
         self._monitor = None
+        self._records = {}
 
     @property
     def executor(self):
         if self._executor is None:
             from runtime.step_executor import RealExecutor
-            self._executor = RealExecutor(self.pkg, self.bus, self.execution_id, self.use_vlm)
+            self._executor = RealExecutor(self.pkg, self.bus, self.execution_id,
+                                          self.use_vlm, self.natural_mode)
         return self._executor
 
     def _emit(self, event_type, **kw):
@@ -55,8 +80,15 @@ class WorkflowOrchestrator:
     # ---------- 主流程 ----------
 
     def run_target(self, target_id):
+        record = self._records.get(target_id) or TargetRecord(target_id)
+        self._records[target_id] = record
+        record.status = "running"
+        record.attempts += 1
         wf = self.pkg.workflow(target_id)
         if wf is None:
+            record.status = "failed"
+            record.last_error = "workflow_not_found"
+            record.category = "F3"
             self._emit("fail_recorded", detail=f"F3:no_workflow:{target_id}",
                        context={"category": "F3", "target": target_id,
                                 "error": "workflow_not_found"})
@@ -75,23 +107,29 @@ class WorkflowOrchestrator:
             if self._emergency_paused():
                 self._human_interrupted(target_id)
                 return False
-            ok = self._run_step(step, idx, wf)
-            if not ok:
+            result = self._run_step(step, idx, wf)
+            if not result.success:
+                # #32：只有 retryable 失败才重试（非幂等动作/模板缺失/低置信 → 直接失败）
                 retry = int(step.get("retry", 1) or 1)
                 recovered = False
-                for _ in range(retry):
-                    time.sleep(1.0)
-                    self._retry_transition()
-                    ok = self._run_step(step, idx, wf)
-                    if ok:
-                        recovered = True
-                        break
+                if result.retryable:
+                    for _ in range(retry):
+                        time.sleep(1.0)
+                        self._retry_transition()
+                        result = self._run_step(step, idx, wf)
+                        if result.success:
+                            recovered = True
+                            break
                 if not recovered:
-                    category = self._classify(step)
+                    category = result.category
+                    record.status = "failed"
+                    record.last_error = result.error or "step_failed"
+                    record.category = category
                     self._emit("fail_recorded",
                                detail=f"{category}:step:{step.get('type')}:{target_id}",
                                context={"category": category, "target": target_id,
-                                        "step": step.get("type"), "error": "step_failed"})
+                                        "step": step.get("type"),
+                                        "error": result.error or "step_failed"})
                     self._emit("target_progress",
                                context={"target": target_id, "status": "failed",
                                         "reason": f"step[{idx}] {step.get('type')} failed",
@@ -101,6 +139,7 @@ class WorkflowOrchestrator:
                     return False
             self._progress(target_id, idx, len(steps))
 
+        record.status = "succeeded"
         self._emit("target_progress", context={"target": target_id, "status": "done"})
         return True
 
@@ -128,55 +167,53 @@ class WorkflowOrchestrator:
         self._emit("fail_recorded", detail=f"F3:unknown_step:{step_type}",
                    context={"category": "F3", "target": wf.get("target_id"),
                             "error": f"unknown_step:{step_type}"})
-        return False
+        return ExecutionResult(success=False, error=f"unknown_step:{step_type}",
+                               retryable=False, category="F3")
 
     def _step_move(self, step):
         lm_id = step.get("target")
         if not lm_id:
-            return False
+            return ExecutionResult(success=False, error="move:no_target",
+                                   retryable=False, category="F3")
+        # 纯移动步骤不推进状态机：TARGET_VISIBLE 语义由 interact 步骤确认（#36 严格迁移）
         return self.executor.interact_template(lm_id, threshold=0.8)
 
     def _step_vgm(self, step, wf):
         ticks = step.get("ticks", 3)
         step_seconds = step.get("step_seconds", 2)
-        return self.executor.move_visual_guided(
+        self.executor.move_visual_guided(
             f"{wf.get('target_id')} 附近的可互动宝箱实体", ticks, step_seconds)
+        # #41：VGM 不产 bool——结果以后续 verify 为准，此处仅位置修正
+        return ExecutionResult(success=True, category="F2")
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")
-        ok = self.executor.interact_template(
+        result = self.executor.interact_template(
             tid, threshold=step.get("threshold", 0.8),
             max_retries=step.get("retry", 1) + 1)
-        if not ok:
-            return False
+        if not result.success:
+            return result
         self._machine.on(Event.TARGET_VISIBLE, "target visible")
         self._machine.on(Event.TARGET_VERIFIED, "interact clicked")
-        return True
+        return result
 
     def _step_verify(self, step):
         signal = step.get("signal")
         if not signal:
-            return True
+            return ExecutionResult(success=True, category="F2")
         template = f"{signal}.png"
         if not self.pkg.template_exists(template):
-            return True  # 无模板则跳过（真机知识包补齐后生效）
+            return ExecutionResult(success=True, category="F2")  # 无模板则跳过
         expected = step.get("expected", "vanished")
         timeout = step.get("timeout", 30)
         ok = self.executor.verify_signal(template, expected, timeout)
         if ok:
             self._machine.on(Event.INTERACT_OK, "verify passed")
-        return ok
+        return ExecutionResult(
+            success=ok, error=None if ok else "verify_timeout",
+            retryable=not ok, category="F2")
 
     # ---------- 辅助 ----------
-
-    @staticmethod
-    def _classify(step):
-        t = step.get("type")
-        if t in ("interact", "move"):
-            return "F1"
-        if t in ("visual_guided_move", "verify"):
-            return "F2"
-        return "F3"
 
     def _progress(self, target_id, idx, total):
         self._emit("target_progress",
@@ -197,9 +234,17 @@ class WorkflowOrchestrator:
                 if self._aborted():
                     break
                 results[tid] = self.run_target(tid)
-            return results
+            # #48：completed_targets = 本会话实际跑完的目标（不含失败/未执行）
+            completed = [tid for tid in target_ids
+                         if self._records.get(tid) is not None
+                         and self._records[tid].status == "succeeded"]
+            return results, completed
         finally:
             self.stop_emergency()
+
+    def session_summary(self):
+        """#38：目标生命周期汇总（status/attempts/error/category）。"""
+        return {tid: r.to_dict() for tid, r in self._records.items()}
 
     def _aborted(self):
         return self._machine is not None and self._machine.state == State.ABORT
@@ -209,6 +254,11 @@ class WorkflowOrchestrator:
         return self._monitor is not None and self._monitor.is_paused()
 
     def _human_interrupted(self, target_id):
+        # #42：紧急介入先做安全清理（esc + 释放可能卡住的按键），再中断
+        try:
+            self.executor.emergency_stop()
+        except Exception:
+            pass
         self._emit("target_progress",
                    context={"target": target_id, "status": "failed",
                             "reason": "human_interrupt", "category": "EMERGENCY"})

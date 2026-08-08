@@ -10,6 +10,7 @@ class EventBus:
         self._lock = threading.Lock()
         self._subscribers = []
         self._events = []
+        self._seq = 0
         self._persist_path = persist_path
         self._fh = None
         if persist_path:
@@ -21,6 +22,8 @@ class EventBus:
 
     def publish(self, event: WorldEvent):
         with self._lock:
+            self._seq += 1
+            event.sequence_id = self._seq  # #33：按发布序打全局序号
             self._events.append(event)
             if self._fh:
                 self._fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
@@ -28,13 +31,17 @@ class EventBus:
         for cb in list(self._subscribers):
             try:
                 cb(event)
-            except Exception:
-                pass
+            except Exception as e:
+                # #35：事件系统不能反向影响执行链——订阅者异常只记录
+                import logging
+                logging.getLogger("runtime.events").warning(
+                    "subscriber error on %s: %s", event.type, e, exc_info=True)
         try:
             from runtime import db
             db.record_event(event)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("runtime.events").warning("db.record_event failed: %s", e)
 
     def replay(self, execution_id=None):
         with self._lock:

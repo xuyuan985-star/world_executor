@@ -62,3 +62,11 @@ class Win32Backend(InputBackend):
         time.sleep(wait_time)
         self.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
         return InputResult(success=True, action="press_key", backend=self.name)
+
+    def release_key(self, key):
+        """#42：仅发送 keyup，不按 wait_time 等待。"""
+        VK = {"esc": 0x1B, "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44,
+              "m": 0x4D, "space": 0x20, "enter": 0x0D, "tab": 0x09}
+        vk = VK.get(str(key).lower(), ord(str(key).upper()[0]))
+        self.user32.keybd_event(vk, 0, 0x0002, 0)
+        return InputResult(success=True, action="release_key", backend=self.name)

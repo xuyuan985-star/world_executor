@@ -26,6 +26,8 @@ class ActionIntent:
     params: dict = field(default_factory=dict)
     reason: str = None   # 决策意图（objective_verify_chest …）
     source: str = "decision_layer"
+    idempotent: bool = True  # #32：非幂等动作（传送/确认/购买）禁止 retry
+    execution_id: str = None  # #45：贯穿日志/失败关联（executor 执行时填充）
 
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:
@@ -35,5 +37,7 @@ class ActionIntent:
         ctx = {"action": self.action, "target": self.target, "method": self.method}
         if self.reason:
             ctx["reason"] = self.reason
+        if self.execution_id:
+            ctx["execution_id"] = self.execution_id
         ctx["source"] = self.source
         return ctx

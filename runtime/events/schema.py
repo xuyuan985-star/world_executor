@@ -55,6 +55,7 @@ class WorldEvent:
     from_state: Optional[str] = None
     to_state: Optional[str] = None
     detail: Optional[str] = None
+    sequence_id: int = 0   # #33：总线单调序号，消费端按 execution_id+sequence_id 排序
 
     def to_dict(self):
         d = asdict(self)

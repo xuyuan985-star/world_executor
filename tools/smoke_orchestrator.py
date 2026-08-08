@@ -11,6 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from runtime.events.bus import EventBus
+from runtime.input.base import InputResult
 from runtime.knowledge_loader import KnowledgePackage
 from runtime.orchestrator import WorkflowOrchestrator
 from runtime.state_machine import State
@@ -36,11 +37,13 @@ class FakeInput:
         self.click_result = click_result  # #26：vlm_bbox 路径也要能模拟失败
 
     def click(self, x, y):
-        return self.click_result
+        return InputResult(success=self.click_result, action="click", backend="fake")
 
     def press_key(self, key, wait_time=0):
-        time.sleep(0)
-        return True
+        return InputResult(success=True, action="press_key", backend="fake")
+
+    def release_key(self, key):
+        return InputResult(success=True, action="release_key", backend="fake")
 
 
 class FakeVision:
@@ -75,10 +78,10 @@ def run_scenario(clicks, label):
         return FakeDriver(list(clicks))
 
     with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory):
-        results = orch.run_mission(["chest_A"])
+        results, completed = orch.run_mission(["chest_A"])
 
     end_state = orch._machine.state
-    print(f"[{label}] results={results} state={end_state.value}")
+    print(f"[{label}] results={results} completed={completed} state={end_state.value}")
     for t, ctx in seen:
         if t in ("fail_recorded", "target_progress", "action_executed"):
             print(f"  {t}: {ctx}")
@@ -109,8 +112,9 @@ def main():
             pass
 
     orch._monitor = FakePaused()
-    results = orch.run_mission(["chest_A"])
+    results, completed = orch.run_mission(["chest_A"])
     assert results == {"chest_A": False}, results
+    assert completed == [], completed
     ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
     assert ev and ev[-1].get("category") == "EMERGENCY", ev
     print("[ok] EmergencyMonitor 介入 → mission 即停 PASS")

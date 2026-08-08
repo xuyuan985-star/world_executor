@@ -15,6 +15,10 @@ class MockBackend(InputBackend):
     def press_key(self, key, wait_time=0.2):
         return InputResult(success=True, action="press_key", backend=self.name, detail={"key": key})
 
+    def release_key(self, key):
+        return InputResult(success=True, action="release_key", backend=self.name,
+                           detail={"key": key})
+
     def execute(self, intent):
         return InputResult(success=True, action=intent.action, backend=self.name,
                            detail={"target": intent.target, "method": intent.method})

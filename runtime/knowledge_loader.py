@@ -1,17 +1,36 @@
 import json
+import logging
 from pathlib import Path
+
+# #37：知识包结构版本——不匹配时拒绝加载（防止旧包以错误语义运行）
+KNOWLEDGE_SCHEMA_VERSION = 1
+
+log = logging.getLogger("runtime.knowledge")
 
 
 class KnowledgePackage:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, strict_schema=True):
         self.root = Path(root)
         self.meta = self._load("package.json") or {}
+        if strict_schema:
+            self._check_schema_version()
         self.rooms = self._load("rooms.json")
         self.portals = self._load("portals.json") or []
         self.landmarks = self._load("landmarks.json") or []
         self.chests = self._load("chests.json") or []
         self.templates_dir = self.root / "templates"
         self.workflows_dir = self.root / "workflows"
+
+    def _check_schema_version(self):
+        """#37：schema_version 不匹配 → 拒绝加载并告警（fail-fast）。"""
+        ver = self.meta.get("schema_version")
+        if ver is None:
+            log.warning("知识包 %s 缺 schema_version，按 v%d 解析", self.root.name,
+                        KNOWLEDGE_SCHEMA_VERSION)
+        elif ver != KNOWLEDGE_SCHEMA_VERSION:
+            raise ValueError(
+                f"知识包 {self.root.name} schema_version={ver} 不匹配运行器 v{KNOWLEDGE_SCHEMA_VERSION}，"
+                f"拒绝加载（更新知识包或运行器）")
 
     def _load(self, name):
         p = self.root / name

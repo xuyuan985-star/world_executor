@@ -32,3 +32,7 @@ class InputBackend:
 
     def press_key(self, key, wait_time=0.2) -> InputResult:
         raise NotImplementedError
+
+    def release_key(self, key) -> InputResult:
+        """#42：紧急释放（keyDown→keyUp 异常后兜底，防卡键）。"""
+        raise NotImplementedError

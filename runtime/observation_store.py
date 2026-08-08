@@ -1,9 +1,22 @@
-"""ObservationStore：世界实体 → 最近观测的存储（#29 解耦）。
+"""ObservationStore：世界实体 → 最近观测记录（#29 解耦 + #39/#40 时空约束）。
 
-数据流：Observer（VLM/模板）产观测 → executor 消费后写入本 store →
-executor 执行 vlm_bbox 时按实体读取。Executor 不依赖 Observer 模块，
-只依赖中立 store——观察产物经显式通道进入执行层，无隐藏耦合。
+记录含 bbox/置信度/时间戳/帧号——executor 消费时校验时效与置信度，
+拒绝"看到 3 秒前的位置"或"0.2 置信度的猜测"（Belief state 基础）。
 """
+import time
+
+
+class ObservationRecord:
+    __slots__ = ("bbox", "timestamp", "confidence", "frame_id")
+
+    def __init__(self, bbox, timestamp=None, confidence=None, frame_id=None):
+        self.bbox = bbox                      # (x,y) 或 [x1,y1,x2,y2]（归一化 0-1）
+        self.timestamp = timestamp if timestamp is not None else time.time()
+        self.confidence = confidence          # 0-1，None = 未知
+        self.frame_id = frame_id              # 来源帧（可空）
+
+    def is_stale(self, max_age=1.5):
+        return time.time() - self.timestamp > max_age
 
 
 class ObservationStore:
@@ -11,8 +24,8 @@ class ObservationStore:
         self._data = {}
         self._max = max_entries
 
-    def set(self, entity_id, value):
-        self._data[entity_id] = value
+    def set(self, entity_id, bbox, confidence=None, frame_id=None):
+        self._data[entity_id] = ObservationRecord(bbox, confidence=confidence, frame_id=frame_id)
         if len(self._data) > self._max:
             for k in list(self._data)[: len(self._data) - self._max]:
                 del self._data[k]
@@ -24,4 +37,4 @@ class ObservationStore:
         self._data.clear()
 
     def snapshot(self):
-        return dict(self._data)
+        return {k: v.bbox for k, v in self._data.items()}

@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from runtime.decision.action import ActionIntent, ActionMethod
+from runtime.execution import ExecutionResult
 from runtime.naturalness import NaturalnessPolicy
 from runtime.observation_store import ObservationStore
 from runtime.observers.vlm_vision import VLMVisionObserver
@@ -22,8 +23,22 @@ FAILURE_SUBCLASSES = [
     ("click_text_failed", "F1_TEMPLATE"),
     ("no_observation", "F2_COORD"),
     ("invalid_bbox_format", "F2_COORD"),
-    ("click", "F2_COORD"),
+    ("low_confidence", "F2_COORD"),
+    ("stale_observation", "F2_COORD"),
+    ("verify_timeout", "F2_TIMEOUT"),
 ]
+
+# permanent 失败（#49：#31 的 retryable=False）——重试无意义，直接失败
+PERMANENT_MARKERS = (
+    "unknown_entity", "unknown_method", "invalid_bbox_format",
+    "no_observation", "low_confidence", "stale_observation",
+    "executor_exception", "uipi_block", "gate_blocked",
+)
+
+# 观测时效（#39）：超过该秒数的 bbox 视为过期，拒绝执行
+OBS_MAX_AGE = 1.5
+# 观测置信度下限（#40）：低于此值拒绝执行
+OBS_MIN_CONFIDENCE = 0.6
 
 
 def subclass_for(error):
@@ -35,6 +50,13 @@ def subclass_for(error):
     return None
 
 
+def retryable_for(error):
+    """#49 恢复策略：permanent 失败不重试（模板缺/权限/低置信），transient 重试。"""
+    if not error:
+        return True
+    return not any(m in error for m in PERMANENT_MARKERS)
+
+
 class RealExecutor:
     """真机执行器：基于 March7th Driver（v0.12.1）。
 
@@ -42,11 +64,12 @@ class RealExecutor:
     进入执行层（#29：executor 不依赖 observer 模块），换算属于执行细节。
     """
 
-    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True):
+    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
         self.naturalness = NaturalnessPolicy()
+        self.natural_mode = natural_mode   # #44：False 时确定性（delay=0，测试可复现）
         self.vlm = VLMVisionObserver() if use_vlm else None
         self.obs_store = ObservationStore()
         self._driver = None
@@ -71,6 +94,18 @@ class RealExecutor:
                 self._recent_events.pop(0)
             return ev
         return None
+
+    def emergency_stop(self):
+        """#42：紧急停止——esc 打断当前交互 + 兜底释放可能卡住的按键。"""
+        try:
+            self.driver.input.press_key("esc", wait_time=0.3)
+        except Exception:
+            pass
+        for k in ("w", "a", "s", "d", "shift"):
+            try:
+                self.driver.input.release_key(k)
+            except Exception:
+                pass
 
     def entity_templates(self):
         if self._entity_templates is None:
@@ -117,28 +152,33 @@ class RealExecutor:
         data = self.vlm.locate_target(shot, target_desc)
         found = data.get("found") is True
         x, y = data.get("screen_x"), data.get("screen_y")
+        conf = data.get("confidence")
         bbox = None
         if found and x and y:
             bbox = (float(x) / 1000.0, float(y) / 1000.0)
-            self.obs_store.set(target_desc, bbox)
+            self.obs_store.set(target_desc, bbox, confidence=conf,
+                               frame_id=Path(shot).name)
         self._emit("observation", detail=f"locate:{'found' if found else 'miss'}",
                    context={"observer": "vlm_vision", "target": target_desc,
-                            "confidence": data.get("confidence"),
+                            "confidence": conf,
                             "screen_x": bbox[0] if bbox else None,
                             "screen_y": bbox[1] if bbox else None})
         return bbox
 
     # ---------- 执行（ActionIntent） ----------
 
-    def execute(self, intent: ActionIntent):
-        """执行动作意图。坐标不进入 intent：位置来自观测记录（executor 解析）。
+    def execute(self, intent: ActionIntent) -> ExecutionResult:
+        """执行动作意图，返回 ExecutionResult（#31：bool 丢失错误上下文）。
 
-        异常 = 可观测失败（executor_exception → fail_recorded），禁止黑盒崩溃。
-        #27：只对输入类动作做自然性 sleep，查询/verify 不人为等待。
+        - #45：intent 填充 execution_id，事件/失败可关联
+        - 异常 = 可观测失败（executor_exception），禁止黑盒崩溃
+        - #44：natural_mode=False 时确定性（delay=0）
         """
         from runtime.input.base import InputResult
+        intent.execution_id = self.execution_id
         backend = self.driver.input
-        delay = self.naturalness.click_delay() if intent.action in INPUT_ACTIONS else 0.0
+        delay = (self.naturalness.click_delay() if self.natural_mode else 0.0) \
+            if intent.action in INPUT_ACTIONS else 0.0
         time.sleep(delay)
         try:
             if intent.method == ActionMethod.TEMPLATE.value:
@@ -151,11 +191,23 @@ class RealExecutor:
             result = InputResult(success=False, action=intent.action, backend="march7th",
                                  error=f"executor_exception:{type(e).__name__}:{e}")
         self._emit("action_executed", detail=f"{intent.action}:{intent.target}",
-                   context={"naturalized": True, "delay_ms": int(delay * 1000),
+                   context={"naturalized": self.natural_mode,
+                            "delay_ms": int(delay * 1000),
                             **intent.to_context(), **result.to_context()})
         if not result.success:
-            self._record_failure(intent, result, category="F1")
-        return result.success
+            self._record_failure(intent, result)
+        return self._to_result(intent, result)
+
+    @staticmethod
+    def _to_result(intent, result) -> ExecutionResult:
+        sub = subclass_for(result.error)
+        cat = sub or "F1"
+        return ExecutionResult(
+            success=result.success,
+            error=result.error,
+            retryable=retryable_for(result.error) if intent.idempotent else False,
+            category=cat,
+        )
 
     def _execute_template(self, intent):
         from runtime.input.base import InputResult
@@ -178,25 +230,42 @@ class RealExecutor:
         if obs is None:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"no_observation:{intent.target}")
-        if len(obs) == 2:
-            nx, ny = obs
-        elif len(obs) == 4:
-            x1, y1, x2, y2 = obs
+        # #39：过期观测拒绝（角色可能已移动，旧坐标不可信）
+        if obs.is_stale(max_age=OBS_MAX_AGE):
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"stale_observation:{intent.target}")
+        # #40：低置信观测拒绝（VLM 猜测不构成执行依据）
+        if obs.confidence is not None and obs.confidence < OBS_MIN_CONFIDENCE:
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"low_confidence:{obs.confidence:.2f}")
+        bbox = obs.bbox
+        if len(bbox) == 2:
+            nx, ny = bbox
+        elif len(bbox) == 4:
+            x1, y1, x2, y2 = bbox
             nx, ny = (x1 + x2) / 2, (y1 + y2) / 2
         else:
             return InputResult(success=False, action=intent.action, backend="march7th",
-                               error=f"invalid_bbox_format:{len(obs)}")
+                               error=f"invalid_bbox_format:{len(bbox)}")
         px, py = self.driver.vision.to_absolute(nx, ny)
         return self.driver.input.click(px, py)
 
-    def _record_failure(self, intent, result, category):
+    def _record_failure(self, intent, result):
         # #30：按 result.error 特征细分子分类（保持 F1/F2/F3 主类冻结）
         sub = subclass_for(result.error)
-        cat = f"{category}_{sub[3:]}" if sub and sub.startswith(category) else (sub or category)
+        cat = sub or "F1"
+        ctx = {"category": cat, "target": intent.target,
+               "error": result.error,
+               "related_events": list(self._recent_events[-8:])}
+        # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
+        try:
+            if self.driver.vision is not None:
+                frame = self.driver.vision.screenshot_path("failure_reports/frames")
+                ctx["frame"] = str(frame)
+        except Exception:
+            pass
         self._emit("fail_recorded", detail=f"{cat}:{intent.action}:{intent.target}",
-                   context={"category": cat, "target": intent.target,
-                            "error": result.error,
-                            "related_events": list(self._recent_events[-8:])})
+                   context=ctx)
 
     # ---------- 便捷包装（调用方免构造 intent） ----------
 
@@ -251,8 +320,8 @@ class RealExecutor:
     def portal_transition(self, portal, wait_base, threshold=0.8, verify_timeout=10):
         """#16：点击成功 ≠ 传送成功——click → wait → verify_signal 三步缺一不可。"""
         trigger = portal["trigger"]
-        ok = self.interact_template(portal["id"], trigger["threshold"])
-        if not ok:
+        result = self.interact_template(portal["id"], trigger["threshold"])
+        if not result.success:
             return False
         wait = self.naturalness.transition_wait(wait_base)
         time.sleep(wait)
