@@ -69,6 +69,6 @@ QWidget {{
 
 
 def apply_theme(app):
-    qconfig.setTheme(Theme.DARK)
+    qconfig.theme = Theme.DARK
     setThemeColor(QColor(ACCENT))
     app.setStyleSheet(GLOBAL_QSS)
