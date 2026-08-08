@@ -14,19 +14,22 @@ class Planner:
     plan_interact() / plan_wait()：直接构造意图（workflow 步骤路径也可用）。
     """
 
-    def __init__(self, default_threshold=0.8, max_retries=3):
+    def __init__(self, default_threshold=0.8, max_retries=3, min_confidence=0.6):
         self.default_threshold = default_threshold
         self.max_retries = max_retries
+        self.min_confidence = min_confidence  # #8-8：低于此置信不行动
 
     def decide(self, obs: Observation, target: str) -> ActionIntent:
-        """观察 → 意图：目标文本出现在观测中 → 点击意图；否则等待。
+        """观察 → 意图：目标文本出现在观测中且置信达门槛 → 点击意图；否则等待。
 
         不执行任何观测/输入（纯决策）。method 由观测来源决定：
         - 观测含 entities（VLM 定位过）→ template 实体点击
         - 文本命中（OCR）→ text 点击
+        #8-8：confidence 低于门槛 → WAIT（防 Edge 截图 + VLM 高置信幻觉）
         """
-        if obs is None:
-            return self.plan_wait("no observation")
+        if obs is None or obs.confidence < self.min_confidence:
+            return self.plan_wait(
+                "low confidence" if obs is not None else "no observation")
         text = "".join(obs.text or [])
         if target in text:
             return self.plan_interact(target, method=ActionMethod.TEXT.value,

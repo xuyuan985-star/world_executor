@@ -109,6 +109,20 @@ class FakeObserver:
                            confidence=1.0, source="fake", frame_id="fake-1")
 
 
+class FakeBadVLM:
+    """#8-8 幻觉 VLM：错误画面仍报 shop + 高置信 0.95。"""
+
+    def observe(self, screenshot):
+        return {"room": "space", "ui_state": "shop", "confidence": 0.95}
+
+
+class FakeOCRDeny:
+    """#8-8 否认 OCR：画面实际是 IDE（Visual Studio）。"""
+
+    def detect(self, screenshot):
+        return {"text": ["Visual Studio", "Python"]}
+
+
 def run_scenario(clicks, label):
     bus = EventBus()
     seen = []
@@ -231,6 +245,39 @@ def main():
     acts = [ctx for t, ctx in seen if t == "action_executed"]
     assert acts and acts[-1].get("method") == "text", acts
     print("[ok] observe→plan→execute 链路（FakeObserver → Planner → click_text）PASS")
+
+    # 场景7（#8-8）：VLM 幻觉 + OCR 否认 → fusion 低置信 → Planner WAIT 不点击
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-fusion", use_vlm=True)
+    from runtime.vision_observer import VisionObserver
+    from runtime.observation_memory import StableState
+    orch.observer = VisionObserver(ocr=FakeOCRDeny(), vlm=FakeBadVLM(),
+                                   capture_fn=lambda: "C:/fake/bad.png")
+    memory = StableState()
+
+    def driver_factory():
+        return FakeDriver([True] * 3)
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        result = orch.observe_act("chest_A")
+    assert result.success, result
+    acts = [ctx for t, ctx in seen if t == "action_executed"]
+    assert acts and acts[-1].get("action") == "wait", acts[-1]
+    assert acts[-1].get("reason") == "low confidence", acts[-1]
+    first_obs = orch.observer.observe()
+    assert first_obs.confidence == 0.3, first_obs.confidence
+    memory.update(first_obs)
+    assert memory.label == "CONFIRMING", memory.label
+    memory.update(first_obs)
+    assert memory.label == "STABLE" and memory.hits == 2, memory.label
+    print("[ok] VLM幻觉+OCR否认 → fusion=0.3 → Planner WAIT 禁止点击 PASS")
 
 
 if __name__ == "__main__":
