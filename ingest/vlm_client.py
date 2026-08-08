@@ -17,6 +17,10 @@ class SegmentNarrative:
     shots: list = field(default_factory=list)
 
 
+class QuotaExhausted(Exception):
+    pass
+
+
 class VLMProvider:
     def analyze_frames(self, frames, captions, context) -> Optional[SegmentNarrative]:
         raise NotImplementedError
@@ -31,19 +35,38 @@ def _encode_image(path: str) -> str:
 
 
 class QwenVLProvider(VLMProvider):
-    def __init__(self, api_key=None, base_url=None, model=None, structure_model=None):
+    QUOTA_ERRORS = (403, 429)
+
+    def __init__(self, api_key=None, base_url=None, model=None, structure_model=None,
+                 vlm_fallback=None, text_fallback=None):
         self.api_key = api_key or settings.qwen_api_key()
         self.base_url = base_url or settings.qwen_base_url()
         self.model = model or settings.qwen_vlm_analyze_model()
         self.structure_model = structure_model or settings.qwen_vlm_structure_model()
+        self.vlm_fallback = vlm_fallback or settings.qwen_vlm_fallback()
+        self.text_fallback = text_fallback or settings.qwen_text_fallback()
         self.timeout = 120
         self.retries = 1
 
-    def _chat(self, messages, model=None, temperature=0.2, max_tokens=4096):
+    def _chat(self, messages, model=None, fallback=None, temperature=0.2, max_tokens=4096):
+        models = [model or self.model] + list(fallback or [])
+        last_err = None
+        for m in models:
+            try:
+                return self._post(m, messages, temperature, max_tokens)
+            except QuotaExhausted as e:
+                last_err = e
+                continue
+            except Exception as e:
+                last_err = e
+                continue
+        raise RuntimeError(f"模型 {models} 全部失败: {last_err}")
+
+    def _post(self, model, messages, temperature, max_tokens):
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
-            "model": model or self.model,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -51,8 +74,18 @@ class QwenVLProvider(VLMProvider):
         for attempt in range(self.retries + 1):
             try:
                 resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                if resp.status_code in self.QUOTA_ERRORS:
+                    body = ""
+                    try:
+                        body = resp.json().get("error", {}).get("message", "")
+                    except Exception:
+                        pass
+                    if "quota" in body.lower() or "free" in body.lower():
+                        raise QuotaExhausted(f"{model}: {body[:100]}")
                 resp.raise_for_status()
                 return resp.json()["choices"][0]["message"]["content"]
+            except QuotaExhausted:
+                raise
             except Exception:
                 if attempt >= self.retries:
                     raise
@@ -73,7 +106,7 @@ class QwenVLProvider(VLMProvider):
             )},
             {"role": "user", "content": content},
         ]
-        text = self._chat(messages)
+        text = self._chat(messages, fallback=self.vlm_fallback)
         return SegmentNarrative(segment=0, timestamp="", description=text)
 
     def structure_text(self, narratives) -> str:
@@ -82,7 +115,7 @@ class QwenVLProvider(VLMProvider):
             {"role": "system", "content": "将事件描述整理为结构化 JSON 事件清单，字段：time, event, object, detail。不要添加虚构内容。"},
             {"role": "user", "content": text},
         ]
-        return self._chat(messages, model=self.structure_model)
+        return self._chat(messages, model=self.structure_model, fallback=self.text_fallback)
 
 
 def get_provider(name="qwen") -> VLMProvider:

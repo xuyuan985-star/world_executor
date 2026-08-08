@@ -33,7 +33,7 @@ def qwen_base_url():
 
 
 def qwen_model():
-    return get("QWEN_MODEL", "qwen3.5-flash")
+    return get("QWEN_MODEL", "qwen-plus")
 
 
 def qwen_vlm_analyze_model():
@@ -41,7 +41,15 @@ def qwen_vlm_analyze_model():
 
 
 def qwen_vlm_structure_model():
-    return get("QWEN_VLM_STRUCTURE_MODEL", "qwen3.5-flash")
+    return get("QWEN_VLM_STRUCTURE_MODEL", "qwen-plus")
+
+
+def qwen_vlm_fallback():
+    return [m.strip() for m in get("QWEN_VLM_FALLBACK", "").split(",") if m.strip()]
+
+
+def qwen_text_fallback():
+    return [m.strip() for m in get("QWEN_TEXT_FALLBACK", "").split(",") if m.strip()]
 
 
 def knowledge_root():

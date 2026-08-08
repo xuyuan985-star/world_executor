@@ -1,0 +1,12 @@
+{
+  "qwen3-vl-flash": "OK",
+  "qwen3-vl-plus": "OK",
+  "qwen-vl-plus": "OK",
+  "qwen-vl-max": "OK",
+  "qwen3.5-flash": "FAIL 403: Free quota exhausted. To continue accessing the model on a paid basis, please add funds or disable the \"use free tier only\" mode in the management console.",
+  "qwen3.5-plus": "FAIL 403: Free quota exhausted. To continue accessing the model on a paid basis, please add funds or disable the \"use free tier only\" mode in the management console.",
+  "qwen3-flash": "FAIL 404: The model `qwen3-flash` does not exist or you do not have access to it.",
+  "qwen3-plus": "FAIL 404: The model `qwen3-plus` does not exist or you do not have access to it.",
+  "qwen3-omni-flash": "OK",
+  "qwen-omni-turbo": "FAIL 400: <400> InternalError.Algo.InvalidParameter: Range of max_tokens should be [10, 2048]"
+}
