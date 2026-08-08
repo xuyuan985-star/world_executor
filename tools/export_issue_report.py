@@ -177,15 +177,25 @@ EVIDENCE = [
 def main():
     # #28：同一分钟多次运行不覆盖（uuid 后缀）
     import uuid
+    import argparse
+    from runtime.security import sanitize_mapping
+    parser = argparse.ArgumentParser(description="导出会话问题报告")
+    parser.add_argument("--include-evidence", action="store_true",
+                        help="附带证据截图（默认 metadata only，防泄露用户环境）")
+    args = parser.parse_args()
+
     OUT = ROOT / "failure_reports" / \
         f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_session_all_issues"
     OUT.mkdir(parents=True, exist_ok=True)
 
-    ev_dir = OUT / "evidence"
-    ev_dir.mkdir(parents=True, exist_ok=True)
-    for src, note in EVIDENCE:
-        if src.exists():
-            shutil.copy2(src, ev_dir / src.name)
+    # Part 2-2.7：截图默认不导出（metadata only）；--include-evidence 显式开启
+    ev_dir = None
+    if args.include_evidence:
+        ev_dir = OUT / "evidence"
+        ev_dir.mkdir(parents=True, exist_ok=True)
+        for src, note in EVIDENCE:
+            if src.exists():
+                shutil.copy2(src, ev_dir / src.name)
 
     doc = {
         "generated_at": time.time(),
@@ -196,14 +206,15 @@ def main():
             "release_blockers": [i["id"] for i in ISSUES
                                  if i.get("release_blocker") and i["status"] != "resolved"],
         },
-        "issues": ISSUES,
+        # Part 2-2.6：脱敏——用户名路径替换为 C:\Users\<USER>\
+        "issues": sanitize_mapping(ISSUES),
     }
     (OUT / "report.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 
     lines = ["# 会话问题汇总报告", "", f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
     lines.append(f"问题总数: {len(ISSUES)} | 严重度: {doc['summary']['by_severity']} | 状态: {doc['summary']['by_status']}")
     lines.append("")
-    for i in ISSUES:
+    for i in sanitize_mapping(ISSUES):
         lines.append(f"## {i['id']} [{i['severity']}] {i['title']} ({i['status']})")
         lines.append(f"- 现象: {i['symptom']}")
         lines.append(f"- 根因: {i['root_cause']}")
@@ -216,7 +227,7 @@ def main():
 
     print(f"错误报告已导出: {OUT}")
     print(f"  问题数: {len(ISSUES)}")
-    print(f"  证据截图: {len(EVIDENCE)} 张")
+    print(f"  证据截图: {len(EVIDENCE) if args.include_evidence else 0} 张（--include-evidence 开启）")
     blockers = doc["summary"]["release_blockers"]
     print(f"  Release blockers（未解决）: {len(blockers)} {blockers if blockers else ''}")
 

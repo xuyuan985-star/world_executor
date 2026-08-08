@@ -1,0 +1,13 @@
+# WorldExecutor 运行时依赖（Part 2-2.8：锁定版本，禁止浮漂）
+# 用途：dry_run / smoke / runtime 核心（无 GUI、无 March7th 输入链）
+# 安装：pip install -r requirements.txt
+#
+# March7th 集成依赖（最小集，装到运行环境即可，勿装 pylnk3——历史投毒包）：
+#   ruamel.yaml  pyautogui  mss  pywin32  rapidocr  onnxruntime-directml
+# GUI 依赖（独立 venv）：PySide6
+numpy==2.2.6
+pillow==10.4.0
+PyAutoGUI==0.9.54
+pywin32==312
+PyYAML==6.0.3
+requests==2.34.2

@@ -32,6 +32,20 @@ ALLOW_PREFIX = [
 # #24：第三方/产物目录不扫描（CI 不应因 vendor/March7th 代码炸）
 IGNORE_DIRS = {"__pycache__", ".venv", "node_modules", "vendor", "March7thAssistant", "tests", "examples"}
 
+# Part 2-2.5：动态导入禁止（importlib.import_module / __import__ 绕过静态依赖图）
+DYNAMIC_IMPORT_CALLS = {"import_module", "__import__"}
+
+# Part 2-2.8：危险调用禁止（直接代码执行/外壳注入面；subprocess.run 参数化
+# 调用属可审计用途，只禁 shell=True 通道）
+BANNED_CALLS = {"exec", "eval", "compile", "os.system", "os.popen",
+                "subprocess.call"}
+BANNED_KEYWORDS = {"shell=True"}
+
+# 白名单调用点（经审计的合法用途）
+BANNED_ALLOW = {
+    "runtime.vision_quality",   # np.asarray 等 numpy 内部，无 exec
+}
+
 
 def _import_modules(tree):
     """收集文件里所有被 import 的模块全名（含 alias 形式）。"""
@@ -71,6 +85,29 @@ def check_file(path: Path, root: Path):
                        for p, q in ALLOW_PREFIX):
                     continue
                 violations.append(f"{rel} 禁止 {rel_mod} → {mod}（{bad_to}）")
+    # Part 2-2.5：动态导入（importlib.import_module / __import__）
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in DYNAMIC_IMPORT_CALLS:
+                violations.append(f"{rel} 禁止动态导入: {node.func.attr}")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in DYNAMIC_IMPORT_CALLS:
+                violations.append(f"{rel} 禁止动态导入: {node.func.id}")
+    # Part 2-2.8：危险调用（exec/eval/os.system/shell=True）
+    if rel_mod not in BANNED_ALLOW:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fname = None
+                if isinstance(node.func, ast.Name):
+                    fname = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    fname = f"{node.func.value.id}.{node.func.attr}" \
+                        if isinstance(node.func.value, ast.Name) else node.func.attr
+                if fname in BANNED_CALLS:
+                    violations.append(f"{rel} 禁止危险调用: {fname}")
+            if isinstance(node, ast.keyword) and node.arg == "shell" \
+                    and isinstance(node.value, ast.Constant) and node.value.value is True:
+                violations.append(f"{rel} 禁止 shell=True")
     return violations
 
 

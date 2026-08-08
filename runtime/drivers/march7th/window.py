@@ -61,24 +61,13 @@ def set_foreground_with_retry(hwnd, attempts=3):
 def ensure_march7th_env():
     """March7th 硬约束：cwd 必须为根目录（CONFIG_PATH=./config.yaml）。
 
-    同时注入 pylnk3 stub：pylnk3 是 PyPI 历史投毒包（0.4.2 恶意版本事件，
-    module/config 存在混淆授权校验），本项目不启动游戏、不用 .lnk 解析，
-    禁止装真包（ISSUE-03）。
+    同时注入 pylnk3 stub（runtime.security 单一实现）：pylnk3 是 PyPI 历史
+    投毒包（0.4.2 恶意版本事件），本项目不启动游戏、不用 .lnk 解析，
+    禁止装真包（ISSUE-03；payload 已解码审计，见 runtime/security.py）。
     """
-    import types
-    if not sys.modules.get("pylnk3"):
-        stub = types.ModuleType("pylnk3")
-
-        class Lnk:
-            # #33：补齐常用属性，避免后续代码访问 Lnk().path 等直接炸
-            path = ""
-            arguments = ""
-            work_dir = ""
-
-            def __init__(self, f):
-                self.path = str(f)
-        stub.Lnk = Lnk
-        sys.modules["pylnk3"] = stub
+    from runtime.security import install_pylnk3_stub, require_m7_path
+    install_pylnk3_stub()
+    require_m7_path(M7_ROOT)  # #18-2.4：路径注入前校验结构
     if str(M7_ROOT) not in sys.path:
         sys.path.insert(0, str(M7_ROOT))
     import os

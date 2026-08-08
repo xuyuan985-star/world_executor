@@ -10,18 +10,6 @@ M7 = ROOT.parent / "March7thAssistant"
 ROOM_CANDIDATES = ["基座舱段", "收容舱段", "支援舱段", "禁闭舱段", "黑塔空间站其他区域", "雅利洛VI", "仙舟", "匹诺康尼", "未知场景"]
 
 
-def install_pylnk3_stub():
-    import types
-    if sys.modules.get("pylnk3"):
-        return
-    stub = types.ModuleType("pylnk3")
-    class Lnk:
-        def __init__(self, f):
-            self.work_dir = ""
-    stub.Lnk = Lnk
-    sys.modules["pylnk3"] = stub
-
-
 def window_info():
     import win32gui
     hwnd = ctypes.windll.user32.GetForegroundWindow()
@@ -49,6 +37,8 @@ def capture_screen():
 
 
 def main(loop_seconds=15, max_rounds=None):
+    from runtime.security import install_pylnk3_stub, require_m7_path
+    require_m7_path(M7)
     install_pylnk3_stub()
     os.chdir(M7)
     sys.path.insert(0, str(M7))

@@ -61,6 +61,11 @@ class FailureReporter:
             "screenshot": Path(screenshot_path).name if screenshot_path else None,
             "environment": environment_snapshot(),  # 复现依据（git commit/DPI/OS）
         }
+        # Part 2-2.6：脱敏（用户名路径 → C:\Users\<USER>\）
+        from runtime.security import sanitize_mapping
+        doc["context"] = sanitize_mapping(doc["context"])
+        doc["vlm_outputs"] = sanitize_mapping(doc["vlm_outputs"])
+        doc["detail"] = sanitize_mapping(doc["detail"])
         (folder / "report.json").write_text(
             json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
         (folder / "environment.json").write_text(

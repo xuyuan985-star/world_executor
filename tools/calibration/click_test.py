@@ -24,18 +24,6 @@ def tee(msg):
         f.write(msg + "\n")
 
 
-def install_pylnk3_stub():
-    import types
-    if sys.modules.get("pylnk3"):
-        return
-    stub = types.ModuleType("pylnk3")
-    class Lnk:
-        def __init__(self, f):
-            self.work_dir = ""
-    stub.Lnk = Lnk
-    sys.modules["pylnk3"] = stub
-
-
 def ocr_lines(ocr_engine, img):
     import numpy as np
     arr = np.asarray(img)
@@ -54,6 +42,8 @@ def box_center(box):
 
 
 def main():
+    from runtime.security import install_pylnk3_stub, require_m7_path
+    require_m7_path(M7)
     install_pylnk3_stub()
     try:
         import pyuac

@@ -12,19 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 M7 = ROOT.parent / "March7thAssistant"
 
 
-def install_pylnk3_stub():
-    import types
-    if sys.modules.get("pylnk3"):
-        return
-    stub = types.ModuleType("pylnk3")
-    class Lnk:
-        def __init__(self, f):
-            self.work_dir = ""
-    stub.Lnk = Lnk
-    sys.modules["pylnk3"] = stub
-
-
 def main():
+    from runtime.security import install_pylnk3_stub, require_m7_path
+    require_m7_path(M7)
     install_pylnk3_stub()
     os.chdir(M7)
     sys.path.insert(0, str(M7))
