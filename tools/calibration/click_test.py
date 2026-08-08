@@ -53,6 +53,14 @@ def main():
             sys.exit(0)
     except ImportError:
         pass
+
+    # Sprint A-3：硬门槛——提权流程后仍非管理员 → 直接退出，不继续测 click
+    from tools.input_privilege_check import is_admin
+    if not is_admin():
+        print("[FAIL] INPUT_PRIVILEGE：需要管理员权限（UIPI 会拦截 SendInput）")
+        print("       先运行: python tools/input_privilege_check.py 确认 READY")
+        sys.exit(2)
+
     RESULT_FILE.unlink(missing_ok=True)
     os.chdir(M7)
     sys.path.insert(0, str(M7))
@@ -107,8 +115,13 @@ def main():
     py = pos_top + int(ly / scale_factor if scale_factor and scale_factor != 1 else ly)
     print(f"[ok] 找到“{txt}” 截图内({lx:.0f},{ly:.0f}) + pos({pos_left},{pos_top}) → 绝对({px},{py})")
 
+    # Sprint A-5：分步 PASS 记录（OCR/坐标/注入/UI响应 → G2 PASS）
+    steps = {"ocr": "PASS", "coordinate": "PASS", "sendinput": "PENDING",
+             "ui_response": "PENDING"}
+
     auto.mouse_click(int(px), int(py))
     print("[ok] mouse_click 已执行")
+    steps["sendinput"] = "PASS"
     time.sleep(2.5)
 
     shot2 = auto.take_screenshot()
@@ -120,10 +133,27 @@ def main():
     print(f"[after] OCR: {texts2[:15]}")
 
     shop_open = any(k in "".join(texts2) for k in ["购买", "商品", "礼包", "开拓者补给", "星际和平", "信用点", "余烬兑换"])
-    if shop_open:
-        print("[RESULT] 点击链路 PASS：商店界面已打开（识别→点击→UI响应）")
-    else:
-        print("[RESULT] 点击后画面无明显变化（可能点到菜单空白或点击未生效）")
+    steps["ui_response"] = "PASS" if shop_open else "FAIL"
+
+    # Sprint A-5：汇总输出 + result.json 落盘（失败报告自动关联 session）
+    import json
+    result = {"window": "崩坏：星穹铁道", "target": txt,
+              "physical": (px, py), "steps": steps,
+              "g2": "PASS" if all(v == "PASS" for v in steps.values()) else "FAIL"}
+    print("=" * 32)
+    print("CLICK TEST")
+    print(f"    window:     {result['window']}")
+    print(f"    target:     {txt}")
+    print(f"    ocr:        {steps['ocr']}")
+    print(f"    coordinate: {steps['coordinate']}")
+    print(f"    sendinput:  {steps['sendinput']}")
+    print(f"    ui_response:{steps['ui_response']}")
+    print(f"RESULT: G2 {result['g2']}")
+    print("=" * 32)
+    (out_dir / "click_test_result.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if not shop_open:
         if img2 is not None:
             reporter.report("click_no_response", screenshot_path=str(out_dir / "click_after.jpg"),
                             context={"clicked_text": txt, "physical": (px, py),
