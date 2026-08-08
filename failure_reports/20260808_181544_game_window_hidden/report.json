@@ -1,0 +1,34 @@
+{
+  "time": 1786184144.880673,
+  "tag": "game_window_hidden",
+  "detail": "游戏窗口存在但不可见/客户区为0（未渲染或隐藏），截图退化到屏幕区域",
+  "context": {
+    "window": {
+      "foreground": "OpenCode 和另外 4 个页面 - 个人 - Microsoft​ Edge",
+      "game_hwnd": 1771146,
+      "game_visible": false,
+      "game_minimized": false,
+      "game_client_rect": [
+        0,
+        0
+      ]
+    }
+  },
+  "vlm_outputs": {
+    "room": {
+      "room": "黑塔空间站其他区域",
+      "ui_state": "unknown",
+      "confidence": 0.1,
+      "reason": "画面为浏览器中的OpenCode开发环境界面，非游戏内实际画面；标题含‘星穹铁道全收集’但内容为脚本调试日志，无任何游戏场景视觉元素。"
+    },
+    "locate": {
+      "found": false,
+      "screen_x": 0,
+      "screen_y": 0,
+      "is_ui": false,
+      "confidence": 0.0,
+      "note": "当前画面为OpenCode网页界面，无游戏世界实体宝箱；未检测到任何宝箱模型或UI图标"
+    }
+  },
+  "screenshot": "screen_1786184136.jpg"
+}

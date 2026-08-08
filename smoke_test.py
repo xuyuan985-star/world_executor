@@ -1,8 +1,26 @@
+import os
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 M7 = ROOT / "March7thAssistant"
+
+
+def install_pylnk3_stub():
+    """pylnk3 为被投毒过的 PyPI 包；March7th 仅在解析 .lnk 快捷方式时使用，
+    我们不做游戏启动流程，故注入 stub 防止下载真包并避免执行 config 内的混淆 payload。"""
+    if sys.modules.get("pylnk3"):
+        return
+    stub = types.ModuleType("pylnk3")
+
+    class Lnk:
+        def __init__(self, f):
+            self.work_dir = ""
+
+    stub.Lnk = Lnk
+    sys.modules["pylnk3"] = stub
+    print("[security] pylnk3 stub 已注入（跳过被投毒包 + 混淆 payload）")
 
 
 def require_m7():
@@ -18,7 +36,9 @@ def require_m7():
         else:
             print("缺少 config.example.yaml")
             sys.exit(1)
+    os.chdir(M7)
     sys.path.insert(0, str(M7))
+    install_pylnk3_stub()
 
 
 def main():
@@ -34,7 +54,8 @@ def main():
         print("[FAIL] take_screenshot 失败（游戏未启动或窗口未找到）")
         sys.exit(1)
     screenshot, pos, scale = result
-    print(f"[ok] take_screenshot  {screenshot.shape} scale={scale}")
+    w, h = screenshot.size if hasattr(screenshot, "size") else screenshot.shape[:2][::-1]
+    print(f"[ok] take_screenshot  {w}x{h} scale={scale}")
 
     found = auto.find_text_element("收容舱段", ["收容", "舱段"], need_ocr=True, relative=True)
     if found:
@@ -43,16 +64,15 @@ def main():
     else:
         print("[warn] OCR 未找到目标文本（可能不在该界面）")
 
-    from module.ocr import RapidOCR
+    from module.ocr import ocr as ocr_engine
 
-    ocr_engine = RapidOCR(mode=auto.ocr_mode)
-    raw = auto.screenshot
+    raw = screenshot
     try:
-        text, elapse = ocr_engine(raw)
-        lines = [t for t, *_ in text] if text else []
-        print(f"[ok] RapidOCR {len(lines)} 行: {lines[:8]}")
+        result = ocr_engine.run(raw)
+        lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []
+        print(f"[ok] OCR 引擎 {len(lines)} 行: {lines[:8]}")
     except Exception as e:
-        print(f"[warn] RapidOCR 失败: {e}")
+        print(f"[warn] OCR 引擎失败: {e}")
 
     print("[smoke] 全部完成")
 

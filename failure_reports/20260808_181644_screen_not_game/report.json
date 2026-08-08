@@ -1,0 +1,42 @@
+{
+  "time": 1786184204.5799577,
+  "tag": "screen_not_game",
+  "detail": "捕获源=screen(fallback:PrintWindow 失败 code=0)，画面不是游戏: unknown/黑塔空间站其他区域 conf=0.05",
+  "context": {
+    "window": {
+      "foreground": "OpenCode 和另外 4 个页面 - 个人 - Microsoft​ Edge",
+      "game_hwnd": 1771146,
+      "game_visible": false,
+      "game_minimized": false,
+      "game_client_rect": [
+        0,
+        0
+      ]
+    },
+    "game": {
+      "hwnd": 6752834,
+      "client": [
+        1536,
+        864
+      ],
+      "visible": true
+    }
+  },
+  "vlm_outputs": {
+    "room": {
+      "room": "黑塔空间站其他区域",
+      "ui_state": "unknown",
+      "confidence": 0.05,
+      "reason": "画面为本地开发环境（OpenCode + Shell命令行），非游戏内画面，无任何《崩坏：星穹铁道》实际场景元素。"
+    },
+    "locate": {
+      "found": false,
+      "screen_x": 0,
+      "screen_y": 0,
+      "is_ui": false,
+      "confidence": 0.0,
+      "note": "画面为代码编辑器界面，无游戏世界实体或UI宝箱元素"
+    }
+  },
+  "screenshot": "screen(fallback:PrintWindow 失败 code=0)_1786184198.jpg"
+}
