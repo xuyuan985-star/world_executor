@@ -4,6 +4,9 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Optional
 
+# #12：事件 schema 版本——字段演化时 bump；replay 按版本兼容解析
+EVENT_SCHEMA_VERSION = 1
+
 EVENT_TYPES = {
     "run_started",
     "run_finished",
@@ -16,6 +19,7 @@ EVENT_TYPES = {
     "pause_requested",
     "resume_checked",
     "human_intervention",
+    "deadlock_detected",  # S10：watchdog 发现执行卡死
 }
 
 STATE_TYPES = {
@@ -49,6 +53,7 @@ ACTION_CONTEXT_FIELDS = {
 class WorldEvent:
     type: str
     execution_id: str
+    schema_version: int = EVENT_SCHEMA_VERSION  # S12：replay 兼容
     context: dict = field(default_factory=dict)
     id: str = field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:8]}")
     time: float = field(default_factory=lambda: time.time())

@@ -89,7 +89,10 @@ def run_scenario(clicks, label):
         return FakeDriver(list(clicks))
 
     with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
-            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM):
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
         results, completed = orch.run_mission(["chest_A"])
 
     end_state = orch._machine.state
@@ -124,12 +127,32 @@ def main():
             pass
 
     orch._monitor = FakePaused()
-    results, completed = orch.run_mission(["chest_A"])
+    with mock.patch.object(orch, "start_emergency", lambda: None):
+        results, completed = orch.run_mission(["chest_A"])
     assert results == {"chest_A": False}, results
     assert completed == [], completed
     ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
     assert ev and ev[-1].get("category") == "EMERGENCY", ev
     print("[ok] EmergencyMonitor 介入 → mission 即停 PASS")
+
+    # S17 场景4（chaos）：游戏窗口消失 → F3_WINDOW 快速失败，不盲目点击
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-window", use_vlm=True)
+
+    def driver_factory():
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window", return_value=None):
+        results, completed = orch.run_mission(["chest_A"])
+    assert results == {"chest_A": False}, results
+    ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
+    assert ev and ev[-1].get("category") == "F3_WINDOW", ev
+    print("[ok] 窗口消失 → F3_WINDOW 即停 PASS")
 
 
 if __name__ == "__main__":

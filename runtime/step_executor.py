@@ -64,11 +64,13 @@ class RealExecutor:
     进入执行层（#29：executor 不依赖 observer 模块），换算属于执行细节。
     """
 
-    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True):
+    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True,
+                 natural_seed=None):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
-        self.naturalness = NaturalnessPolicy()
+        # S13：seed 固定 → 同执行 id 下自然性延迟可复现（replay 不漂移）
+        self.naturalness = NaturalnessPolicy(enabled=natural_mode, seed=natural_seed)
         self.natural_mode = natural_mode   # #44：False 时确定性（delay=0，测试可复现）
         self.vlm = VLMVisionObserver() if use_vlm else None
         self.obs_store = ObservationStore()
@@ -93,6 +95,16 @@ class RealExecutor:
             if len(self._recent_events) > self._MAX_RECENT:
                 self._recent_events.pop(0)
             return ev
+        return None
+
+    def _precondition_blocked(self, intent):
+        """S5 动作前验证钩子：intent.preconditions 为世界事实断言（如 room==black_tower）。
+
+        当前断言源未接入（房间/战斗状态观测不可靠，真机未通），恒通过——
+        接入点：从 ObservationStore 校验世界事实，失败返回原因字符串。
+        """
+        if not intent.preconditions:
+            return None
         return None
 
     def emergency_stop(self):
@@ -176,6 +188,13 @@ class RealExecutor:
         """
         from runtime.input.base import InputResult
         backend = self.driver.input
+        blocked = self._precondition_blocked(intent)  # S5：动作前验证
+        if blocked:
+            self._emit("fail_recorded", detail=f"F3:precondition:{intent.target}",
+                       context={"category": "F3", "target": intent.target,
+                                "error": f"precondition:{blocked}"})
+            return ExecutionResult(success=False, error=f"precondition:{blocked}",
+                                   retryable=False, category="F3")
         delay = (self.naturalness.click_delay() if self.natural_mode else 0.0) \
             if intent.action in INPUT_ACTIONS else 0.0
         time.sleep(delay)

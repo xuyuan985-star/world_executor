@@ -13,6 +13,7 @@ class MissionSpec:
     target_ids: Optional[list] = None
     mode: str = "dry"  # dry | real（企划 v0.12.2 门槛 G3 前置）
     natural_mode: bool = True  # #44：False → 确定性执行（delay=0，可复现测试）
+    requires: Optional[list] = None  # S15：任务必需能力（缺则拒绝启动），默认 G3 critical 集
 
 
 class RuntimeAPI:
@@ -22,9 +23,11 @@ class RuntimeAPI:
         self._runner = None
         self._thread = None
         self._state = "idle"
+        self._pending_requires = None
 
     def start_mission(self, spec: MissionSpec, runner_factory=None):
         from runtime import dry_run
+        self._pending_requires = spec.requires
 
         def runner(bus, execution_id):
             from ingest.compiler.validate_graph import validate
@@ -78,6 +81,7 @@ class RuntimeAPI:
 
         含 Capability Gate（第四批审查 P0）：window/capture/ocr/vlm + foreground/admin + input L0/L1，
         L2 失败即拦——避免"点击失败→重试→点击失败→F1"死循环（根因：权限/前台未满足）。
+        #15：spec.requires 可追加任务必需能力键。
         """
         from runtime.health import check_health
         h = check_health()
@@ -87,6 +91,9 @@ class RuntimeAPI:
                                                            if not cap.get(k)]
         if cap.get("input_l2") is False:
             fails.append("input_l2")
+        for req in (self._pending_requires or []):
+            if req not in cap or not cap.get(req):
+                fails.append(req)
         if fails:
             bus.publish(make_event("run_finished", execution_id,
                                    context={"result": "gate_blocked",

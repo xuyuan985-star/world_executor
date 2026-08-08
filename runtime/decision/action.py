@@ -37,6 +37,7 @@ class ActionIntent:
     idempotent: bool = True  # #32：非幂等动作（传送/确认/购买）禁止 retry
     execution_id: str = None  # #45：贯穿日志/失败关联（构造时由执行链传入）
     id: str = field(default_factory=lambda: f"int_{uuid.uuid4().hex[:8]}")
+    preconditions: tuple = ()  # S5：执行前世界事实断言（契约先行，校验器接入前恒过）
 
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:

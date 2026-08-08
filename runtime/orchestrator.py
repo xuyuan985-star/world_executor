@@ -21,6 +21,48 @@ TARGET_ALIVE = ("running", "succeeded", "failed")
 # 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，无其他执行语义
 STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
 
+# S10：watchdog 判定"执行卡死"的事件静默上限（verify 30s + 重试余量）
+WATCHDOG_STALL_SECONDS = 120
+
+
+class SessionWatchdog(threading.Thread):
+    """S10 Supervisor 轻量版：监控事件流活跃度。
+
+    executor 若阻塞（如验证循环无 abort 钩子），事件流静默超过阈值 →
+    deadlock_detected 事件 + 置位；主循环每 step 检查置位即中断。
+    独立线程、daemon，随 mission 启停。
+    """
+
+    def __init__(self, bus, execution_id, stall_seconds=WATCHDOG_STALL_SECONDS):
+        super().__init__(daemon=True)
+        self.bus = bus
+        self.execution_id = execution_id
+        self.stall_seconds = stall_seconds
+        self._stop = threading.Event()
+        self._last_activity = time.monotonic()
+        self.tripped = False
+        if bus is not None:
+            bus.subscribe(lambda e: self.touch())  # 任何事件都是活跃信号
+
+    def touch(self):
+        self._last_activity = time.monotonic()
+
+    def run(self):
+        while not self._stop.is_set():
+            time.sleep(5)
+            if self.tripped:
+                continue
+            if time.monotonic() - self._last_activity > self.stall_seconds:
+                self.tripped = True
+                if self.bus is not None:
+                    from runtime.events.schema import make_event
+                    self.bus.publish(make_event(
+                        "deadlock_detected", self.execution_id,
+                        detail=f"事件静默 {self.stall_seconds}s，判定执行卡死"))
+
+    def stop(self):
+        self._stop.set()
+
 
 class TargetRecord:
     """#38：单目标生命周期记录——attempts/结果/失败分类，会话结束可统计。"""
@@ -48,14 +90,17 @@ class WorkflowOrchestrator:
         self._executor = None
         self._machine = None
         self._monitor = None
+        self._watchdog = None
         self._records = {}
 
     @property
     def executor(self):
         if self._executor is None:
             from runtime.step_executor import RealExecutor
+            # S13：seed 由 execution_id 派生——同 id 重跑可复现自然性延迟
+            seed = hash(self.execution_id or "default") & 0xFFFFFFFF
             self._executor = RealExecutor(self.pkg, self.bus, self.execution_id,
-                                          self.use_vlm, self.natural_mode)
+                                          self.use_vlm, self.natural_mode, seed)
         return self._executor
 
     def _emit(self, event_type, **kw):
@@ -76,10 +121,18 @@ class WorkflowOrchestrator:
         except Exception:
             self._monitor = None
 
+    def start_watchdog(self):
+        """S10：watchdog 随 mission 启停（独立于窗口，始终可用）。"""
+        self._watchdog = SessionWatchdog(self.bus, self.execution_id)
+        self._watchdog.start()
+
     def stop_emergency(self):
         if self._monitor is not None:
             self._monitor.stop()
             self._monitor = None
+        if getattr(self, "_watchdog", None) is not None:
+            self._watchdog.stop()
+            self._watchdog = None
 
     # ---------- 主流程 ----------
 
@@ -110,6 +163,15 @@ class WorkflowOrchestrator:
         for idx, step in enumerate(steps):
             if self._emergency_paused():
                 self._human_interrupted(target_id)
+                return False
+            # S10：watchdog 判卡死 → 中断（不再盲目等待）
+            if self._stall_detected():
+                self._stall_abort(target_id)
+                return False
+            # S9：窗口消失/丢失 → 系统不可用，停止执行（不再黑屏点击）
+            window_problem = self._window_lost()
+            if window_problem:
+                self._system_failure(target_id, window_problem)
                 return False
             result = self._run_step(step, idx, wf)
             if not result.success:
@@ -211,7 +273,10 @@ class WorkflowOrchestrator:
             return ExecutionResult(success=True, category="F2")  # 无模板则跳过
         expected = step.get("expected", "vanished")
         timeout = step.get("timeout", 30)
-        ok = self.executor.verify_signal(template, expected, timeout)
+        # #41：验证循环可中断（emergency / watchdog stall 立即退出）
+        ok = self.executor.verify_signal(
+            template, expected, timeout,
+            abort_check=lambda: self._emergency_paused() or self._stall_detected())
         if ok:
             self._machine.on(Event.INTERACT_OK, "verify passed")
         return ExecutionResult(
@@ -233,6 +298,7 @@ class WorkflowOrchestrator:
 
     def run_mission(self, target_ids, emergency=True):
         self.start_emergency()
+        self.start_watchdog()
         try:
             results = {}
             for tid in target_ids:
@@ -250,6 +316,58 @@ class WorkflowOrchestrator:
     def session_summary(self):
         """#38：目标生命周期汇总（status/attempts/error/category）。"""
         return {tid: r.to_dict() for tid, r in self._records.items()}
+
+    # ---------- 系统状态（S9/S10） ----------
+
+    @staticmethod
+    def _window_lost():
+        """S9：窗口消失/尺寸异常 → 返回原因，正常返回 None。"""
+        try:
+            from runtime.drivers.march7th.window import find_game_window
+            game = find_game_window()
+            if game is None:
+                return "window_lost"
+            w, h = game["client"]
+            if w < 500 or h < 500:
+                return f"window_too_small:{w}x{h}"
+        except Exception as e:
+            return f"window_check_error:{type(e).__name__}"
+        return None
+
+    def _stall_detected(self):
+        return getattr(self, "_watchdog", None) is not None and self._watchdog.tripped
+
+    def _stall_abort(self, target_id):
+        """S10：执行卡死 → 中断目标（deadlock_detected 已由 watchdog 发出）。"""
+        record = self._records.get(target_id)
+        if record:
+            record.status = "failed"
+            record.last_error = "execution_stall"
+            record.category = "F3"
+        self._emit("target_progress",
+                   context={"target": target_id, "status": "failed",
+                            "reason": "execution_stall", "category": "F3"})
+        if self._machine.state not in (State.DONE, State.ABORT):
+            self._machine.on(Event.ABORT_REQUEST, "watchdog stall")
+        self._interrupted(target_id)
+
+    def _system_failure(self, target_id, reason):
+        """S9：系统不可用（窗口消失等）→ 记 F3_WINDOW，停止本目标。"""
+        record = self._records.get(target_id)
+        if record:
+            record.status = "failed"
+            record.last_error = reason
+            record.category = "F3_WINDOW"
+        self._emit("fail_recorded",
+                   detail=f"F3_WINDOW:{reason}:{target_id}",
+                   context={"category": "F3_WINDOW", "target": target_id,
+                            "error": reason})
+        self._emit("target_progress",
+                   context={"target": target_id, "status": "failed",
+                            "reason": reason, "category": "F3_WINDOW"})
+        if self._machine.state not in (State.DONE, State.ABORT):
+            self._machine.on(Event.ABORT_REQUEST, "system unavailable")
+        self._interrupted(target_id)
 
     def _aborted(self):
         return self._machine is not None and self._machine.state == State.ABORT

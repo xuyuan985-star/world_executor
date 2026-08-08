@@ -5,6 +5,10 @@ from pathlib import Path
 # #37：知识包结构版本——不匹配时拒绝加载（防止旧包以错误语义运行）
 KNOWLEDGE_SCHEMA_VERSION = 1
 
+# S11：运行器预期的游戏版本（知识包显式声明不同版本时告警，不拒绝——
+# 游戏更新 UI 变化是渐变过程，版本声明用于人工判断而非硬阻断）
+EXPECTED_GAME_VERSION = "2.x"
+
 log = logging.getLogger("runtime.knowledge")
 
 
@@ -31,6 +35,11 @@ class KnowledgePackage:
             raise ValueError(
                 f"知识包 {self.root.name} schema_version={ver} 不匹配运行器 v{KNOWLEDGE_SCHEMA_VERSION}，"
                 f"拒绝加载（更新知识包或运行器）")
+        # S11：游戏版本声明不一致 → 告警（游戏 UI 变更时旧模板会失效，留人工判断）
+        gv = self.meta.get("game_version")
+        if gv and gv != EXPECTED_GAME_VERSION:
+            log.warning("知识包 %s 声明 game_version=%s，运行器预期 %s——模板可能过期",
+                        self.root.name, gv, EXPECTED_GAME_VERSION)
 
     def _load(self, name):
         p = self.root / name
