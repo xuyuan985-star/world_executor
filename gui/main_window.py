@@ -66,11 +66,20 @@ class MainWindow(FluentWindow):
             done = Signal(dict)
 
             def run(self):
+                # GUI-1：March7th 探测会 os.chdir(M7)（硬约束）——线程共享进程 cwd，
+                # 不恢复会让后续相对路径解析错（validate 报缺 rooms.json → 点开始无反应）
+                import os
+                saved = os.getcwd()
                 from runtime.health import check_health
                 try:
                     self.done.emit(check_health().get("capability", {}))
                 except Exception:
                     self.done.emit({})
+                finally:
+                    try:
+                        os.chdir(saved)
+                    except Exception:
+                        pass
 
         self._health_worker = HealthWorker(self)
         self._health_worker.done.connect(self.command_deck.set_health)

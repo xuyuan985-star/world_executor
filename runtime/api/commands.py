@@ -34,7 +34,10 @@ class RuntimeAPI:
             from runtime.knowledge_loader import KnowledgePackage
             from pathlib import Path
 
-            pkg = KnowledgePackage(Path(spec.knowledge_dir))
+            # GUI-1：knowledge_dir 绝对化（进程 cwd 可能被 March7th 探测线程
+            # chdir 污染——相对路径会解析到 M7 导致 validate 报缺文件）
+            knowledge_dir = self._absolute_knowledge_dir(spec.knowledge_dir)
+            pkg = KnowledgePackage(Path(knowledge_dir))
             errors, _ = validate(pkg, verbose=False)
             if errors:
                 bus.publish(make_event("run_finished", execution_id,
@@ -49,7 +52,7 @@ class RuntimeAPI:
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             self._state = "running"
             bus.publish(make_event("run_started", execution_id,
-                                   context={"knowledge": spec.knowledge_dir,
+                                   context={"knowledge": knowledge_dir,
                                             "targets": targets, "mode": spec.mode,
                                             "knowledge_hash": pkg.package_hash()}))
             if spec.mode == "real":
@@ -63,7 +66,7 @@ class RuntimeAPI:
                                                 "completed_targets": completed,
                                                 "records": orch.session_summary()}))
             else:
-                result = dry_run.dry_run(spec.knowledge_dir, targets, bus=bus,
+                result = dry_run.dry_run(knowledge_dir, targets, bus=bus,
                                          execution_id=execution_id)
             self._state = "done"
             bus.publish(make_event("run_finished", execution_id,
@@ -73,9 +76,22 @@ class RuntimeAPI:
         import uuid
 
         self.execution_id = self.execution_id or f"run{uuid.uuid4().hex[:4]}"
-        self._thread = threading.Thread(target=lambda: runner(self.bus, self.execution_id), daemon=True)
+        # GUI-2：runner_factory 注入（诊断/测试用）——此前参数存在但被忽略
+        make_runner = runner_factory or (lambda bus_, eid: runner(bus_, eid))
+        self._thread = threading.Thread(
+            target=lambda: make_runner(self.bus, self.execution_id), daemon=True)
         self._thread.start()
         return self.execution_id
+
+    @staticmethod
+    def _absolute_knowledge_dir(knowledge_dir):
+        """相对知识目录 → 基于 world_executor 根绝对化（不受进程 cwd 影响）。"""
+        from pathlib import Path
+        p = Path(knowledge_dir)
+        if p.is_absolute():
+            return str(p)
+        root = Path(__file__).resolve().parent.parent.parent
+        return str(root / knowledge_dir)
 
     def _gate_check(self, bus, execution_id, pkg):
         """G3 门槛：health 全绿才进 real mission（企划 v0.12.2 §2.4）。
