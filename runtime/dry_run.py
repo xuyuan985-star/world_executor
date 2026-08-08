@@ -4,11 +4,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from runtime.capabilities import CapabilityRegistry
 from runtime.events.schema import make_event
 from runtime.knowledge_loader import KnowledgePackage
 from runtime.state_machine import Event, State, StateMachine
 
 ANOMALY_TARGET = "chest_D"
+DRY_RUN_VERIFIES = "schema/graph/state_transition/event_flow/replay"
+DRY_RUN_NOT_VERIFIES = "game_vision/input_reliability/real_movement/game_state"
 
 
 def _emit(bus, execution_id, event_type, **kw):
@@ -79,6 +82,15 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
 def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
     pkg = KnowledgePackage(Path(pkg_dir))
     print(f"== dry_run: {pkg.root.name} ==")
+    print(f"   verifies: {DRY_RUN_VERIFIES}")
+    print(f"   NOT verified: {DRY_RUN_NOT_VERIFIES}")
+
+    caps = CapabilityRegistry()
+    try:
+        caps.check_requirements(pkg.meta.get("requires", []), knowledge_id=pkg.root.name)
+    except Exception as e:
+        print(f"  [ERROR] {e}")
+        return 1
 
     from ingest.compiler.validate_graph import validate
 
@@ -125,6 +137,10 @@ def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
               detail=f"finish:{cid}:{'ok' if ok else 'fail'}",
               context={"target": cid, "status": "done" if ok else "failed"})
         print(f"  [SIM] final state = {machine.state.name}  (exec {machine.execution_id})")
+        if ok:
+            print(f"  [RESULT] {cid} PASS (logical) — 仅验证 {DRY_RUN_VERIFIES}，不代表真机可用")
+        else:
+            print(f"  [RESULT] {cid} FAIL")
         for h in machine.history:
             print(f"    {h[0]:>26} → {h[1]:<26} {h[3]}")
     return 0

@@ -1,7 +1,7 @@
-import random
+﻿import random
 
 
-class HumanBehavior:
+class NaturalnessPolicy:
     def __init__(self, enabled=True):
         self.enabled = enabled
         self.click_delay_range = (200, 800)

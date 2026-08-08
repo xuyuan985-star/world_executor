@@ -5,6 +5,7 @@ from pathlib import Path
 class KnowledgePackage:
     def __init__(self, root: Path):
         self.root = Path(root)
+        self.meta = self._load("package.json") or {}
         self.rooms = self._load("rooms.json")
         self.portals = self._load("portals.json") or []
         self.landmarks = self._load("landmarks.json") or []

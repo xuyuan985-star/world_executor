@@ -1,8 +1,8 @@
-import sys
+﻿import sys
 import time
 from pathlib import Path
 
-from runtime.human_behavior import HumanBehavior
+from runtime.naturalness import NaturalnessPolicy
 from runtime.observers.vlm_vision import VLMVisionObserver
 
 M7_ROOT = Path(__file__).resolve().parent.parent.parent / "March7thAssistant"
@@ -13,7 +13,7 @@ class RealExecutor:
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
-        self.human = HumanBehavior()
+        self.naturalness = NaturalnessPolicy()
         self.vlm = VLMVisionObserver() if use_vlm else None
         self.auto = None
 
@@ -71,7 +71,7 @@ class RealExecutor:
     def click_at(self, x, y, label="click"):
         auto = self.ensure_auto()
         auto.mouse_move(int(x * auto.width), int(y * auto.height))
-        delay = self.human.click_delay()
+        delay = self.naturalness.click_delay()
         time.sleep(delay)
         auto.mouse_click()
         self._emit("action_executed", detail=f"{label}@({x:.2f},{y:.2f})",
@@ -85,7 +85,7 @@ class RealExecutor:
             return False
         cx = (top_left[0] + bottom_right[0]) / 2
         cy = (top_left[1] + bottom_right[1]) / 2
-        delay = self.human.interaction_delay()
+        delay = self.naturalness.interaction_delay()
         time.sleep(delay)
         auto.mouse_click(cx, cy)
         self._emit("action_executed", detail=f"click:{template}",
@@ -99,7 +99,7 @@ class RealExecutor:
                 break
             x, y = pos
             if 0.4 < x < 0.6:
-                dur = self.human.sprint_duration(step_seconds)
+                dur = self.naturalness.sprint_duration(step_seconds)
                 auto = self.ensure_auto()
                 auto.press_key("w", wait_time=dur)
                 self._emit("action_executed", detail=f"move_forward:{dur:.1f}s",
@@ -107,7 +107,7 @@ class RealExecutor:
             else:
                 side = "d" if x < 0.5 else "a"
                 auto = self.ensure_auto()
-                auto.press_key(side, wait_time=self.human.rotate_duration())
+                auto.press_key(side, wait_time=self.naturalness.rotate_duration())
                 self._emit("action_executed", detail=f"steer:{side}",
                            context={"humanized": True, "tick": i})
         return True
@@ -118,7 +118,7 @@ class RealExecutor:
         ok = self.interact_template(trigger["template"], trigger["threshold"], trigger["scale_range"])
         if not ok:
             return False
-        wait = self.human.transition_wait(wait_base)
+        wait = self.naturalness.transition_wait(wait_base)
         time.sleep(wait)
         return True
 
