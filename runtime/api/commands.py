@@ -11,6 +11,7 @@ from runtime.events.schema import WorldEvent, make_event
 class MissionSpec:
     knowledge_dir: str
     target_ids: Optional[list] = None
+    mode: str = "dry"  # dry | real（企划 v0.12.2 门槛 G3 前置）
 
 
 class RuntimeAPI:
@@ -36,11 +37,24 @@ class RuntimeAPI:
                                        context={"result": "invalid", "errors": len(errors)}))
                 return "invalid"
 
+            if spec.mode == "real":
+                gate = self._gate_check(bus, execution_id, pkg)
+                if gate is not None:
+                    return gate
+
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             self._state = "running"
             bus.publish(make_event("run_started", execution_id,
-                                   context={"knowledge": spec.knowledge_dir, "targets": targets}))
-            result = dry_run.dry_run(spec.knowledge_dir, targets, bus=bus, execution_id=execution_id)
+                                   context={"knowledge": spec.knowledge_dir,
+                                            "targets": targets, "mode": spec.mode}))
+            if spec.mode == "real":
+                from runtime.orchestrator import WorkflowOrchestrator
+                orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=execution_id)
+                results = orch.run_mission(targets)
+                result = "all_done" if all(results.values()) else "some_failed"
+            else:
+                result = dry_run.dry_run(spec.knowledge_dir, targets, bus=bus,
+                                         execution_id=execution_id)
             self._state = "done"
             bus.publish(make_event("run_finished", execution_id,
                                    context={"result": result}))
@@ -52,6 +66,25 @@ class RuntimeAPI:
         self._thread = threading.Thread(target=lambda: runner(self.bus, self.execution_id), daemon=True)
         self._thread.start()
         return self.execution_id
+
+    def _gate_check(self, bus, execution_id, pkg):
+        """G3 门槛：health 全绿才进 real mission（企划 v0.12.2 §2.4）。"""
+        from runtime.health import check_health
+        h = check_health()
+        cap = h["capability"]
+        critical = ["window", "capture", "ocr", "vlm"]
+        fails = [k for k in critical if not cap.get(k)] + [k for k in ("input_l0", "input_l1")
+                                                           if not cap.get(k)]
+        if cap.get("input_l2") is False:
+            fails.append("input_l2")
+        if fails:
+            bus.publish(make_event("run_finished", execution_id,
+                                   context={"result": "gate_blocked",
+                                            "fails": fails,
+                                            "errors": h["errors"]}))
+            self._state = "gate_blocked"
+            return "gate_blocked"
+        return None
 
     def pause(self):
         self._state = "paused"

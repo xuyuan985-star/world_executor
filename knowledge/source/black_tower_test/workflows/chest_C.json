@@ -5,6 +5,6 @@
     {"type": "state_check", "state_id": "switch_on", "expected": true, "poll_interval": 2, "timeout": 60},
     {"type": "move", "target": "lm_hall_center", "timeout": 20},
     {"type": "interact", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "retry": 2},
-    {"type": "verify", "signal": "minimap_icon", "expected": "vanished", "timeout": 30}
+    {"type": "verify", "signal": "minimap_chest_icon", "expected": "vanished", "timeout": 30}
   ]
 }

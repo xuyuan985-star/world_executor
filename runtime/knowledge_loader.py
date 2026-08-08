@@ -64,6 +64,7 @@ class KnowledgePackage:
                         break
         for item in (self.portals or []) + (self.landmarks or []):
             trig = item.get("trigger") or {}
-            if item.get("id") and trig.get("template"):
-                mapping.setdefault(item["id"], trig["template"])
+            tmpl = trig.get("template") or item.get("template")
+            if item.get("id") and tmpl:
+                mapping.setdefault(item["id"], tmpl)
         return mapping
