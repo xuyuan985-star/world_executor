@@ -4,17 +4,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from runtime.events.schema import make_event
 from runtime.knowledge_loader import KnowledgePackage
 from runtime.state_machine import Event, State, StateMachine
 
 ANOMALY_TARGET = "chest_D"
 
 
-def simulate_step(machine, step, pkg, sim_context):
+def _emit(bus, execution_id, event_type, **kw):
+    if bus is not None:
+        bus.publish(make_event(event_type, execution_id, **kw))
+
+
+def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
     kind = step["type"]
     if kind == "portal":
         portal = pkg.portal(step["portal_id"])
         print(f"  [SIM] {machine.state.name}  → portal step: {portal['id']} ({portal['from']}→{portal['to']})")
+        _emit(bus, execution_id, "action_executed", detail=f"portal:{portal['id']}",
+              context={"room": sim_context["room"]})
         machine.on(Event.PORTAL_EXPECTED, f"portal {portal['id']} ahead")
         time.sleep(0.05)
         machine.on(Event.PORTAL_DETECTED, "loading screen")
@@ -36,11 +44,16 @@ def simulate_step(machine, step, pkg, sim_context):
         if sim_context["room"] == "room_B" and target == "lm_left_wing_end" and not sim_context.get("lm_end_ok"):
             sim_context["lm_end_ok"] = True
             print(f"  [SIM] {machine.state.name}  → move {target} FAILED (template miss)")
+            _emit(bus, execution_id, "observation",
+                  detail=f"template:{target} miss",
+                  context={"room": sim_context["room"], "observer": "template_match", "confidence": 0.31})
             machine.on(Event.EVENT_INTERRUPTED, "move fail")
             machine.on(Event.RECOVER_OK, "retry after recovery")
             print(f"  [SIM] {machine.state.name}  → move {target} retry OK")
         else:
             print(f"  [SIM] {machine.state.name}  → move to landmark {target} OK")
+            _emit(bus, execution_id, "action_executed", detail=f"move:{target}",
+                  context={"room": sim_context["room"]})
         return True
 
     if kind == "visual_guided_move":
@@ -63,7 +76,7 @@ def simulate_step(machine, step, pkg, sim_context):
     return False
 
 
-def dry_run(pkg_dir, target_ids=None):
+def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
     pkg = KnowledgePackage(Path(pkg_dir))
     print(f"== dry_run: {pkg.root.name} ==")
 
@@ -74,6 +87,7 @@ def dry_run(pkg_dir, target_ids=None):
         for e in errors:
             print(f"  [ERROR] {e}")
         print("dry_run 中止: 知识包校验未通过")
+        _emit(bus, execution_id, "run_finished", context={"result": "invalid"})
         return 1
 
     spawn = pkg.spawn_room()
@@ -82,21 +96,34 @@ def dry_run(pkg_dir, target_ids=None):
 
     for cid in targets:
         sim_context = {"room": spawn, "states": {}, "lm_end_ok": False}
-        machine = StateMachine(target_id=cid, room=spawn, logger=None)
+
+        def logger(prev, new, action, reason, _cid=cid):
+            print(f"    {prev:>26} → {new:<26} {reason}")
+            _emit(bus, execution_id, "state_changed",
+                  from_state=prev, to_state=new, detail=reason,
+                  context={"target": _cid, "action": action})
+
+        machine = StateMachine(target_id=cid, room=spawn, logger=logger)
         print(f"\n== target {cid} ==")
+        _emit(bus, execution_id, "target_progress",
+              detail=f"start:{cid}", context={"target": cid, "status": "running"})
         machine.on(Event.START, "dry_run start")
         machine.on(Event.ROOM_MATCH, f"in {spawn}")
         wf = pkg.workflow(cid)
         for i, step in enumerate(wf["steps"]):
             if machine.state in (State.DONE, State.ABORT):
                 break
-            simulate_step(machine, step, pkg, sim_context)
+            simulate_step(machine, step, pkg, sim_context, bus=bus, execution_id=execution_id)
             if machine.state in (State.DONE, State.ABORT):
                 break
         if machine.state == State.NAVIGATING:
             machine.on(Event.TARGET_VISIBLE, "simulated target visible")
             machine.on(Event.TARGET_VERIFIED, "simulated verified")
             machine.on(Event.INTERACT_OK, "simulated interaction ok")
+        ok = machine.state == State.DONE
+        _emit(bus, execution_id, "target_progress",
+              detail=f"finish:{cid}:{'ok' if ok else 'fail'}",
+              context={"target": cid, "status": "done" if ok else "failed"})
         print(f"  [SIM] final state = {machine.state.name}  (exec {machine.execution_id})")
         for h in machine.history:
             print(f"    {h[0]:>26} → {h[1]:<26} {h[3]}")

@@ -89,14 +89,15 @@ class StateMachine:
         self.state = State.INIT
         self.history = []
         self.logger = logger
-        self._enter("init", "machine created")
+        self._enter("INIT", "init", "machine created", "NONE")
         db.start_progress(self.execution_id, target_id or "", room or "")
 
-    def _enter(self, name, reason):
-        self.history.append((self.state.name, name, time.time(), reason))
-        db.record_state_observation(self.target_id or "", self.state.name, "state_machine")
+    def _enter(self, new_state, action, reason, prev):
+        new_name = new_state if isinstance(new_state, str) else new_state.name
+        self.history.append((prev, new_name, time.time(), reason))
+        db.record_state_observation(self.target_id or "", new_name, "state_machine")
         if self.logger:
-            self.logger(self.state.name, name, reason)
+            self.logger(prev, new_name, action, reason)
 
     def on(self, event, reason=""):
         if self.state in (State.DONE, State.ABORT):
@@ -105,6 +106,7 @@ class StateMachine:
         if event not in table:
             raise ValueError(f"非法状态迁移: {self.state.name} --[{event.name}]--> ?")
         next_state, action = table[event]
+        prev = self.state.name
         self.state = next_state
-        self._enter(action, reason)
+        self._enter(next_state, action, reason, prev)
         return self.state
