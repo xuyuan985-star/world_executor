@@ -36,6 +36,30 @@ PERMANENT_MARKERS = (
     "executor_exception", "uipi_block", "gate_blocked",
 )
 
+# #19 RecoveryPolicy：失败 → 恢复建议（轻量版，供 orchestrator/GUI 决策）
+# 键 = 失败特征子串；值 = 建议动作（reobserve / alternative / retry / abort）
+RECOVERY_POLICY = [
+    ("no_observation", "reobserve"),
+    ("stale_observation", "reobserve"),
+    ("low_confidence", "reobserve"),
+    ("click_element_failed", "alternative"),
+    ("click_text_failed", "alternative"),
+    ("unknown_entity", "abort"),
+    ("unknown_method", "abort"),
+    ("uipi_block", "abort"),
+    ("gate_blocked", "abort"),
+]
+
+
+def recovery_for(error):
+    """#19：按失败特征给出恢复策略建议。"""
+    if not error:
+        return "retry"
+    for key, action in RECOVERY_POLICY:
+        if key in error:
+            return action
+    return "retry"
+
 # 观测时效（#39）：超过该秒数的 bbox 视为过期，拒绝执行
 OBS_MAX_AGE = 1.5
 # 观测置信度下限（#40）：低于此值拒绝执行
@@ -79,6 +103,12 @@ class RealExecutor:
         self._entity_templates = None
         self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
         self._MAX_RECENT = 100
+        # #1：method → 处理器 registry（扩展定位方式=注册，不改 execute）
+        self._method_handlers = {
+            ActionMethod.TEMPLATE.value: self._execute_template,
+            ActionMethod.VLM_BBOX.value: self._execute_vlm_bbox,
+            ActionMethod.TEXT.value: self._execute_text,
+        }
 
     @property
     def driver(self):
@@ -198,12 +228,10 @@ class RealExecutor:
             if intent.action in INPUT_ACTIONS else 0.0
         time.sleep(delay)
         try:
-            if intent.method == ActionMethod.TEMPLATE.value:
-                result = self._execute_template(intent)
-            elif intent.method == ActionMethod.VLM_BBOX.value:
-                result = self._execute_vlm_bbox(intent)
-            elif intent.method == ActionMethod.TEXT.value:
-                result = self._execute_text(intent)
+            # #1：method 分派查表（registry）——新增定位方式不改 execute 本体
+            handler = self._method_handlers.get(intent.method)
+            if handler is not None:
+                result = handler(intent)
             else:
                 result = backend.execute(intent)
         except Exception as e:
@@ -235,9 +263,12 @@ class RealExecutor:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"unknown_entity:{intent.target}")
         params = intent.params
-        # #36：executor 只调 backend 原语，不摸 .auto（March7th 细节隔离在适配层）
-        return self.driver.input.click_template(
+        # #5：模板路径/阈值进 result detail——复盘时知道点了哪个模板什么阈值
+        result = self.driver.input.click_template(
             path, params.get("threshold", 0.85), params.get("max_retries", 3))
+        result.detail.update({"template": str(path),
+                              "threshold": params.get("threshold", 0.85)})
+        return result
 
     def _execute_text(self, intent):
         """text 定位专用路径（与 template/vlm_bbox 对称，不依赖 backend 自定义 execute）。"""
@@ -282,6 +313,7 @@ class RealExecutor:
         ctx = {"category": cat, "target": intent.target,
                "error": result.error,
                "failure_signature": signature,
+               "suggested_recovery": recovery_for(result.error),  # #19
                "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         try:

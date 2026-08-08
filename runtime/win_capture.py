@@ -165,11 +165,14 @@ def capture_game_foreground(info, wait_seconds=0.8, prewarm=True):
 
     #18：SetProcessDPIAware 不在本函数调用——DPI context 必须在进程早期设置，
     由各入口 main() 统一处理（gui/run.py、工具脚本）。
+    #11：截图前确认前台仍为游戏窗口（0.8s 等待期间用户切走则放弃，防截错窗口）。
     """
     import time
     hwnd = info["hwnd"]
     set_foreground_with_retry(hwnd)
     time.sleep(wait_seconds)
+    if ctypes.windll.user32.GetForegroundWindow() != hwnd:
+        raise RuntimeError("前台已被切换（用户介入或抢焦点失败），放弃前台截图")
 
     pt = win32gui.ClientToScreen(hwnd, (0, 0))
     w, h = info["client"]
