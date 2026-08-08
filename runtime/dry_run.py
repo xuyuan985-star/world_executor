@@ -1,0 +1,106 @@
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from runtime.knowledge_loader import KnowledgePackage
+from runtime.state_machine import Event, State, StateMachine
+
+ANOMALY_TARGET = "chest_D"
+
+
+def simulate_step(machine, step, pkg, sim_context):
+    kind = step["type"]
+    if kind == "portal":
+        portal = pkg.portal(step["portal_id"])
+        print(f"  [SIM] {machine.state.name}  → portal step: {portal['id']} ({portal['from']}→{portal['to']})")
+        machine.on(Event.PORTAL_EXPECTED, f"portal {portal['id']} ahead")
+        time.sleep(0.05)
+        machine.on(Event.PORTAL_DETECTED, "loading screen")
+        time.sleep(0.05)
+        machine.on(Event.ROOM_MATCH, f"arrived {portal['to']}")
+        sim_context["room"] = portal["to"]
+        return True
+
+    if kind == "state_check":
+        state = sim_context["states"].get(step["state_id"], False)
+        print(f"  [SIM] {machine.state.name}  → state_check {step['state_id']} = {state}")
+        if not state:
+            sim_context["states"][step["state_id"]] = True
+            print("  [SIM]      state now True (simulated precondition trigger)")
+        return True
+
+    if kind == "move":
+        target = step["target"]
+        if sim_context["room"] == "room_B" and target == "lm_left_wing_end" and not sim_context.get("lm_end_ok"):
+            sim_context["lm_end_ok"] = True
+            print(f"  [SIM] {machine.state.name}  → move {target} FAILED (template miss)")
+            machine.on(Event.ROOM_MISMATCH if False else Event.EVENT_INTERRUPTED, "move fail")
+            machine.on(Event.RECOVER_OK, "retry after recovery")
+            return False
+        print(f"  [SIM] {machine.state.name}  → move to landmark {target} OK")
+        return True
+
+    if kind == "visual_guided_move":
+        print(f"  [SIM] {machine.state.name}  → visual_guided_move {step.get('ticks')} ticks x {step.get('step_seconds')}s")
+        return True
+
+    if kind == "interact":
+        print(f"  [SIM] {machine.state.name}  → interact template={step['template']} (click)")
+        return True
+
+    if kind == "verify":
+        print(f"  [SIM] {machine.state.name}  → verify signal={step['signal']} expected={step['expected']}")
+        return True
+
+    if kind == "wait":
+        print(f"  [SIM] {machine.state.name}  → wait {step.get('seconds', 1)}s")
+        return True
+
+    print(f"  [SIM] unknown step type: {kind}")
+    return False
+
+
+def dry_run(pkg_dir, target_ids=None):
+    pkg = KnowledgePackage(Path(pkg_dir))
+    print(f"== dry_run: {pkg.root.name} ==")
+
+    from ingest.compiler.validate_graph import validate
+
+    errors, warnings = validate(pkg, verbose=False)
+    if errors:
+        for e in errors:
+            print(f"  [ERROR] {e}")
+        print("dry_run 中止: 知识包校验未通过")
+        return 1
+
+    spawn = pkg.spawn_room()
+    print(f"spawn_room = {spawn}")
+    targets = target_ids or [c["id"] for c in pkg.chests]
+
+    for cid in targets:
+        sim_context = {"room": spawn, "states": {}, "lm_end_ok": False}
+        machine = StateMachine(target_id=cid, room=spawn, logger=None)
+        print(f"\n== target {cid} ==")
+        machine.on(Event.START, "dry_run start")
+        machine.on(Event.ROOM_MATCH, f"in {spawn}")
+        wf = pkg.workflow(cid)
+        for i, step in enumerate(wf["steps"]):
+            if machine.state in (State.DONE, State.ABORT):
+                break
+            simulate_step(machine, step, pkg, sim_context)
+            if machine.state in (State.DONE, State.ABORT):
+                break
+        if machine.state == State.NAVIGATING:
+            machine.on(Event.TARGET_VISIBLE, "simulated target visible")
+            machine.on(Event.TARGET_VERIFIED, "simulated verified")
+            machine.on(Event.INTERACT_OK, "simulated interaction ok")
+        print(f"  [SIM] final state = {machine.state.name}  (exec {machine.execution_id})")
+        for h in machine.history:
+            print(f"    {h[0]:>26} → {h[1]:<26} {h[3]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(dry_run(sys.argv[1], sys.argv[2:] or None))

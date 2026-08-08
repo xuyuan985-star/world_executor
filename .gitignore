@@ -1,0 +1,35 @@
+# 环境变量（禁止提交）
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行时状态
+runtime.db
+runtime.db-*
+*.sqlite3
+
+# 原始视频/中间产物
+攻略视频/
+ingest/raw/frames/
+ingest/raw/events/*.json
+ingest/tmp/
+
+# 密钥与本地配置
+settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
