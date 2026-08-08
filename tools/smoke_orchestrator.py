@@ -155,9 +155,9 @@ class FakeVLM:
 
     def locate_target(self, screenshot, target_desc):
         x, y = self.TARGET_POS.get(target_desc, (500, 500))
+        # Bug15：bbox 用明显值 [x1,y1,x2,y2]（中心 (0.4+0.6)/2=0.5）——可验证格式语义
         return {"found": True, "screen_x": x, "screen_y": y,
-                "confidence": 0.9, "bbox": [x / 1000.0, y / 1000.0,
-                                            x / 1000.0, y / 1000.0]}
+                "confidence": 0.9, "bbox": [0.4, 0.4, 0.6, 0.6]}
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.0, "ui_state": None}
@@ -182,15 +182,16 @@ class FakeObserver:
     """#20-7 观察器替身：观察 → Observation（不产决策）。"""
 
     def __init__(self, text=None, entities=None):
-        self.text = text or ["chest_A"]
-        self.entities = entities or []
+        # Bug16：构造时深复制——外部修改 self.text 不污染后续 observe
+        self._text = list(text or ["chest_A"])
+        self._entities = list(entities or [])
         self.counter = 0  # 每次观察递增——frame_id 唯一（防去重/确认逻辑失效）
 
     def observe(self):
         from runtime.observation import Observation
         self.counter += 1
-        return Observation(ui_state="test", text=list(self.text),
-                           entities=list(self.entities),
+        return Observation(ui_state="test", text=list(self._text),
+                           entities=list(self._entities),
                            confidence=1.0, source="fake",
                            frame_id=f"fake-{self.counter}")
 
@@ -254,11 +255,12 @@ def run_scenario(clicks, label):
     for t, ctx in seen:
         if t in ("fail_recorded", "target_progress", "action_executed"):
             print(f"  {t}: {ctx}")
-    return results, end_state
+    # Bug20：返回完整审计面（事件流）——失败可定位"为什么"
+    return results, end_state, seen
 
 
 def main():
-    results, state = run_scenario([True] * 10, "ok")
+    results, state, _seen_ok = run_scenario([True] * 10, "ok")
     assert results == {"chest_A": True}, results
     assert state == State.DONE, state
 
@@ -285,7 +287,7 @@ def main():
     assert order[-1] == "target_progress", order[-2:]  # done 事件收尾
     print("[ok] 事件生命周期顺序 PASS")
 
-    results, state = run_scenario([True, False, False, False], "fail")
+    results, state, _seen_fail = run_scenario([True, False, False, False], "fail")
     assert results == {"chest_A": False}, results
     print("[ok] interact 失败 → retry 用尽 → target failed PASS (state=%s)" % state.value)
 

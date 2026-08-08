@@ -111,6 +111,21 @@ def main():
     assert r_fail.retryable is True, r_fail  # transient 可重试
     print("[guard] 错误成功防护（失败不被当成功）PASS")
 
+    # Bug23：状态机非法跳转——DONE 后重试必须被拒（设计：静默返回防 orchestrator
+    # 重试误炸——断言状态不变即为防护生效）
+    from runtime.state_machine import StateMachine, State, Event
+    sm = StateMachine(execution_id="guard-sm")
+    # 合法路径走到 DONE：INIT→CHECK→NAVIGATING→VERIFYING→INTERACTING→DONE
+    sm.on(Event.START, "start")
+    sm.on(Event.ROOM_MATCH, "room ok")
+    sm.on(Event.TARGET_VISIBLE, "visible")
+    sm.on(Event.TARGET_VERIFIED, "verified")
+    sm.on(Event.INTERACT_OK, "interact ok")
+    assert sm.state == State.DONE, sm.state
+    sm.on(Event.INTERACT_AGAIN, "illegal")  # DONE 后重试 → 静默拒绝
+    assert sm.state == State.DONE, "非法迁移污染了状态机状态！"
+    print("[guard] 状态机非法迁移防护（DONE 后状态不变）PASS")
+
     print("[guard] Case 1-4 + 幻觉风险 全部 PASS")
 
 
