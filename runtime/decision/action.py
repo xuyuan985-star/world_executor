@@ -1,5 +1,8 @@
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
+from types import MappingProxyType
+from typing import Mapping
 
 
 class ActionMethod(Enum):
@@ -10,9 +13,14 @@ class ActionMethod(Enum):
     VLM_BBOX = "vlm_bbox"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ActionIntent:
     """动作意图：决策层产出，不携带任何坐标。
+
+    #35 不可变契约：
+    - frozen + params=MappingProxyType——执行期间任何层（callback/retry/planner）
+      都无法原地改写意图，防止"第一次 threshold=0.85，retry 后变 0.95"的隐式漂移。
+    - id：意图唯一键（#39b），action_started/action_completed 事件按 id 关联。
 
     语义约束（v0.12.1 Errata）：
     - target 一律为**世界实体 id**（chest_001 / lm_hall_center）或 UI 文字（method=text）；
@@ -23,18 +31,21 @@ class ActionIntent:
     action: str          # interact | click_text | move | press_key
     target: str          # 世界实体 id / UI 文字
     method: str          # ActionMethod 值（构造时校验）
-    params: dict = field(default_factory=dict)
+    params: Mapping = field(default_factory=dict)
     reason: str = None   # 决策意图（objective_verify_chest …）
     source: str = "decision_layer"
     idempotent: bool = True  # #32：非幂等动作（传送/确认/购买）禁止 retry
-    execution_id: str = None  # #45：贯穿日志/失败关联（executor 执行时填充）
+    execution_id: str = None  # #45：贯穿日志/失败关联（构造时由执行链传入）
+    id: str = field(default_factory=lambda: f"int_{uuid.uuid4().hex[:8]}")
 
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:
             raise ValueError(f"非法 method: {self.method}（允许: {sorted(m.value for m in ActionMethod)}）")
+        object.__setattr__(self, "params", MappingProxyType(dict(self.params)))
 
     def to_context(self):
-        ctx = {"action": self.action, "target": self.target, "method": self.method}
+        ctx = {"action": self.action, "target": self.target, "method": self.method,
+               "intent_id": self.id}
         if self.reason:
             ctx["reason"] = self.reason
         if self.execution_id:

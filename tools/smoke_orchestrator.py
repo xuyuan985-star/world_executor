@@ -66,18 +66,30 @@ class FakeDriver:
         self.vision = FakeVision()
 
 
+class FakeVLM:
+    """VLM 观察者替身：#42 VGM 定位路径需要真实命中才 success。"""
+
+    def locate_target(self, screenshot, target_desc):
+        return {"found": True, "screen_x": 500, "screen_y": 500,
+                "confidence": 0.9, "bbox": [0.5, 0.5, 0.5, 0.5]}
+
+    def observe_room(self, screenshot, room_ids):
+        return {"room": None, "confidence": 0.0, "ui_state": None}
+
+
 def run_scenario(clicks, label):
     bus = EventBus()
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
 
     pkg = KnowledgePackage(KNOWLEDGE)
-    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=f"smoke-{label}", use_vlm=False)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=f"smoke-{label}", use_vlm=True)
 
     def driver_factory():
         return FakeDriver(list(clicks))
 
-    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory):
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM):
         results, completed = orch.run_mission(["chest_A"])
 
     end_state = orch._machine.state

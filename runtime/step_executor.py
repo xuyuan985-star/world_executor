@@ -175,7 +175,6 @@ class RealExecutor:
         - #44：natural_mode=False 时确定性（delay=0）
         """
         from runtime.input.base import InputResult
-        intent.execution_id = self.execution_id
         backend = self.driver.input
         delay = (self.naturalness.click_delay() if self.natural_mode else 0.0) \
             if intent.action in INPUT_ACTIONS else 0.0
@@ -275,32 +274,47 @@ class RealExecutor:
         #12：intent 是系统边界，非法实体（None/空）不得进入。
         """
         if not entity_id:
-            return False
+            return ExecutionResult(success=False, error="interact:no_entity",
+                                   retryable=False, category="F3")
         return self.execute(ActionIntent(
             action="interact", target=entity_id, method=ActionMethod.TEMPLATE.value,
             params={"threshold": threshold, "max_retries": max_retries},
-            reason="objective_interact"))
+            reason="objective_interact", execution_id=self.execution_id))
 
     def click_text(self, text, include=True, max_retries=3, crop=None):
         if not text:
-            return False
+            return ExecutionResult(success=False, error="click_text:no_text",
+                                   retryable=False, category="F3")
         return self.execute(ActionIntent(
             action="click_text", target=text, method=ActionMethod.TEXT.value,
             params={"include": include, "max_retries": max_retries, "crop": crop},
-            reason="objective_ui"))
+            reason="objective_ui", execution_id=self.execution_id))
 
     def click_vlm_entity(self, entity_id):
         """按世界实体 id 点击：位置取自该实体的最近观测记录。"""
+        if not entity_id:
+            return ExecutionResult(success=False, error="click_vlm:no_entity",
+                                   retryable=False, category="F3")
         return self.execute(ActionIntent(
             action="interact", target=entity_id, method=ActionMethod.VLM_BBOX.value,
-            reason="objective_interact_vlm"))
+            reason="objective_interact_vlm", execution_id=self.execution_id))
 
-    def move_visual_guided(self, target_desc, ticks, step_seconds, threshold=0.8):
-        """VLM 短步移动：#14 方向修正（目标在左 → 左转 a），#15 收敛判断。"""
+    def move_visual_guided(self, target_desc, ticks, step_seconds, threshold=0.8,
+                           abort_check=None) -> ExecutionResult:
+        """VLM 短步移动：#14 方向修正（目标在左 → 左转 a），#15 收敛判断。
+
+        #42：不再无条件 True——目标从未被定位 → 失败（F2_COORD），
+        状态机不会被假成功污染。
+        """
+        located = 0
         for i in range(ticks):
+            if abort_check and abort_check():
+                return ExecutionResult(success=False, error="move_aborted",
+                                       retryable=True, category="F2")
             pos = self.locate_target(target_desc)
             if pos is None:
-                break
+                continue
+            located += 1
             x, y = pos
             # 收敛：目标已在屏幕中央附近 → 停（避免撞墙/来回）
             if abs(x - 0.5) < 0.05 and abs(y - 0.5) < 0.15:
@@ -315,7 +329,10 @@ class RealExecutor:
                 self.driver.input.press_key(side, wait_time=self.naturalness.rotate_duration())
                 self._emit("action_executed", detail=f"steer:{side}",
                            context={"naturalized": True, "tick": i})
-        return True
+        if located == 0:
+            return ExecutionResult(success=False, error="no_observation",
+                                   retryable=False, category="F2_COORD")
+        return ExecutionResult(success=True, category="F2")
 
     def portal_transition(self, portal, wait_base, threshold=0.8, verify_timeout=10):
         """#16：点击成功 ≠ 传送成功——click → wait → verify_signal 三步缺一不可。
@@ -333,8 +350,14 @@ class RealExecutor:
             return self.verify_signal(vtmpl, "vanished", verify_timeout)
         return True
 
-    def verify_signal(self, template, expected, timeout, threshold=0.8):
-        """#24：template 必须解析在 templates_dir 内（防知识包路径穿越）。"""
+    def verify_signal(self, template, expected, timeout, threshold=0.8,
+                      abort_check=None):
+        """#24：template 必须解析在 templates_dir 内（防知识包路径穿越）。
+
+        #41：阻塞循环每 tick 检查 abort_check（如 EmergencyMonitor.is_paused /
+        session stop），为真立即返回 False——避免 30s 验证期间卡死主循环，
+        心跳/监控全部失效。
+        """
         tpl = self._resolve_template_path(template)
         if tpl is None:
             return False
@@ -342,6 +365,8 @@ class RealExecutor:
         deadline = time.time() + timeout
         delay = 0.2
         while time.time() < deadline:
+            if abort_check and abort_check():
+                return False
             # #17：阈值参数化（默认 0.8，后续可配置化），不硬编码
             found = vision.find_template(str(tpl), threshold) is not None
             if (expected == "vanished" and not found) or (expected == "present" and found):

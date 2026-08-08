@@ -31,7 +31,20 @@ class ObservationStore:
                 del self._data[k]
 
     def get(self, entity_id):
-        return self._data.get(entity_id)
+        """#38：返回不可变快照（拷贝），observer/executor 各持一份——
+        executor 读取期间 observer 更新不会看到半更新状态。"""
+        rec = self._data.get(entity_id)
+        if rec is None:
+            return None
+        return ObservationRecord(
+            bbox=tuple(rec.bbox),
+            timestamp=rec.timestamp,
+            confidence=rec.confidence,
+            frame_id=rec.frame_id,
+        )
+
+    def snapshot(self, entity_id):
+        return self.get(entity_id)
 
     def clear(self):
         self._data.clear()

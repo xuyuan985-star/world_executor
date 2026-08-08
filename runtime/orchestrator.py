@@ -17,6 +17,10 @@ from runtime.state_machine import Event, State, StateMachine
 
 TARGET_ALIVE = ("running", "succeeded", "failed")
 
+# #44：workflow 步骤类型白名单——未知类型 fail-fast（F3），
+# 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，无其他执行语义
+STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
+
 
 class TargetRecord:
     """#38：单目标生命周期记录——attempts/结果/失败分类，会话结束可统计。"""
@@ -155,7 +159,12 @@ class WorkflowOrchestrator:
 
     def _run_step(self, step, idx, wf):
         step_type = step.get("type")
-        ex = self.executor
+        if step_type not in STEP_TYPES:  # #44：白名单，拒绝未知步骤类型
+            self._emit("fail_recorded", detail=f"F3:unknown_step:{step_type}",
+                       context={"category": "F3", "target": wf.get("target_id"),
+                                "error": f"unknown_step:{step_type}"})
+            return ExecutionResult(success=False, error=f"unknown_step:{step_type}",
+                                   retryable=False, category="F3")
         if step_type == "move":
             return self._step_move(step)
         if step_type == "visual_guided_move":
@@ -164,10 +173,7 @@ class WorkflowOrchestrator:
             return self._step_interact(step, wf)
         if step_type == "verify":
             return self._step_verify(step)
-        self._emit("fail_recorded", detail=f"F3:unknown_step:{step_type}",
-                   context={"category": "F3", "target": wf.get("target_id"),
-                            "error": f"unknown_step:{step_type}"})
-        return ExecutionResult(success=False, error=f"unknown_step:{step_type}",
+        return ExecutionResult(success=False, error=f"unhandled_step:{step_type}",
                                retryable=False, category="F3")
 
     def _step_move(self, step):
@@ -181,10 +187,9 @@ class WorkflowOrchestrator:
     def _step_vgm(self, step, wf):
         ticks = step.get("ticks", 3)
         step_seconds = step.get("step_seconds", 2)
-        self.executor.move_visual_guided(
+        # #42：VGM 结果以真实定位为准——目标从未出现即失败，不污染状态机
+        return self.executor.move_visual_guided(
             f"{wf.get('target_id')} 附近的可互动宝箱实体", ticks, step_seconds)
-        # #41：VGM 不产 bool——结果以后续 verify 为准，此处仅位置修正
-        return ExecutionResult(success=True, category="F2")
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")
