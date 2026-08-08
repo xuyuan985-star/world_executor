@@ -67,3 +67,34 @@ def make_event(event_type, execution_id, **kw):
     if event_type not in EVENT_TYPES:
         raise ValueError(f"非法事件类型: {event_type}")
     return WorldEvent(type=event_type, execution_id=execution_id, **kw)
+
+
+@dataclass
+class Observation:
+    """Observation Contract（v0.11 冻结）：所有观测必须构造此对象，禁止裸 dict。"""
+    observer: str  # 必须是 OBSERVER_TYPES 之一
+    target: str
+    confidence: float
+    timestamp: float
+    context: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.observer not in OBSERVER_TYPES:
+            raise ValueError(f"非法 observer: {self.observer}（允许: {sorted(OBSERVER_TYPES)}）")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence 越界: {self.confidence}")
+
+    def to_event(self, execution_id, **kw):
+        return WorldEvent(
+            type="observation",
+            execution_id=execution_id,
+            detail=self.target,
+            context={
+                "observer": self.observer,
+                "target": self.target,
+                "confidence": self.confidence,
+                "timestamp": self.timestamp,
+                **self.context,
+            },
+            **kw,
+        )

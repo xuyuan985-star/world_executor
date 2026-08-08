@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS progress (
     started_at TEXT DEFAULT (datetime('now', 'localtime')),
     ended_at TEXT
 );
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    from_state TEXT,
+    to_state TEXT,
+    detail TEXT,
+    context TEXT,
+    event_time REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS fail_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL,
@@ -72,12 +82,34 @@ CREATE TABLE IF NOT EXISTS state_observation (
 CREATE INDEX IF NOT EXISTS idx_progress_target ON progress(target_id);
 CREATE INDEX IF NOT EXISTS idx_fail_target ON fail_log(target_id);
 CREATE INDEX IF NOT EXISTS idx_state_target ON state_observation(target_id);
+CREATE INDEX IF NOT EXISTS idx_events_exec ON events(execution_id, event_time);
 """
 
 
 def init(db):
     db.executescript(SCHEMA)
     db.commit()
+
+
+def record_event(event):
+    db = conn()
+    import json
+    db.execute(
+        "INSERT INTO events (execution_id, event_type, from_state, to_state, detail, context, event_time) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event.execution_id, event.type, event.from_state, event.to_state, event.detail,
+         json.dumps(event.context, ensure_ascii=False), event.time),
+    )
+    db.commit()
+
+
+def replay_events(execution_id, limit=500):
+    db = conn()
+    rows = db.execute(
+        "SELECT * FROM events WHERE execution_id=? ORDER BY id DESC LIMIT ?",
+        (execution_id, limit),
+    ).fetchall()
+    return [dict(r) for r in reversed(rows)]
 
 
 def record_state_observation(target_id, value, observer, confidence=None):

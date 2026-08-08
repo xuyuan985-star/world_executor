@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+﻿from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QLabel
 
 from gui.pages.command_deck import CommandDeck
@@ -62,7 +62,7 @@ class MainWindow(FluentWindow):
 
     def _start_run(self, targets):
         from runtime.api.commands import MissionSpec
-        spec = MissionSpec(knowledge_dir="knowledge/black_tower_test",
+        spec = MissionSpec(knowledge_dir="knowledge/source/black_tower_test",
                            target_ids=targets or None)
         self.command_deck.reset()
         self.api.start_mission(spec)

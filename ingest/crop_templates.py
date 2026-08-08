@@ -1,4 +1,4 @@
-import json
+﻿import json
 import sys
 from pathlib import Path
 
@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PIL import Image
 
 CAPTURE_DIR = Path("ingest/raw/frames/capture")
-TEMPLATE_DIR = Path("knowledge/black_tower_test/templates")
+TEMPLATE_DIR = Path("knowledge/source/black_tower_test/templates")
 
 
 def norm_box(box, w, h, pad=8):

@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,7 +17,7 @@ def main():
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)
 
-    pkg = KnowledgePackage(Path("knowledge/black_tower_test"))
+    pkg = KnowledgePackage(Path("knowledge/source/black_tower_test"))
     targets = pkg.chests or []
     bus = EventBus(persist_path="ingest/raw/events/studio.jsonl")
     api = RuntimeAPI(bus)

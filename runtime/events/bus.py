@@ -30,6 +30,11 @@ class EventBus:
                 cb(event)
             except Exception:
                 pass
+        try:
+            from runtime import db
+            db.record_event(event)
+        except Exception:
+            pass
 
     def replay(self, execution_id=None):
         with self._lock:

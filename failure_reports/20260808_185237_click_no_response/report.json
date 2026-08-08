@@ -1,0 +1,36 @@
+{
+  "time": 1786186357.585655,
+  "tag": "click_no_response",
+  "detail": "点击测试：点击后 UI 未变化",
+  "context": {
+    "clicked_text": "商店",
+    "physical": [
+      2281.5,
+      558.625
+    ],
+    "ocr_after": [
+      "合成",
+      "E",
+      "36834789",
+      "消耗品合成",
+      "一瞬间的幸福",
+      "renv\\Scripts\\python.exe",
+      "欢迎使用 March7th Assistant",
+      "消耗品效果",
+      "os://github. com/moesnow/March7thAssistant",
+      "使用后立即为我方指定单体回复等同于自身生命上限40%的生命",
+      "程序为免费开源项目如果你付了钱请立刻退款",
+      "值，并额外回复320点生命值。",
+      "(2282, 559)",
+      "有：127",
+      "所需材料",
+      "10/3",
+      "568/3",
+      "608/1",
+      "合成数量：1",
+      "46"
+    ]
+  },
+  "vlm_outputs": {},
+  "screenshot": "click_after.jpg"
+}
