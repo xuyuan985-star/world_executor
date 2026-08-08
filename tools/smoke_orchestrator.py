@@ -55,30 +55,30 @@ class FakeInput:
                                error="ui_no_change")
         return None
 
-    def click(self, x, y):
+    def click(self, x, y) -> InputResult:
         f = self._maybe_fail("click")
         if f:
             return f
         return InputResult(success=self.click_result, action="click", backend="fake")
 
-    def click(self, x, y):
+    def click(self, x, y) -> InputResult:
         return InputResult(success=self.click_result, action="click", backend="fake")
 
-    def click_template(self, path, threshold, max_retries):
+    def click_template(self, path, threshold, max_retries) -> InputResult:
         ok = bool(self.auto.click_element(path, "image", threshold, max_retries))
         return InputResult(success=ok, action="click_template", backend="fake",
                            error=None if ok else "click_element_failed")
 
-    def click_text(self, text, include, max_retries, crop):
+    def click_text(self, text, include, max_retries, crop) -> InputResult:
         ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,
                                           include=include, crop=crop))
         return InputResult(success=ok, action="click_text", backend="fake",
                            error=None if ok else "click_text_failed")
 
-    def press_key(self, key, wait_time=0):
+    def press_key(self, key, wait_time=0.2) -> InputResult:
         return InputResult(success=True, action="press_key", backend="fake")
 
-    def release_key(self, key):
+    def release_key(self, key) -> InputResult:
         return InputResult(success=True, action="release_key", backend="fake")
 
 
@@ -106,6 +106,17 @@ class FakeDriver:
 assert isinstance(FakeInput([True]), InputBackendProtocol), \
     "FakeInput 未实现 InputBackendProtocol（接口漂移！）"
 
+# B-2（测试审计）：runtime_checkable 只查方法存在不查签名——补签名比对
+import inspect as _inspect
+_PROTO_METHODS = [m for m in ("click", "press_key", "release_key",
+                              "click_template", "click_text")
+                  if hasattr(InputBackendProtocol, m)]
+for _m in _PROTO_METHODS:
+    _psig = _inspect.signature(getattr(InputBackendProtocol, _m))
+    _fsig = _inspect.signature(getattr(FakeInput, _m))
+    assert _psig == _fsig, f"FakeInput.{_m} 签名漂移: protocol={_psig} fake={_fsig}"
+print("[contract] InputBackendProtocol 签名比对 PASS")
+
 
 class FakeVLM:
     """VLM 观察者替身：#42 VGM 定位路径需要真实命中才 success。"""
@@ -119,10 +130,15 @@ class FakeVLM:
 
 
 class FakeVLMFalse:
-    """BUG-08：VLM 定位失败替身——found=false 低置信（幻觉反面：看不到）。"""
+    """BUG-08：VLM 定位失败替身——found=false 低置信（幻觉反面：看不到）。
+
+    与 FakeVLM 同 schema（screen_x/screen_y/bbox 统一 None）——防生产代码
+    按完整字段取值时失败路径 KeyError。
+    """
 
     def locate_target(self, screenshot, target_desc):
-        return {"found": False, "confidence": 0.1}
+        return {"found": False, "screen_x": None, "screen_y": None,
+                "bbox": None, "confidence": 0.1}
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.1, "ui_state": None}
@@ -134,12 +150,15 @@ class FakeObserver:
     def __init__(self, text=None, entities=None):
         self.text = text or ["chest_A"]
         self.entities = entities or []
+        self.counter = 0  # 每次观察递增——frame_id 唯一（防去重/确认逻辑失效）
 
     def observe(self):
         from runtime.observation import Observation
+        self.counter += 1
         return Observation(ui_state="test", text=list(self.text),
                            entities=list(self.entities),
-                           confidence=1.0, source="fake", frame_id="fake-1")
+                           confidence=1.0, source="fake",
+                           frame_id=f"fake-{self.counter}")
 
 
 class FakeBadVLM:
@@ -334,6 +353,7 @@ def main():
         result = orch.observe_act("chest_A")
     assert result.success, result
     assert replay.consumed == 1, replay.consumed
+    assert replay.history == ["click_text"], replay.history  # 只发生一次文本点击
     print("[ok] ReplayInput 确定性输入（回放驱动，替代 Fake 手工 mock）PASS")
 
     # 场景9（#20-9）：ObserveOnly 降级——无输入权限时执行不崩溃，
@@ -403,6 +423,7 @@ def main():
             mock.patch.object(orch, "start_emergency", lambda: None):
         orch.executor._input_override = replay
         orch.executor.guard = ActionGuard(strict=True)  # 执行前必须视觉证明
+        assert orch.executor.guard.strict is True, "guard 注入未生效（可能被内部重建）"
         result = orch.observe_act("chest_A")
     assert not result.success, result
     assert result.error and "vision_guard" in result.error, result.error

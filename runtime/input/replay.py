@@ -16,8 +16,10 @@ class ReplayInput:
         self.results = list(results or [])
         self.index = 0
         self.available = True
+        self.history = []  # 调用动作序列（测试断言实际发生了什么）
 
     def _next(self, action, error="replay_denied"):
+        self.history.append(action)
         if self.index >= len(self.results):
             ok = False
         else:

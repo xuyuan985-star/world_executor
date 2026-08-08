@@ -56,7 +56,7 @@ def main():
         try:
             shot = vision.take_screenshot()
             q = getattr(vision, "last_quality", None)
-            if shot and (q is None or q.quality == "ok"):
+            if shot is not None and (q is None or q.quality == "ok"):
                 ok += 1
             elif q is not None:
                 failures.append(f"#{i}:{q.quality}")
