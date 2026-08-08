@@ -4,7 +4,7 @@
     "from": "room_A",
     "to": "room_B",
     "kind": "loading",
-    "trigger": {"template": "door_A.png", "threshold": 0.8, "scale_range": [0.9, 1.1]},
+    "trigger": {"template": "door.png", "threshold": 0.8, "scale_range": [0.9, 1.1]},
     "load_wait": 8
   }
 ]

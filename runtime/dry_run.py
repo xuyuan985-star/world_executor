@@ -36,10 +36,11 @@ def simulate_step(machine, step, pkg, sim_context):
         if sim_context["room"] == "room_B" and target == "lm_left_wing_end" and not sim_context.get("lm_end_ok"):
             sim_context["lm_end_ok"] = True
             print(f"  [SIM] {machine.state.name}  → move {target} FAILED (template miss)")
-            machine.on(Event.ROOM_MISMATCH if False else Event.EVENT_INTERRUPTED, "move fail")
+            machine.on(Event.EVENT_INTERRUPTED, "move fail")
             machine.on(Event.RECOVER_OK, "retry after recovery")
-            return False
-        print(f"  [SIM] {machine.state.name}  → move to landmark {target} OK")
+            print(f"  [SIM] {machine.state.name}  → move {target} retry OK")
+        else:
+            print(f"  [SIM] {machine.state.name}  → move to landmark {target} OK")
         return True
 
     if kind == "visual_guided_move":

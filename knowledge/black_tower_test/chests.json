@@ -1,6 +1,6 @@
 [
-  {"id": "chest_A", "room": "room_A", "template": "chest_A.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"},
-  {"id": "chest_B", "room": "room_B", "template": "chest_B.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"},
-  {"id": "chest_C", "room": "room_A", "template": "chest_C.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": {"state_id": "switch_on", "precondition": ["switch"]}, "verify_signal": "minimap_icon"},
-  {"id": "chest_D", "room": "room_B", "template": "chest_D.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"}
+  {"id": "chest_A", "room": "room_A", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"},
+  {"id": "chest_B", "room": "room_B", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"},
+  {"id": "chest_C", "room": "room_A", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": {"state_id": "switch_on", "precondition": ["switch"]}, "verify_signal": "minimap_icon"},
+  {"id": "chest_D", "room": "room_B", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_icon"}
 ]
