@@ -37,15 +37,24 @@ def main():
 
         print(f"[smoke] window_title = {auto.window_title}")
 
-        result = auto.take_screenshot()
+        # #20-3.1：截图/OCR 异常分类报告（CI 友好，禁止裸 traceback）
+        try:
+            result = auto.take_screenshot()
+        except Exception as e:
+            print(f"[FAIL] category=capture exception={e!r}")
+            sys.exit(1)
         if result is None:
-            print("[FAIL] take_screenshot 失败（游戏未启动或窗口未找到）")
+            print("[FAIL] category=capture take_screenshot 失败（游戏未启动或窗口未找到）")
             sys.exit(1)
         screenshot, pos, scale = result
         w, h = screenshot.size if hasattr(screenshot, "size") else screenshot.shape[:2][::-1]
         print(f"[ok] take_screenshot  {w}x{h} scale={scale}")
 
-        found = auto.find_text_element("收容舱段", ["收容", "舱段"], need_ocr=True, relative=True)
+        try:
+            found = auto.find_text_element("收容舱段", ["收容", "舱段"], need_ocr=True, relative=True)
+        except Exception as e:
+            print(f"[FAIL] category=ocr exception={e!r}")
+            sys.exit(1)
         if found:
             text, pos = found
             print(f"[ok] OCR find_text_element -> {text} @ {pos}")
@@ -62,7 +71,8 @@ def main():
             lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []
             print(f"[ok] OCR 引擎 {len(lines)} 行: {lines[:8]}")
         except Exception as e:
-            print(f"[warn] OCR 引擎失败: {e}")
+            print(f"[FAIL] category=ocr_engine exception={e!r}")
+            sys.exit(1)
 
         print("[smoke] 全部完成")
     finally:

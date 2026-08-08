@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 
 @dataclass
@@ -19,6 +20,26 @@ class InputResult:
         ctx.update(self.detail)
         ctx.update(extra)
         return ctx
+
+
+@runtime_checkable
+class InputBackendProtocol(Protocol):
+    """#20-3.7：输入后端契约——Fake 与真实实现都必须满足，防接口漂移。
+
+    Fake 测试 PASS 而真机失败的主因之一 = 假实现签名漂移；测试侧
+    断言 isinstance(fake, InputBackendProtocol) 即可防漂移。
+    """
+    name: str
+
+    def click(self, x, y) -> InputResult: ...
+
+    def press_key(self, key, wait_time=0.2) -> InputResult: ...
+
+    def release_key(self, key) -> InputResult: ...
+
+    def click_template(self, path, threshold, max_retries) -> InputResult: ...
+
+    def click_text(self, text, include, max_retries, crop) -> InputResult: ...
 
 
 class InputBackend:

@@ -13,6 +13,13 @@ M7 = ROOT.parent / "March7thAssistant"
 
 
 def main():
+    # #20-3.4：DPI context 必须进程早期设置（任何 GDI/窗口 API 调用之前）；
+    # Windows 专用工具在非 Windows 上明确失败
+    if os.name != "nt":
+        raise RuntimeError("coords_calibrate 仅支持 Windows")
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()
+
     from runtime.security import install_pylnk3_stub, require_m7_path
     require_m7_path(M7)
     install_pylnk3_stub()
@@ -23,10 +30,7 @@ def main():
     from module.automation import auto
     from module.ocr import ocr
     from runtime.win_capture import find_game_window
-    import ctypes
     from ctypes import wintypes
-
-    ctypes.windll.user32.SetProcessDPIAware()
 
     game = find_game_window()
     if game is None:
@@ -49,8 +53,10 @@ def main():
             lines.append((t["txt"], t["box"]))
     target = None
     for txt, box in lines:
-        if "商店" in txt:
-            target = (txt, box)
+        t = (txt or "").strip()
+        # #20-3.3：目标匹配收紧（同 click_test）：防"商店铺/商店公告"误点
+        if "商店" in t and len(t) <= 4:
+            target = (t, box)
             break
     if target is None:
         print(f"[FAIL] 未找到商店。OCR: {[t for t, _ in lines][:15]}")

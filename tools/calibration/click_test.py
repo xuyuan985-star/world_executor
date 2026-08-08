@@ -81,10 +81,13 @@ def main():
     pos_left, pos_top, _, _ = screenshot_pos
 
     lines = ocr_lines(ocr, img)
+    # #20-3.3：目标匹配收紧——"商店"包含匹配太宽（商店铺/商店公告会误点）。
+    # 用 文本长度上限 + 相似度启发：精确"商店"或长度<=4 且含"商店"。
     target = None
     for txt, box in lines:
-        if "商店" in txt:
-            target = (txt, box)
+        t = (txt or "").strip()
+        if "商店" in t and len(t) <= 4:
+            target = (t, box)
             break
     if target is None:
         print(f"[FAIL] 画面中未找到“商店”按钮。OCR: {[t for t, _ in lines][:12]}")
@@ -94,7 +97,9 @@ def main():
                         detail="点击测试：未在画面中找到商店按钮")
         sys.exit(1)
 
+    # #20-3.3：点击前保存证据（"看到什么不重要，要证明看到的是正确东西"）
     img.save(str(out_dir / "click_before.jpg"), "JPEG", quality=92)
+    print("[ok] 点击前证据已保存 click_before.jpg")
     txt, box = target
     lx, ly = box_center(box)
     # 截图内坐标 → 绝对屏幕坐标（>1920 截图时需除以 scale_factor 还原）

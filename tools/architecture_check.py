@@ -58,15 +58,36 @@ def _import_modules(tree):
             if node.module and node.level == 0:
                 mods.append(node.module)
             elif node.module and node.level > 0:
-                # 相对导入：runtime 内部使用（如 from . import db），按包起点补全
-                base = ".".join(node.module.split(".")[:1])
-                mods.append(base)
+                # 相对导入：由调用方传入当前包前缀补全（3.2-1 修复：
+                # from .step_executor import X → runtime.step_executor）
+                mods.append(("." * node.level + node.module))
     return mods
 
 
 def _is_or_below(rel, mod):
     """#30：模块边界必须精确——runtime2.xxx 不是 runtime，runtime.api 是 runtime 之下。"""
     return rel == mod or rel.startswith(mod + ".")
+
+
+def _resolve_relative(mod, file_path, root):
+    """#20-3.2：相对导入还原为绝对模块名。
+
+    runtime/a.py 里 `from .step_executor import X`（level=1, module="step_executor"）
+    → runtime.step_executor。按文件所在包推导。
+    """
+    if not isinstance(mod, str) or not mod.startswith("."):
+        return mod
+    level = len(mod) - len(mod.lstrip("."))
+    suffix = mod[level:]
+    parts = file_path.relative_to(root).as_posix().replace(".py", "").split("/")
+    base = parts[:-level] if level <= len(parts) else parts[:0]
+    return ".".join(base + (suffix.split(".") if suffix else []))
+
+
+def _resolve_imports(tree, file_path, root):
+    mods = _import_modules(tree)
+    return [(_resolve_relative(m, file_path, root) if m.startswith(".") else m)
+            for m in mods]
 
 
 def check_file(path: Path, root: Path):
@@ -78,7 +99,7 @@ def check_file(path: Path, root: Path):
         return []
     rel_mod = ".".join(rel.replace(".py", "").split("/"))
     violations = []
-    for mod in _import_modules(tree):
+    for mod in _resolve_imports(tree, path, root):
         for bad_from, bad_to in FORBIDDEN:
             if _is_or_below(rel_mod, bad_from) and _is_or_below(mod, bad_to):
                 if any(_is_or_below(rel_mod, p) and _is_or_below(mod, q)
@@ -130,7 +151,7 @@ def find_cycles(root: Path):
         except SyntaxError:
             continue
         deps = []
-        for m in _import_modules(tree):
+        for m in _resolve_imports(tree, py, root):
             if m == "runtime" or m.startswith("runtime."):
                 deps.append(m)
         graph[mod] = deps
@@ -140,11 +161,18 @@ def find_cycles(root: Path):
     stack = []
     cycles = []
 
+    def nearest(dep):
+        """#20-3.2：依赖模块不在图中时按最长前缀归并（runtime.b.sub → runtime.b）。"""
+        if dep in graph:
+            return dep
+        cands = [m for m in graph if dep.startswith(m + ".")]
+        return max(cands, key=len) if cands else dep
+
     def dfs(node):
         color[node] = GRAY
         stack.append(node)
         for dep in graph.get(node, []):
-            dep_mod = dep
+            dep_mod = nearest(dep)
             if dep_mod not in graph:
                 continue
             if color[dep_mod] == GRAY:
@@ -162,13 +190,27 @@ def find_cycles(root: Path):
 
 
 def main():
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="架构与安全 lint")
+    parser.add_argument("root", nargs="?", default=None,
+                        help="仓库根目录（默认脚本上级）")
+    parser.add_argument("--json", action="store_true",
+                        help="输出机器可读 JSON（CI 友好）")
+    args = parser.parse_args()
+    root = Path(args.root) if args.root else Path(__file__).resolve().parent.parent
     issues = []
     for py in sorted(root.rglob("*.py")):
         if any(part in IGNORE_DIRS for part in py.parts):
             continue
         issues += check_file(py, root)
     cycles = find_cycles(root)
+    if args.json:
+        print(json.dumps({"ok": not issues and not cycles,
+                          "violations": issues,
+                          "cycles": [" -> ".join(c) for c in cycles]},
+                         ensure_ascii=False, indent=2))
+        sys.exit(0 if not issues and not cycles else 1)
     if issues:
         print("架构边界违规：")
         for i in issues:

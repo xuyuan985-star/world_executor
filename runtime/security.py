@@ -19,18 +19,25 @@ def install_pylnk3_stub(verbose=True):
     """注入 pylnk3 stub，防止安装/加载 PyPI 被投毒包。
 
     幂等：已注入则直接返回。返回注入的 stub 模块。
+    #20-3.1：Lnk 用 DisabledLnk——不伪装完整对象（silent wrong behavior 比
+    crash 更危险）：path/arguments/work_dir 三个 March7th 已知会用到的属性
+    返回占位，其余属性访问 raise 明确失败。
     """
     if sys.modules.get("pylnk3"):
         return sys.modules["pylnk3"]
     stub = types.ModuleType("pylnk3")
     class Lnk:
-        """#33：March7th get_link_target 用 path/arguments/work_dir；只读占位。"""
+        """#33：get_link_target 用 path/arguments/work_dir；其余属性明确失败。"""
         def __init__(self, f=None):
             self.path = ""
             self.arguments = ""
             self.work_dir = ""
             if f is not None:
                 f.read()  # 消费流，不解析（.lnk 解析链路禁用）
+
+        def __getattr__(self, name):
+            raise RuntimeError(
+                f"Lnk parsing disabled in test environment (attribute '{name}')")
     stub.Lnk = Lnk
     sys.modules["pylnk3"] = stub
     if verbose:

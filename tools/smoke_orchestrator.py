@@ -11,7 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from runtime.events.bus import EventBus
-from runtime.input.base import InputResult
+from runtime.input.base import InputBackendProtocol, InputResult
 from runtime.knowledge_loader import KnowledgePackage
 from runtime.orchestrator import WorkflowOrchestrator
 from runtime.state_machine import State
@@ -32,6 +32,8 @@ class FakeAuto:
 
 
 class FakeInput:
+    name = "fake"
+
     def __init__(self, clicks, click_result=True):
         self.auto = FakeAuto(clicks)
         self.click_result = click_result  # #26：vlm_bbox 路径也要能模拟失败
@@ -75,6 +77,11 @@ class FakeDriver:
     def __init__(self, clicks):
         self.input = FakeInput(clicks)
         self.vision = FakeVision()
+
+
+# #20-3.7：契约断言——Fake 与真实 backend 必须同签名（防测试 PASS 真机失败）
+assert isinstance(FakeInput([True]), InputBackendProtocol), \
+    "FakeInput 未实现 InputBackendProtocol（接口漂移！）"
 
 
 class FakeVLM:
