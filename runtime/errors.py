@@ -32,7 +32,8 @@ class ErrorCode(str, Enum):
     UNKNOWN = "unknown_error"                 # 未归类（兜底）
 
 
-# code → 失败子分类（F1/F2/F3 主类冻结，后缀供训练/分析）
+# code → 失败子分类（F1/F2/F3 主类冻结，后缀供训练/分析；F4_VISION 为
+# Sprint B-2 新增主类——视觉可信度失败与 F3 世界状态失败分离）
 SUBCLASS_BY_CODE = {
     ErrorCode.OBS_MISSING: "F2_COORD",
     ErrorCode.OBS_STALE: "F2_COORD",
@@ -48,8 +49,21 @@ SUBCLASS_BY_CODE = {
     ErrorCode.MOVE_ABORTED: "F2_COORD",
     ErrorCode.MOVE_STUCK: "F2_COORD",
     ErrorCode.PRECONDITION_BLOCKED: "F3",
-    ErrorCode.VISION_UNTRUSTED: "F3",
+    ErrorCode.VISION_UNTRUSTED: "F4_VISION",
 }
+
+# Sprint B-2：F4_VISION 子分类特征（error/reason 文本匹配）
+VISION_SUBCLASSES = [
+    ("dark", "F4_DARK"),             # 黑屏
+    ("wrong_window", "F4_WRONG_WINDOW"),
+    ("size_mismatch", "F4_WRONG_WINDOW"),
+    ("conflict", "F4_CONFLICT"),     # OCR/VLM 冲突
+    ("low confidence", "F4_LOW_CONF"),
+    ("VISION_NOT_VERIFIED", "F4_NOT_VERIFIED"),
+    ("VISION_LOW_CONFIDENCE", "F4_LOW_CONF"),
+    ("VISION_EXPIRED", "F4_EXPIRED"),
+    ("frame", "F4_FRAME"),           # 帧结构异常
+]
 
 # code → retryable（permanent 失败不重试；transient 可重试）
 PERMANENT_CODES = {

@@ -364,6 +364,34 @@ def main():
                for ctx in acts) or not acts, "VLM 未定位时不应有点击成功记录"
     print("[ok] VLM 定位失败 → F2_COORD 失败（不点击不假成功）PASS")
 
+    # 场景11（Sprint B-2）：strict guard 拒绝未验证意图 → F4_VISION + 0 次 click
+    from runtime.guards.action_guard import ActionGuard
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-guard", use_vlm=False)
+    orch.observer = FakeObserver(text=["chest_A"])
+    replay = ReplayInput([True, True])
+
+    def driver_factory():
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch.executor._input_override = replay
+        orch.executor.guard = ActionGuard(strict=True)  # 执行前必须视觉证明
+        result = orch.observe_act("chest_A")
+    assert not result.success, result
+    assert result.error and "vision_guard" in result.error, result.error
+    assert result.category == "F4_VISION", result.category
+    assert replay.consumed == 0, f"守卫拒绝后不应有任何输入注入（consumed={replay.consumed}）"
+    fails = [ctx for t, ctx in seen if t == "fail_recorded"]
+    assert fails and fails[-1].get("category") == "F4_VISION", fails
+    print("[ok] ActionGuard strict → F4_VISION 拒绝 + 0 次 click（证据缺失不执行）PASS")
+
 
 if __name__ == "__main__":
     main()

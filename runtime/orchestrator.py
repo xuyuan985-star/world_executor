@@ -309,6 +309,9 @@ class WorkflowOrchestrator:
             return ExecutionResult(success=False, error="observer:bad_return",
                                    retryable=False, category="F3")
         # Sprint B：VisionGate 内容可信度门——不信任则压低置信，Planner 拒绝行动
+        vision_ok = self.vision_gate is not None   # 无 gate → 不写入证明（宽松放行）
+        vision_conf = 0.0
+        evidence_id = None
         if self.vision_gate is not None:
             gate = self.vision_gate.validate(
                 frame_quality=getattr(observation, "frame_quality", None),
@@ -324,14 +327,23 @@ class WorkflowOrchestrator:
                                     "reason": gate["reason"],
                                     **observation.to_context()})
                 return ExecutionResult(success=False, error="vision_untrusted",
-                                       retryable=False, category="F3",
+                                       retryable=False, category="F4_VISION",
                                        code=ErrorCode.VISION_UNTRUSTED)
+            vision_ok = True
+            vision_conf = gate["confidence"]
+            evidence_id = f"evid_{abs(hash((observation.frame_id, time.time()))) & 0xFFFFFF:06x}"
         intent = self.planner.decide(observation, target)
         if intent.action == ActionType.WAIT.value:
             self._emit("observation",
                        context={"observer": observation.source,
                                 "target": target,
                                 **observation.to_context()})
+        # Sprint B-2：gate 通过 → 视觉证明写入意图（ActionGuard 消费）
+        if vision_ok and intent.action != ActionType.WAIT.value:
+            from dataclasses import replace
+            intent = replace(intent, vision_verified=True,
+                             vision_confidence=vision_conf,
+                             evidence_id=evidence_id)
         return self.executor.execute_intent(intent)
 
     # ---------- 辅助 ----------

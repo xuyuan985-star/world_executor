@@ -72,6 +72,12 @@ class ActionIntent:
     execution_id: str = None  # #45：贯穿日志/失败关联（构造时由执行链传入）
     id: str = field(default_factory=lambda: f"int_{uuid.uuid4().hex[:8]}")
     preconditions: tuple = ()  # S5：执行前世界事实断言（契约先行，校验器接入前恒过）
+    # Sprint B-2：视觉证明字段——执行前 ActionGuard 校验（vision_verified 未确认
+    # 的意图在 strict 模式下被拒；evidence_id 关联证据生命周期）
+    vision_verified: bool = False
+    vision_confidence: float = 0.0
+    evidence_id: str = None
+    risk: str = "low"          # low | high（购买/删除/退出——需更严确认）
 
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:

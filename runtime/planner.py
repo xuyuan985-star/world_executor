@@ -42,7 +42,9 @@ class Planner:
                                           confidence=ent.get("confidence", 0.0))
         return self.plan_wait("target missing")
 
-    def plan_interact(self, target, method=None, reason="", confidence=0.0):
+    def plan_interact(self, target, method=None, reason="", confidence=0.0,
+                      vision_verified=False, vision_confidence=0.0,
+                      evidence_id=None, risk="low"):
         return ActionIntent(
             action=ActionType.INTERACT.value,
             target=target,
@@ -52,6 +54,11 @@ class Planner:
             reason=reason or "objective_interact",
             source="planner",
             idempotent=True,
+            # Sprint B-2：视觉证明透传（observe_act 通道由 gate 写入）
+            vision_verified=vision_verified,
+            vision_confidence=vision_confidence,
+            evidence_id=evidence_id,
+            risk=risk,
         )
 
     def plan_wait(self, reason="wait"):

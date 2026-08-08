@@ -46,6 +46,14 @@ CATEGORY_TEXT = {
     "F2_COORD": "F2 坐标异常",
     "F2_TIMEOUT": "F2 验证超时",
     "F3": "F3 决策漂移",
+    "F4_VISION": "F4 视觉不可信",
+    "F4_DARK": "F4 黑屏",
+    "F4_WRONG_WINDOW": "F4 窗口错误",
+    "F4_CONFLICT": "F4 OCR/VLM 冲突",
+    "F4_LOW_CONF": "F4 置信度低",
+    "F4_EXPIRED": "F4 证据过期",
+    "F4_NOT_VERIFIED": "F4 未验证",
+    "F4_FRAME": "F4 帧异常",
     "EMERGENCY": "EMERGENCY 人工介入",
 }
 

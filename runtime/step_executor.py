@@ -93,7 +93,7 @@ class RealExecutor:
     """
 
     def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True,
-                 natural_seed=None, input_override=None):
+                 natural_seed=None, input_override=None, guard=None):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
@@ -106,6 +106,12 @@ class RealExecutor:
         # #20-9：输入后端注入点（ExecutionRouter 选中 / Replay / ObserveOnly）——
         # 默认 None = driver.input（March7th 真实后端）
         self._input_override = input_override
+        # Sprint B-2：执行前安全闸门（默认宽松：workflow 模板路径兼容；
+        # observe_act 通道的已验证意图仍完整校验）
+        if guard is None:
+            from runtime.guards.action_guard import ActionGuard
+            guard = ActionGuard(strict=False)
+        self.guard = guard
         self._entity_templates = None
         self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
         self._MAX_RECENT = 100
@@ -259,11 +265,26 @@ class RealExecutor:
 
         WAIT 语义：不触 backend，直接成功（决策层等待占位）。
         其余动作与 execute() 同一 method 分派。
+        #B-2：执行前 ActionGuard 安全闸门——未验证/低置信/过期证据拒绝执行。
         """
         if intent.action == ActionType.WAIT.value or intent.action == ActionType.NONE.value:
             self._emit("action_executed", detail=f"wait:{intent.reason or 'none'}",
                        context={"naturalized": False, **intent.to_context()})
             return ExecutionResult(success=True, category="F2")
+        allowed, reason = self.guard.allow(intent)
+        if not allowed:
+            # Sprint B-2：F4_VISION 分类 + 证据记录（fail_recorded 带原因）
+            self._emit("fail_recorded", detail=f"F4_VISION:{reason}:{intent.target}",
+                       context={"category": "F4_VISION", "target": intent.target,
+                                "error": f"vision_guard:{reason}",
+                                "failure_signature":
+                                    f"F4_VISION:{intent.action}:{intent.target}:{reason}",
+                                "suggested_recovery": "reobserve",
+                                "vision_confidence": intent.vision_confidence,
+                                "evidence_id": intent.evidence_id})
+            return ExecutionResult(success=False, error=f"vision_guard:{reason}",
+                                   retryable=False, category="F4_VISION",
+                                   code=ErrorCode.VISION_UNTRUSTED)
         return self.execute(intent)
 
     # ---------- 执行（ActionIntent） ----------
