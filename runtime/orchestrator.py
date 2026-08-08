@@ -62,11 +62,19 @@ class WorkflowOrchestrator:
                                 "error": "workflow_not_found"})
             return False
         steps = wf.get("steps", [])
-        self._machine = StateMachine(self.execution_id, target_id, logger=None)
+
+        def logger(prev, new, action, reason):
+            self._emit("state_changed", from_state=prev, to_state=new,
+                       detail=reason, context={"target": target_id, "action": action})
+
+        self._machine = StateMachine(self.execution_id, target_id, logger=logger)
         self._machine.on(Event.START, "orchestrator start")
         self._machine.on(Event.ROOM_MATCH, "fixed position (M1-A)")
 
         for idx, step in enumerate(steps):
+            if self._emergency_paused():
+                self._human_interrupted(target_id)
+                return False
             ok = self._run_step(step, idx, wf)
             if not ok:
                 retry = int(step.get("retry", 1) or 1)
@@ -195,3 +203,15 @@ class WorkflowOrchestrator:
 
     def _aborted(self):
         return self._machine is not None and self._machine.state == State.ABORT
+
+    def _emergency_paused(self):
+        """EmergencyMonitor 已触发人工介入 → 停止继续执行（M1-A 安全）。"""
+        return self._monitor is not None and self._monitor.is_paused()
+
+    def _human_interrupted(self, target_id):
+        self._emit("target_progress",
+                   context={"target": target_id, "status": "failed",
+                            "reason": "human_interrupt", "category": "EMERGENCY"})
+        if self._machine.state not in (State.DONE, State.ABORT):
+            self._machine.on(Event.ABORT_REQUEST, "human intervention")
+        self._interrupted(target_id)

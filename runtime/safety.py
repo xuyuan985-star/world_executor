@@ -57,6 +57,9 @@ class EmergencyMonitor(threading.Thread):
         self._emit("pause_requested", context={"reason": "human_intervention",
                                                "detail": f"{reason}: {detail}"})
 
+    def is_paused(self):
+        return self._paused
+
     def resume(self):
         self._paused = False
         self._last_cursor = self._get_cursor()

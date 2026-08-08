@@ -87,6 +87,26 @@ def main():
     assert results == {"chest_A": False}, results
     print("[ok] interact 失败 → retry 用尽 → target failed PASS (state=%s)" % state.value)
 
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-emergency", use_vlm=False)
+
+    class FakePaused:
+        def is_paused(self):
+            return True
+
+        def stop(self):
+            pass
+
+    orch._monitor = FakePaused()
+    results = orch.run_mission(["chest_A"])
+    assert results == {"chest_A": False}, results
+    ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
+    assert ev and ev[-1].get("category") == "EMERGENCY", ev
+    print("[ok] EmergencyMonitor 介入 → mission 即停 PASS")
+
 
 if __name__ == "__main__":
     main()
