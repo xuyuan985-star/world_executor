@@ -104,6 +104,11 @@ class KnowledgePackage:
                 ocr = step.get("ocr")
                 if isinstance(ocr, list) and ocr:
                     out["ocr"] = [str(k) for k in ocr]
+                elif isinstance(ocr, dict):
+                    # BUG-35：must/forbid/context 表达（"商店"+"商品" 且无 "关闭"）
+                    out["ocr"] = {"must": [str(k) for k in ocr.get("must", [])],
+                                  "forbid": [str(k) for k in ocr.get("forbid", [])],
+                                  "context": [str(k) for k in ocr.get("context", [])]}
                 vlm = step.get("vlm")
                 if isinstance(vlm, dict):
                     out["vlm"] = vlm

@@ -93,7 +93,7 @@ class RealExecutor:
     """
 
     def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True,
-                 natural_seed=None, input_override=None, guard=None):
+                 natural_seed=None, input_override=None, guard=None, abort_check=None):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
@@ -106,6 +106,8 @@ class RealExecutor:
         # #20-9：输入后端注入点（ExecutionRouter 选中 / Replay / ObserveOnly）——
         # 默认 None = driver.input（March7th 真实后端）
         self._input_override = input_override
+        # BUG-37：执行前中止检查（orchestrator 注入 emergency ∨ stall）
+        self.abort_check = abort_check
         # Sprint B-2：执行前安全闸门（默认宽松：workflow 模板路径兼容；
         # observe_act 通道的已验证意图仍完整校验）
         if guard is None:
@@ -306,6 +308,16 @@ class RealExecutor:
         allowed, reason = self.guard.allow(intent)
         if not allowed:
             return self._guard_blocked(intent, reason)
+        # BUG-37：紧急暂停竞态——gate PASS 与 click 之间可能触发 emergency
+        #（T0 视觉 PASS → T1 EmergencyMonitor 置位 → T2 仍点击）。
+        if self.abort_check is not None and self.abort_check():
+            self._emit("fail_recorded",
+                       detail=f"F3:aborted:{intent.target}",
+                       context={"category": "F3", "target": intent.target,
+                                "error": "aborted_before_execute",
+                                "suggested_recovery": "retry"})
+            return ExecutionResult(success=False, error="aborted_before_execute",
+                                   retryable=True, category="F3")
         from runtime.input.base import InputResult
         backend = self.input
         blocked = self._precondition_blocked(intent)  # S5：动作前验证

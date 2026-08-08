@@ -78,13 +78,33 @@ class VisionGate:
 
     def evaluate(self, evidence: VisionEvidence, target_keywords=None):
         """评估视觉证据。target_keywords：目标级 OCR 词（Sprint B——按目标
-        声明的画面前置词，如 workflow.verify.ocr）；None → 全局词。"""
+        声明的画面前置词，如 workflow.verify.ocr）；None → 全局词。
+        dict 形式支持 BUG-35 语义：{"must":[...], "forbid":[...], "context":[...]}。"""
         signals = []
         reasons = []
         joined = "".join(evidence.ocr.texts or [])
 
         # OCR 评分：目标级词优先（命中比例——目标词集合决定置信），否则全局词
-        if target_keywords:
+        forbid_words = ()
+        if isinstance(target_keywords, dict):
+            forbid_words = tuple(target_keywords.get("forbid") or ())
+            if any(k in joined for k in forbid_words):
+                # BUG-35：forbid 词命中 → 强制拒绝（如"商店关闭"）
+                reasons.append("OCR 命中禁用词")
+                return {
+                    "allowed": False, "mode": "reject",
+                    "score": 0.0, "threshold": self.threshold,
+                    "reason": "OCR 命中禁用词;" + ";".join(
+                        k for k in forbid_words if k in joined),
+                    "signals": ["ocr_forbidden"],
+                }
+            target_hits = [k for k in (target_keywords.get("must") or []) if k in joined]
+            ocr_score = min(1.0, len(target_hits))
+            if target_hits:
+                signals.append("ocr_target_keyword")
+            elif evidence.ocr.texts:
+                reasons.append("OCR 未命中目标验证词")
+        elif target_keywords:
             target_hits = [k for k in target_keywords if k in joined]
             ocr_hits = len(target_hits)
             ocr_score = min(1.0, ocr_hits)  # 目标词单命中即视为确认

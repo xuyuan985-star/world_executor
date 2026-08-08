@@ -98,6 +98,9 @@ class WorkflowOrchestrator:
         self.planner = Planner()
         self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
         self.vision_gate = None  # Sprint B：内容可信度门（None=跳过）
+        # BUG-36：视觉稳定窗口——N 帧连续 PASS 才执行（UI 动画/残影防误点）
+        self.stable_required = 1
+        self._stable = None
 
     @property
     def executor(self):
@@ -106,7 +109,8 @@ class WorkflowOrchestrator:
             # S13：seed 由 execution_id 派生——同 id 重跑可复现自然性延迟
             seed = hash(self.execution_id or "default") & 0xFFFFFFFF
             self._executor = RealExecutor(self.pkg, self.bus, self.execution_id,
-                                          self.use_vlm, self.natural_mode, seed)
+                                          self.use_vlm, self.natural_mode, seed,
+                                          abort_check=self._aborted)
         return self._executor
 
     def _emit(self, event_type, **kw):
@@ -313,6 +317,20 @@ class WorkflowOrchestrator:
         vision_conf = 0.0
         evidence_id = None
         if self.vision_gate is not None:
+            # BUG-36：稳定窗口——连续 N 帧相同 (room, ui_state) 才放行
+            if self.stable_required > 1:
+                    if self._stable is None:
+                        from runtime.observation_memory import StableState
+                        self._stable = StableState(required=self.stable_required)
+                    if not self._stable.update(observation):
+                        self._emit("observation",
+                                   context={"observer": observation.source,
+                                            "target": target,
+                                            "gate": "VISION_CONFIRMING",
+                                            "stable": self._stable.label,
+                                            **observation.to_context()})
+                        return self.executor.execute_intent(
+                            self.planner.plan_wait(f"vision confirming ({self._stable.label})"))
             gate = self.vision_gate.validate(
                 frame_quality=getattr(observation, "frame_quality", None),
                 ocr_texts=observation.text,

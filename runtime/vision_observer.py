@@ -29,10 +29,32 @@ class OCRAdapter:
         return {"text": out}
 
 
+def validate_vlm_output(data):
+    """BUG-34：VLM 输出 schema 校验（防模型自由发挥污染决策）。
+
+    返回 (ok, reason)。字段类型不合法/缺失关键字段 → False。
+    """
+    if not isinstance(data, dict):
+        return False, f"vlm_output_not_dict:{type(data).__name__}"
+    conf = data.get("confidence")
+    if conf is not None and not isinstance(conf, (int, float)):
+        return False, f"vlm_confidence_type:{type(conf).__name__}"
+    has_room = data.get("room") is not None
+    has_ui = data.get("ui_state") is not None
+    if not (has_room or has_ui):
+        return False, "vlm_no_semantic_fields"  # 模型答非所问（如 {"answer": ...}）
+    for k in ("room", "ui_state"):
+        v = data.get(k)
+        if v is not None and not isinstance(v, str):
+            return False, f"vlm_{k}_type:{type(v).__name__}"
+    return True, "ok"
+
+
 class VLMAdapter:
     """VLM 观察适配：observe(screenshot) → {"room", "ui_state", "confidence"}。
 
     包装 VLMVisionObserver.observe_room（房间判定 + UI 状态 + 置信度）。
+    BUG-34：输出过 schema 校验，非法 → 空结果（走 VLM 弱分支）。
     """
 
     def __init__(self, vlm, room_ids=None):
@@ -41,9 +63,14 @@ class VLMAdapter:
 
     def observe(self, screenshot):
         data = self.vlm.observe_room(screenshot, self.room_ids) or {}
+        ok, reason = validate_vlm_output(data)
+        if not ok:
+            data = {"room": None, "ui_state": None, "confidence": 0.0,
+                    "schema_error": reason}
         return {"room": data.get("room"),
                 "ui_state": data.get("ui_state"),
-                "confidence": data.get("confidence", 0.0)}
+                "confidence": data.get("confidence", 0.0),
+                "schema_error": data.get("schema_error")}
 
 
 class VisionObserver:

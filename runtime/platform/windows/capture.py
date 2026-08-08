@@ -28,6 +28,17 @@ class CaptureManager:
     def __init__(self, vision=None):
         self.vision = vision  # March7thVision（含降级链 + last_quality）
 
+    @staticmethod
+    def frame_hash(img):
+        """BUG-32：帧内容指纹——失败报告可确认"这张图就是 OCR/VLM 用的那张"。"""
+        if img is None:
+            return None
+        import hashlib
+        try:
+            return hashlib.sha256(img.tobytes()).hexdigest()[:16]
+        except Exception:
+            return None
+
     def capture(self, window=None, source_hint=None):
         """捕获游戏窗口帧（带元数据）。失败 → Frame(image=None, quality=fail)。"""
         from runtime.drivers.march7th.vision import March7thVision
@@ -43,6 +54,7 @@ class CaptureManager:
             timestamp=time.time(),
             confidence=METHOD_CONFIDENCE.get(method, 0.5),
             quality=quality.quality if quality is not None else "ok",
-            meta={"reason": getattr(quality, "reason", None) if quality else None},
+            meta={"reason": getattr(quality, "reason", None) if quality else None,
+                  "frame_hash": self.frame_hash(img)},  # BUG-32
         )
         return frame
