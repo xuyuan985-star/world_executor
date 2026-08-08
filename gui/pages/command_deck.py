@@ -36,6 +36,17 @@ STATUS_COLOR = {
     "skipped": "#5A6B82",
 }
 
+CATEGORY_TEXT = {
+    "F1": "F1 输入失败",
+    "F2": "F2 视觉失败",
+    "F3": "F3 决策漂移",
+    "EMERGENCY": "EMERGENCY 人工介入",
+}
+
+
+def category_text(code):
+    return CATEGORY_TEXT.get(code, f"{code}" if code else "unknown")
+
 
 class TargetRow(QFrame):
     def __init__(self, target_id, room, parent=None):
@@ -259,7 +270,7 @@ class CommandDeck(QWidget):
                     observation=self.snapshot._body.text(),
                     action="—", input_info="—",
                     reason=ctx.get("reason") or "目标失败",
-                    category=ctx.get("category") or "F3 决策漂移")
+                    category=category_text(ctx.get("category")))
         elif event.type == "observation":
             ctx = event.context
             self.snapshot.update_snapshot(
@@ -277,6 +288,9 @@ class CommandDeck(QWidget):
                     action=event.detail, input_info=f"{ctx.get('backend')} ✗",
                     reason=f"{reason} → 建议: {suggested}",
                     category="F1 输入失败")
+        elif event.type == "pause_requested":
+            self.led.setText("⏸ 已暂停")
+            self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
         elif event.type == "human_intervention":
             ctx = event.context
             self.led.setText("⚠ 人工介入")

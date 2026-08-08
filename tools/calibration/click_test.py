@@ -1,9 +1,19 @@
+"""校准工具（G2 门槛）：验证 March7th 输入链路（提权 + OCR 定位 + 点击 + UI 响应）。
+
+声明：
+  · 仅用于验证 March7th 原语（提权/SendInput/后台截图/坐标换算），
+    **不属于 runtime execution path**——禁止把本文件的坐标换算逻辑复制进 runtime。
+  · v0.12.1 起执行层不接触坐标：runtime 只产 ActionIntent，
+    由 March7th Driver（auto.click_element）内部完成模板匹配与绝对换算。
+  · 本文件的 scale_factor 自算是校准场景特例（OCR box 来自原始截图），
+    与执行器无关，仅此处允许。
+"""
 import os
 import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 M7 = ROOT.parent / "March7thAssistant"
 RESULT_FILE = ROOT / "click_test_result.txt"
 

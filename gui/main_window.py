@@ -76,6 +76,12 @@ class MainWindow(FluentWindow):
         self._health_worker.done.connect(self.command_deck.set_health)
         self._health_worker.start()
 
+    def closeEvent(self, event):
+        if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
+            self._health_worker.quit()
+            self._health_worker.wait(1000)
+        event.accept()
+
     def _start_run(self, targets):
         from runtime.api.commands import MissionSpec
         spec = MissionSpec(knowledge_dir="knowledge/source/black_tower_test",
