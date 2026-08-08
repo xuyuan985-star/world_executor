@@ -17,7 +17,7 @@ def extract_frames(video):
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-        "-vf", f"fps=1/{FPS_INTERVAL},scale=640:-1",
+        "-vf", f"fps=1/{FPS_INTERVAL},scale=1280:-1",
         str(FRAME_DIR / "f_%04d.jpg"),
     ], check=True)
     return sorted(FRAME_DIR.glob("f_*.jpg"))

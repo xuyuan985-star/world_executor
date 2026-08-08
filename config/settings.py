@@ -33,15 +33,15 @@ def qwen_base_url():
 
 
 def qwen_model():
-    return get("QWEN_MODEL", "qwen-plus")
+    return get("QWEN_MODEL", "qwen-max")
 
 
 def qwen_vlm_analyze_model():
-    return get("QWEN_VLM_ANALYZE_MODEL", "qwen3-vl-flash")
+    return get("QWEN_VLM_ANALYZE_MODEL", "qwen3-vl-plus")
 
 
 def qwen_vlm_structure_model():
-    return get("QWEN_VLM_STRUCTURE_MODEL", "qwen-plus")
+    return get("QWEN_VLM_STRUCTURE_MODEL", "qwen-max")
 
 
 def qwen_vlm_fallback():
