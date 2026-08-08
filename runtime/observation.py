@@ -18,6 +18,7 @@ class Observation:
     source: str = "unknown"          # ocr | vlm | fake | frame_validator
     screenshot: str = None           # 帧路径（证据/复盘）
     frame_id: str = None             # 帧标识（观察-执行原子性 token 基础）
+    frame_confidence: float = None   # B-19：截图来源可信度（PrintWindow 0.95/mss 0.6）
 
     def to_context(self):
         return {

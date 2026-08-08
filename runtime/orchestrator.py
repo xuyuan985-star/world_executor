@@ -347,7 +347,8 @@ class WorkflowOrchestrator:
                 ocr_texts=observation.text,
                 vlm={"ui_state": observation.ui_state,
                      "room": observation.room,
-                     "confidence": observation.confidence})
+                     "confidence": observation.confidence},
+                frame_confidence=getattr(observation, "frame_confidence", None))
             if not gate["valid"]:
                 if gate.get("mode") == "observe":
                     # Sprint B-6：OCR 强但 VLM 弱 → 观察模式（不执行，可重试）
@@ -375,6 +376,10 @@ class WorkflowOrchestrator:
                                     "gate": "VISION_UNTRUSTED",
                                     "reason": gate["reason"],
                                     **observation.to_context()})
+                self._emit("vision_blocked",  # B-15：可独立过滤的视觉拒绝事件
+                           context={"target": target, "reason": gate["reason"],
+                                    "score": gate.get("score"),
+                                    "signals": gate.get("signals")})
                 return ExecutionResult(success=False, error="vision_untrusted",
                                        retryable=False, category="F4_VISION",
                                        code=ErrorCode.VISION_UNTRUSTED)

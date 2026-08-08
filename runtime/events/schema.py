@@ -14,6 +14,7 @@ EVENT_TYPES = {
     "observation",
     "action_executed",
     "move_completed",  # #17-H：移动聚合事件（长移动只发一条，防 tick 风暴）
+    "vision_blocked",  # B-15：视觉门拒绝（gate=UNTRUSTED，独立类型可过滤审计）
     "target_progress",
     "fail_recorded",
     "repair_recorded",

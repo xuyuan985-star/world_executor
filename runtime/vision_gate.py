@@ -76,10 +76,13 @@ class VisionGate:
         self.ui_states = ui_states
         self.scene_aliases = scene_aliases
 
-    def evaluate(self, evidence: VisionEvidence, target_keywords=None):
+    def evaluate(self, evidence: VisionEvidence, target_keywords=None,
+                 frame_confidence=None):
         """评估视觉证据。target_keywords：目标级 OCR 词（Sprint B——按目标
         声明的画面前置词，如 workflow.verify.ocr）；None → 全局词。
-        dict 形式支持 BUG-35 语义：{"must":[...], "forbid":[...], "context":[...]}。"""
+        dict 形式支持 BUG-35 语义：{"must":[...], "forbid":[...], "context":[...]}。
+        frame_confidence：截图来源可信度（B-19：PrintWindow 0.95 / mss 0.6——
+        低可信来源加权压制）。"""
         signals = []
         reasons = []
         joined = "".join(evidence.ocr.texts or [])
@@ -164,6 +167,11 @@ class VisionGate:
         if evidence.frame_quality not in (None, "ok"):
             score *= 0.5
             reasons.append(f"帧质量 {evidence.frame_quality}")
+        # B-19：截图来源可信度（mss 前台合成猜测 vs PrintWindow 真后台）
+        if frame_confidence is not None:
+            score *= frame_confidence
+            if frame_confidence < 0.7:
+                reasons.append(f"截图来源低可信 {frame_confidence:.2f}")
         score = round(min(1.0, max(0.0, score)), 3)
 
         allowed = score >= threshold
@@ -189,7 +197,8 @@ class VisionGate:
             "signals": signals,
         }
 
-    def validate(self, frame_quality=None, ocr_texts=None, vlm=None):
+    def validate(self, frame_quality=None, ocr_texts=None, vlm=None,
+                 frame_confidence=None):
         """兼容旧接口（observe_act 第 26 轮接入点）：内部转 evidence。"""
         ev = VisionEvidence(
             ocr=OCREvidence(texts=list(ocr_texts or [])),
@@ -198,7 +207,7 @@ class VisionGate:
                             confidence=(vlm or {}).get("confidence") or 0.0),
             frame_quality=frame_quality,
         )
-        d = self.evaluate(ev)
+        d = self.evaluate(ev, frame_confidence=frame_confidence)
         return {"valid": d["allowed"], "reason": d["reason"],
                 "signals": d["signals"], "confidence": d["score"]}
 
