@@ -60,6 +60,44 @@ def replay(events):
             "state": orch._machine.state, "events": seen}
 
 
+def replay_failure():
+    """Sprint B.2：失败复现——ReplayInput 拒绝点击 → 同输入同失败。
+
+    确定性回归：修改执行链后，历史失败必须可复现（不改行为）。
+    """
+    from runtime.events.bus import EventBus
+    from runtime.knowledge_loader import KnowledgePackage
+    from runtime.orchestrator import WorkflowOrchestrator
+    from runtime.state_machine import State
+    from runtime.input.replay import ReplayInput
+    from tools.smoke_orchestrator import FakeVLM
+    from unittest import mock
+
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="replay-fail", use_vlm=True)
+    replay = ReplayInput([True, False, False, False])  # 点击拒绝 → 重试用尽
+
+    def driver_factory():
+        from tools.smoke_orchestrator import FakeDriver
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch.executor._input_override = replay
+        results, completed = orch.run_mission(["chest_A"])
+    assert results == {"chest_A": False}, results
+    cats = [ctx.get("category") for t, ctx in seen if t == "fail_recorded"]
+    assert any("F1_TEMPLATE" in c for c in cats), cats  # 失败分类可复现
+    return {"results": results, "completed": completed,
+            "state": orch._machine.state, "categories": cats}
+
+
 def main():
     events = load_events(sys.argv[1] if len(sys.argv) > 1 else None)
     print(f"[replay] {len(events)} 事件输入")
@@ -73,6 +111,11 @@ def main():
     assert order[0] == "state_changed", order[:2]
     assert order[-1] == "target_progress", order[-2:]
     print(f"[replay] PASS（状态 {r['state'].value}，事件 {len(r['events'])} 条，行为序确定）")
+
+    # Sprint B.2：失败复现（ReplayInput 拒绝 → 同分类失败）
+    rf = replay_failure()
+    assert rf["state"] != State.DONE, rf
+    print(f"[replay] 失败复现 PASS（{rf['state'].value}，分类 {set(rf['categories'])}）")
 
 
 if __name__ == "__main__":

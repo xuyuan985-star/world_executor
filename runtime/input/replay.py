@@ -17,14 +17,14 @@ class ReplayInput:
         self.index = 0
         self.available = True
 
-    def _next(self, action):
+    def _next(self, action, error="replay_denied"):
         if self.index >= len(self.results):
             ok = False
         else:
             ok = bool(self.results[self.index])
             self.index += 1
         return InputResult(success=ok, action=action, backend=self.name,
-                           error=None if ok else "replay_denied")
+                           error=None if ok else error)
 
     @property
     def consumed(self):
@@ -40,7 +40,8 @@ class ReplayInput:
         return self._next("release_key")
 
     def click_template(self, path, threshold, max_retries) -> InputResult:
-        return self._next("click_template")
+        # 与真实后端同语义错误码（失败分类可复现）
+        return self._next("click_template", error="click_element_failed")
 
     def click_text(self, text, include, max_retries, crop) -> InputResult:
-        return self._next("click_text")
+        return self._next("click_text", error="click_text_failed")

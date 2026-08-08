@@ -394,8 +394,7 @@ def main():
 
     # 场景12（Sprint B）：目标级 OCR 验证词——全局词命中但目标词未命中 → 拒绝
     from runtime.vision_gate import VisionGate, VisionEvidence, OCREvidence, VLMEvidence
-    from runtime.knowledge_loader import KnowledgePackage as _KP
-    target_kw = pkg.verify_ocr_keywords("chest_A")  # 目标词（若 workflow 未声明 → None）
+    target_kw = pkg.verify_expectations("chest_A").get("ocr")  # 目标词（未声明 → None）
     ev12 = VisionEvidence(ocr=OCREvidence(texts=["商店", "购买"]),
                           vlm=VLMEvidence(scene="shop", confidence=0.9),
                           frame_quality="ok")

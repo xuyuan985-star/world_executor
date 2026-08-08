@@ -264,32 +264,32 @@ class RealExecutor:
         """#20-7 协议入口：Planner 产出的意图 → 执行（零坐标，适配层转译）。
 
         WAIT 语义：不触 backend，直接成功（决策层等待占位）。
-        其余动作与 execute() 同一 method 分派。
-        #B-2：执行前 ActionGuard 安全闸门——未验证/低置信/过期证据拒绝执行。
+        #B-2：执行前 ActionGuard 安全闸门——已下沉至 execute()（全路径统一，
+        interact_template 等便捷包装同样过闸，无绕过面）。
         """
         if intent.action == ActionType.WAIT.value or intent.action == ActionType.NONE.value:
             self._emit("action_executed", detail=f"wait:{intent.reason or 'none'}",
                        context={"naturalized": False, **intent.to_context()})
             return ExecutionResult(success=True, category="F2")
-        allowed, reason = self.guard.allow(intent)
-        if not allowed:
-            # Sprint C：策略拒绝（F5_ACTION_BLOCK）与视觉拒绝（F4_VISION）分离
-            f5 = reason in ("ACTION_RISK_HIGH",)
-            cat = "F5_ACTION_BLOCK" if f5 else "F4_VISION"
-            code = ErrorCode.ACTION_BLOCKED if f5 else ErrorCode.VISION_UNTRUSTED
-            self._emit("fail_recorded", detail=f"{cat}:{reason}:{intent.target}",
-                       context={"category": cat, "target": intent.target,
-                                "error": f"{code.value}:{reason}",
-                                "failure_signature":
-                                    f"{cat}:{intent.action}:{intent.target}:{reason}",
-                                "suggested_recovery": "reobserve",
-                                "vision_confidence": intent.vision_confidence,
-                                "evidence_id": intent.evidence_id,
-                                "guard_reason": reason})
-            return ExecutionResult(success=False, error=f"action_blocked:{reason}"
-                                   if f5 else f"vision_guard:{reason}",
-                                   retryable=False, category=cat, code=code)
         return self.execute(intent)
+
+    def _guard_blocked(self, intent, reason):
+        """Sprint B.2：闸门拒绝统一出口（F4/F5 分离 + 证据上下文）。"""
+        f5 = reason in ("ACTION_RISK_HIGH",)
+        cat = "F5_ACTION_BLOCK" if f5 else "F4_VISION"
+        code = ErrorCode.ACTION_BLOCKED if f5 else ErrorCode.VISION_UNTRUSTED
+        self._emit("fail_recorded", detail=f"{cat}:{reason}:{intent.target}",
+                   context={"category": cat, "target": intent.target,
+                            "error": f"{code.value}:{reason}",
+                            "failure_signature":
+                                f"{cat}:{intent.action}:{intent.target}:{reason}",
+                            "suggested_recovery": "reobserve",
+                            "vision_confidence": intent.vision_confidence,
+                            "evidence_id": intent.evidence_id,
+                            "guard_reason": reason})
+        return ExecutionResult(success=False, error=f"action_blocked:{reason}"
+                               if f5 else f"vision_guard:{reason}",
+                               retryable=False, category=cat, code=code)
 
     # ---------- 执行（ActionIntent） ----------
 
@@ -299,7 +299,13 @@ class RealExecutor:
         - #45：intent 填充 execution_id，事件/失败可关联
         - 异常 = 可观测失败（executor_exception），禁止黑盒崩溃
         - #44：natural_mode=False 时确定性（delay=0）
+        - Sprint B.2：ActionGuard 前置——所有执行路径（含便捷包装）统一过闸，
+          无绕过面；宽松模式对无证明意图放行（workflow 模板路径），
+          已验证意图按完整校验。
         """
+        allowed, reason = self.guard.allow(intent)
+        if not allowed:
+            return self._guard_blocked(intent, reason)
         from runtime.input.base import InputResult
         backend = self.input
         blocked = self._precondition_blocked(intent)  # S5：动作前验证

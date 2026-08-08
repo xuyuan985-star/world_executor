@@ -69,6 +69,12 @@ def main():
                                                vision_confidence=0.95), ObsFake())
     assert risk_verified == 0, risk_verified
 
+    # Sprint B.2：ActionIntent 不得携带坐标（架构冻结——intent 字段白名单断言）
+    forbidden = {"x", "y", "px", "py", "screen_x", "screen_y", "coordinate", "bbox"}
+    fields = set(make_intent("interact").__dataclass_fields__.keys())
+    assert not (fields & forbidden), f"ActionIntent 出现坐标字段: {fields & forbidden}"
+    print("[guard] ActionIntent 字段白名单（无坐标）PASS")
+
     print("[guard] Case 1-4 + 幻觉风险 全部 PASS")
 
 
