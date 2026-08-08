@@ -29,6 +29,9 @@ ALLOW_PREFIX = [
     ("runtime", "runtime.api"),
 ]
 
+# #24：第三方/产物目录不扫描（CI 不应因 vendor/March7th 代码炸）
+IGNORE_DIRS = {"__pycache__", ".venv", "node_modules", "vendor", "March7thAssistant", "tests", "examples"}
+
 
 def _import_modules(tree):
     """收集文件里所有被 import 的模块全名（含 alias 形式）。"""
@@ -69,7 +72,7 @@ def main():
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
     issues = []
     for py in sorted(root.rglob("*.py")):
-        if any(part in ("__pycache__", ".venv", "node_modules") for part in py.parts):
+        if any(part in IGNORE_DIRS for part in py.parts):
             continue
         issues += check_file(py, root)
     if issues:

@@ -53,14 +53,15 @@ def main(loop_seconds=15, max_rounds=None):
     os.chdir(M7)
     sys.path.insert(0, str(M7))
     sys.path.insert(0, str(ROOT))
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
 
     from runtime.observers.vlm_vision import VLMVisionObserver
     from runtime.failure_report import FailureReporter
-    from runtime.win_capture import WindowLock, capture_game_foreground, find_game_window
+    from runtime.win_capture import capture_game_foreground, find_game_window
 
     obs = VLMVisionObserver()
     reporter = FailureReporter()
-    lock = WindowLock()
     out_dir = ROOT / "ingest" / "raw" / "frames" / "live"
     out_dir.mkdir(parents=True, exist_ok=True)
 

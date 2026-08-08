@@ -14,6 +14,8 @@ from runtime.knowledge_loader import KnowledgePackage
 
 
 def main():
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
     app = QApplication(sys.argv)
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)

@@ -1,12 +1,13 @@
-"""汇总本会话所有已发现问题，导出结构化错误报告 + 证据截图。"""
+"""汇总本会话所有已发现问题，导出结构化错误报告 + 证据截图。
+
+#25：导入无副作用（import 不生成报告），仅 main() 执行导出。
+"""
 import json
 import shutil
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "failure_reports" / f"{time.strftime('%Y%m%d_%H%M%S')}_session_all_issues"
-OUT.mkdir(parents=True, exist_ok=True)
 
 ISSUES = [
     {
@@ -172,41 +173,50 @@ EVIDENCE = [
     (ROOT / "ingest" / "raw" / "frames" / "live" / "click_after.jpg", "ISSUE-09 点击后（无响应）"),
 ]
 
-ev_dir = OUT / "evidence"
-ev_dir.mkdir(parents=True, exist_ok=True)
-for src, note in EVIDENCE:
-    if src.exists():
-        shutil.copy2(src, ev_dir / src.name)
 
-doc = {
-    "generated_at": time.time(),
-    "summary": {
-        "total": len(ISSUES),
-        "by_severity": {s: sum(1 for i in ISSUES if i["severity"] == s) for s in ("critical", "high", "medium", "low")},
-        "by_status": {s: sum(1 for i in ISSUES if i["status"] == s) for s in {i["status"] for i in ISSUES}},
-        "release_blockers": [i["id"] for i in ISSUES
-                             if i.get("release_blocker") and i["status"] != "resolved"],
-    },
-    "issues": ISSUES,
-}
-(OUT / "report.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+def main():
+    OUT = ROOT / "failure_reports" / f"{time.strftime('%Y%m%d_%H%M%S')}_session_all_issues"
+    OUT.mkdir(parents=True, exist_ok=True)
 
-lines = ["# 会话问题汇总报告", "", f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
-lines.append(f"问题总数: {len(ISSUES)} | 严重度: {doc['summary']['by_severity']} | 状态: {doc['summary']['by_status']}")
-lines.append("")
-for i in ISSUES:
-    lines.append(f"## {i['id']} [{i['severity']}] {i['title']} ({i['status']})")
-    lines.append(f"- 现象: {i['symptom']}")
-    lines.append(f"- 根因: {i['root_cause']}")
-    lines.append(f"- 影响: {i['impact']}")
-    lines.append(f"- 处理: {i['resolution']}")
-    if i.get("evidence"):
-        lines.append(f"- 证据: {i['evidence']}")
+    ev_dir = OUT / "evidence"
+    ev_dir.mkdir(parents=True, exist_ok=True)
+    for src, note in EVIDENCE:
+        if src.exists():
+            shutil.copy2(src, ev_dir / src.name)
+
+    doc = {
+        "generated_at": time.time(),
+        "summary": {
+            "total": len(ISSUES),
+            "by_severity": {s: sum(1 for i in ISSUES if i["severity"] == s) for s in ("critical", "high", "medium", "low")},
+            "by_status": {s: sum(1 for i in ISSUES if i["status"] == s) for s in {i["status"] for i in ISSUES}},
+            "release_blockers": [i["id"] for i in ISSUES
+                                 if i.get("release_blocker") and i["status"] != "resolved"],
+        },
+        "issues": ISSUES,
+    }
+    (OUT / "report.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    lines = ["# 会话问题汇总报告", "", f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
+    lines.append(f"问题总数: {len(ISSUES)} | 严重度: {doc['summary']['by_severity']} | 状态: {doc['summary']['by_status']}")
     lines.append("")
-(OUT / "summary.md").write_text("\n".join(lines), encoding="utf-8")
+    for i in ISSUES:
+        lines.append(f"## {i['id']} [{i['severity']}] {i['title']} ({i['status']})")
+        lines.append(f"- 现象: {i['symptom']}")
+        lines.append(f"- 根因: {i['root_cause']}")
+        lines.append(f"- 影响: {i['impact']}")
+        lines.append(f"- 处理: {i['resolution']}")
+        if i.get("evidence"):
+            lines.append(f"- 证据: {i['evidence']}")
+        lines.append("")
+    (OUT / "summary.md").write_text("\n".join(lines), encoding="utf-8")
 
-print(f"错误报告已导出: {OUT}")
-print(f"  问题数: {len(ISSUES)}")
-print(f"  证据截图: {len(EVIDENCE)} 张")
-blockers = doc["summary"]["release_blockers"]
-print(f"  Release blockers（未解决）: {len(blockers)} {blockers if blockers else ''}")
+    print(f"错误报告已导出: {OUT}")
+    print(f"  问题数: {len(ISSUES)}")
+    print(f"  证据截图: {len(EVIDENCE)} 张")
+    blockers = doc["summary"]["release_blockers"]
+    print(f"  Release blockers（未解决）: {len(blockers)} {blockers if blockers else ''}")
+
+
+if __name__ == "__main__":
+    main()

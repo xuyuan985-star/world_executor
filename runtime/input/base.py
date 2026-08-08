@@ -7,12 +7,15 @@ class InputResult:
     action: str
     backend: str
     error: str = None
+    method: str = None   # backend 执行方法（#11）：template/text/key——action 保持 intent 语义
     detail: dict = field(default_factory=dict)
 
     def to_context(self, **extra):
         ctx = {"backend": self.backend, "success": self.success}
         if self.error:
             ctx["error"] = self.error
+        if self.method:
+            ctx["method"] = self.method
         ctx.update(self.detail)
         ctx.update(extra)
         return ctx

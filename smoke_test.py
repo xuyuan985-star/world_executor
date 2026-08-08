@@ -3,8 +3,8 @@ import sys
 import types
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-M7 = ROOT / "March7thAssistant"
+ROOT = Path(__file__).resolve().parent
+M7 = ROOT.parent / "March7thAssistant"
 
 
 def install_pylnk3_stub():
@@ -66,7 +66,9 @@ def main():
 
     from module.ocr import ocr as ocr_engine
 
-    raw = screenshot
+    # #22：RapidOCR 要求 ndarray，统一 np.asarray（与 coords_calibrate 一致）
+    import numpy as np
+    raw = np.asarray(screenshot)
     try:
         result = ocr_engine.run(raw)
         lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []

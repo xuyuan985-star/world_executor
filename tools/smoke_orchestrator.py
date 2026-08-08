@@ -31,11 +31,12 @@ class FakeAuto:
 
 
 class FakeInput:
-    def __init__(self, clicks):
+    def __init__(self, clicks, click_result=True):
         self.auto = FakeAuto(clicks)
+        self.click_result = click_result  # #26：vlm_bbox 路径也要能模拟失败
 
     def click(self, x, y):
-        return True
+        return self.click_result
 
     def press_key(self, key, wait_time=0):
         time.sleep(0)

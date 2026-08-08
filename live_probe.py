@@ -24,6 +24,8 @@ def main():
     os.chdir(M7)
     sys.path.insert(0, str(M7))
     sys.path.insert(0, str(ROOT))
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
 
     from module.automation import auto
 

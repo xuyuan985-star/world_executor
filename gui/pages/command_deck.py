@@ -38,7 +38,13 @@ STATUS_COLOR = {
 
 CATEGORY_TEXT = {
     "F1": "F1 输入失败",
+    "F1_TEMPLATE": "F1 模板未命中",
+    "F1_PERMISSION": "F1 权限失败",
+    "F1_EXEC": "F1 执行器异常",
+    "F1_INTERNAL": "F1 内部错误",
     "F2": "F2 视觉失败",
+    "F2_COORD": "F2 坐标异常",
+    "F2_TIMEOUT": "F2 验证超时",
     "F3": "F3 决策漂移",
     "EMERGENCY": "EMERGENCY 人工介入",
 }
