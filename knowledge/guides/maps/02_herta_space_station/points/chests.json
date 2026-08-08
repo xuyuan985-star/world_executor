@@ -4,7 +4,8 @@
     "name": "基座舱段·入口走廊宝箱",
     "type": "chest",
     "region": "base_zone",
-    "x": 0.42, "y": 0.35,
+    "x": 0.42,
+    "y": 0.35,
     "rarity": "normal",
     "tier": "T0",
     "note": "主线必经，顺手开"
@@ -14,9 +15,21 @@
     "name": "基座舱段·控制台旁宝箱",
     "type": "chest",
     "region": "base_zone",
-    "x": 0.68, "y": 0.52,
+    "x": 0.68,
+    "y": 0.52,
     "rarity": "rare",
     "tier": "T1",
     "note": "需要按顺序点亮屏幕"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0000_cf3c",
+    "name": "supply_zone·帧0000 识别点位",
+    "type": "chest",
+    "region": "supply_zone",
+    "x": 0.316,
+    "y": 0.362,
+    "rarity": null,
+    "tier": "T1",
+    "note": "来源视频帧 f_0000.jpg（VLM 自动识别，待人工复核）"
   }
 ]
