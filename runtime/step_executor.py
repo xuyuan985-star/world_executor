@@ -17,8 +17,8 @@ INPUT_ACTIONS = {"interact", "click_text", "move", "click"}
 
 # 失败子分类（#30）：保持 F1/F2/F3 主类（v0.12.1 冻结），后缀细化供训练/分析
 FAILURE_SUBCLASSES = [
-    ("uipi", "F1_PERMISSION"),
-    ("admin", "F1_PERMISSION"),
+    ("uipi", "F6_PRIVILEGE"),
+    ("admin", "F6_PRIVILEGE"),
     ("executor_exception", "F1_EXEC"),
     ("unknown_method", "F1_INTERNAL"),
     ("unknown_entity", "F1_TEMPLATE"),

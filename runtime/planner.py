@@ -5,6 +5,7 @@
 """
 from runtime.action_intent import ActionIntent, ActionMethod, ActionType
 from runtime.observation import Observation
+from runtime.world_state import WorldState
 
 
 class Planner:
@@ -12,6 +13,7 @@ class Planner:
 
     decide()：观察 → 动作意图（文本/实体检测语义）。
     plan_interact() / plan_wait()：直接构造意图（workflow 步骤路径也可用）。
+    plan()：目标驱动（Sprint E-5）——状态校验 + 知识校验 + 步骤产出。
     """
 
     def __init__(self, default_threshold=0.8, max_retries=3, min_confidence=0.6):
@@ -60,6 +62,44 @@ class Planner:
             evidence_id=evidence_id,
             risk=risk,
         )
+
+    def plan(self, state: WorldState, goal: str, pkg=None):
+        """Sprint E-5：目标驱动规划。
+
+        goal 映射 knowledge workflows；校验前置（room 匹配）后产出步骤意图。
+        返回 {"plan": [ActionIntent...], "status": "planned|already_done|blocked",
+              "reason": "..."}。
+        """
+        if state is None:
+            return {"plan": [], "status": "blocked", "reason": "no_world_state"}
+        workflow = None
+        if pkg is not None:
+            workflow = pkg.workflow(goal)  # 知识包按 target_id 单文件加载
+        if workflow is None:
+            return {"plan": [], "status": "blocked", "reason": f"goal_unknown:{goal}"}
+
+        # 房间前置校验：workflow 声明 room → 当前状态必须匹配
+        need_room = workflow.get("room")
+        if need_room and state.room and need_room != state.room:
+            return {"plan": [], "status": "blocked",
+                    "reason": f"room_mismatch:need={need_room},have={state.room}"}
+        if goal in state.completed:
+            return {"plan": [], "status": "already_done", "reason": "completed"}
+
+        # 步骤 → 意图（move/interact 语义；verify 不产意图——由执行后校验闭环）
+        plan = []
+        for step in (workflow.get("steps") or []):
+            st = step.get("type")
+            if st == "move":
+                plan.append(self.plan_interact(
+                    step.get("target"), method=ActionMethod.TEMPLATE.value,
+                    reason=f"objective_navigate:{goal}"))
+            elif st == "interact":
+                plan.append(self.plan_interact(
+                    workflow.get("target_id") or step.get("target"),
+                    method=ActionMethod.TEMPLATE.value,
+                    reason=f"objective_interact:{goal}"))
+        return {"plan": plan, "status": "planned", "reason": "ok"}
 
     def plan_wait(self, reason="wait"):
         return ActionIntent(
