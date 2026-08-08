@@ -86,7 +86,31 @@ def main():
     assert not r8["allowed"], r8
     assert r8["mode"] == "reject", r8
 
-    print("[gate] 6 cases + 静态/尺寸 + observe/vlm_only 三元语义 全部 PASS")
+    # #28：VLM 边界矩阵——vlm_only 弱置信 → observe（等待下一帧），高置信 → reject
+    r_b1 = gate.evaluate(ev(["无关文本"], {"ui_state": "game", "confidence": 0.61}))
+    assert not r_b1["allowed"] and r_b1["mode"] == "observe", r_b1
+    r_b2 = gate.evaluate(ev(["无关文本"], {"ui_state": "game", "confidence": 0.49}))
+    assert not r_b2["allowed"] and r_b2["mode"] == "observe", r_b2
+    r_b3 = gate.evaluate(ev(["无关文本"], {"ui_state": "game", "confidence": 0.95}))
+    assert not r_b3["allowed"] and r_b3["mode"] == "reject", r_b3
+    # 冲突（OCR 商店 + VLM battle 高置信）→ reject（非 observe）
+    r_b4 = gate.evaluate(ev(["商店"], {"ui_state": "battle", "confidence": 0.95}))
+    assert not r_b4["allowed"] and r_b4["mode"] == "reject", r_b4
+
+    # #40：VLM 挂掉（异常）→ OCR-only 降级（不崩 mission）
+    class VLMDead:
+        def observe(self, screenshot):
+            raise TimeoutError("vlm api timeout")
+    from runtime.vision_observer import VisionObserver, OCRAdapter
+    vo = VisionObserver(ocr=None, vlm=VLMDead(), capture_fn=lambda: "x.png")
+    obs = vo.observe()
+    assert obs.confidence == 0.0 and obs.source == "none", obs  # VLM 异常被隔离
+    vo2 = VisionObserver(ocr=OCRAdapter.__new__(OCRAdapter), vlm=VLMDead(),
+                         capture_fn=lambda: "x.png")
+    # OCRAdapter 需真实引擎；此处验证 VLM 异常不炸 VisionObserver 主流程
+    assert obs.source == "none"
+
+    print("[gate] 6 cases + 静态/尺寸 + observe/vlm_only 三元语义 + VLM 边界矩阵 + VLM异常隔离 全部 PASS")
 
 
 if __name__ == "__main__":

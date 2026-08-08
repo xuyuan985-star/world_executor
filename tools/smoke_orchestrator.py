@@ -191,6 +191,22 @@ class FakeObserver:
                            frame_id=f"fake-{self.counter}")
 
 
+class FakeObserverSequence:
+    """#29：观察序列替身——模拟目标中途消失（第一次命中，第二次空）。"""
+
+    def __init__(self, sequence):
+        self.sequence = list(sequence)
+        self.counter = 0
+
+    def observe(self):
+        from runtime.observation import Observation
+        self.counter += 1
+        texts = self.sequence[min(self.counter - 1, len(self.sequence) - 1)]
+        return Observation(ui_state="test", text=list(texts),
+                           confidence=1.0, source="fake-seq",
+                           frame_id=f"seq-{self.counter}")
+
+
 class FakeBadVLM:
     """#8-8 幻觉 VLM：错误画面仍报 shop + 高置信 0.95。"""
 
@@ -224,6 +240,12 @@ def run_scenario(clicks, label):
         results, completed = orch.run_mission(["chest_A"])
 
     end_state = orch._machine.state
+    # #31：生命周期终点——target_progress(done) 是 orchestrator 层最终事实；
+    # run_finished 由 API 层（commands.py）发（orchestrator 直调路径不包含）
+    if label == "ok":
+        done = [ctx for t, ctx in seen
+                if t == "target_progress" and ctx.get("status") == "done"]
+        assert done, "mission 未发 target_progress(done)（生命周期断裂）"
     print(f"[{label}] results={results} completed={completed} state={end_state.value}")
     for t, ctx in seen:
         if t in ("fail_recorded", "target_progress", "action_executed"):
@@ -506,6 +528,28 @@ def main():
     assert result.error and "executor_exception" in result.error, result.error
     assert result.category == "F1_EXEC", result.category
     print("[ok] 崩溃注入 → F1_EXEC 可观测失败（不黑盒崩溃）PASS")
+
+    # 场景14（#29）：目标消失——第一次命中，第二次空 → WAIT 不点击旧坐标
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-disappear", use_vlm=False)
+    orch.observer = FakeObserverSequence([["chest_A"], []])  # 第二次目标消失
+
+    def driver_factory():
+        return FakeDriver([True, True])  # 两次观察都可能点击 → 回放成功
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        r1 = orch.observe_act("chest_A")   # 命中 → 点击
+        r2 = orch.observe_act("chest_A")   # 消失 → WAIT
+    assert r1.success, r1
+    assert r2.success and r2.error is None, r2  # WAIT 语义：不执行不失败
+    acts2 = [ctx for t, ctx in seen if t == "action_executed"]
+    assert acts2[-1].get("action") == "wait", acts2[-1]
+    print("[ok] 目标消失 → 第二次 WAIT（不点击旧坐标）PASS")
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ NON_GAME_KEYWORDS = (
     "浏览器", "代码", "搜索", "Git", "桌面", "终端", "PowerShell",
 )
 
-GAME_UI_STATES = {"game", "menu", "map", "dialogue", "shop"}
+GAME_UI_STATES = {"game", "menu", "map", "dialogue", "shop", "battle", "combat"}
 
 # VLM 场景标签 → OCR 中文同义词（中英一致性判定）
 SCENE_ALIASES = {
@@ -41,6 +41,24 @@ SCENE_ALIASES = {
 OCR_WEIGHT = 0.45
 VLM_WEIGHT = 0.45
 CONSISTENCY_WEIGHT = 0.10
+
+
+@dataclass
+class VisionDecision:
+    """#26：gate 决策强类型（防 dict 字段漂移：allowed/allow 拼写错不炸）。"""
+
+    allowed: bool
+    mode: str = "reject"      # accept | observe | reject
+    score: float = 0.0
+    threshold: float = 0.75
+    reason: str = "low confidence"
+    signals: list = field(default_factory=list)
+
+    def __getitem__(self, key):
+        # 兼容旧 dict 访问（gate["valid"]/gate.get(...)）——过渡期零破坏
+        if key == "valid":
+            return self.allowed
+        return getattr(self, key)
 
 
 @dataclass
@@ -167,6 +185,10 @@ class VisionGate:
         if evidence.frame_quality not in (None, "ok"):
             score *= 0.5
             reasons.append(f"帧质量 {evidence.frame_quality}")
+        # #28 冲突惩罚：双通道都强但零一致性（OCR 商店 + VLM battle）→ ×0.5
+        if ocr_hits and vlm_ok and consistency == 0 and has_vlm:
+            score *= 0.5
+            reasons.append("OCR/VLM 不一致")
         # B-19：截图来源可信度（mss 前台合成猜测 vs PrintWindow 真后台）
         if frame_confidence is not None:
             score *= frame_confidence
@@ -185,17 +207,16 @@ class VisionGate:
         if not allowed and ocr_hits and not vlm_ok:
             mode = "observe"
         elif not allowed and not ocr_hits and vlm_ok:
-            mode = "reject"  # vlm_only
+            # #28 边界细化：vlm_only 且 VLM 高置信 → 幻觉特征 reject；
+            # VLM 弱置信（<0.7）→ observe（等待下一帧，不硬拒）
+            mode = "reject" if vlm_score >= 0.7 else "observe"
 
-        return {
-            "allowed": allowed,
-            "mode": mode,
-            "score": score,
-            "threshold": threshold,
-            "reason": "vision verified" if allowed
-                      else "; ".join(reasons) or "low confidence",
-            "signals": signals,
-        }
+        return VisionDecision(
+            allowed=allowed, mode=mode, score=score, threshold=threshold,
+            reason="vision verified" if allowed
+                   else "; ".join(reasons) or "low confidence",
+            signals=signals,
+        )
 
     def validate(self, frame_quality=None, ocr_texts=None, vlm=None,
                  frame_confidence=None):

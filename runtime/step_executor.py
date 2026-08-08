@@ -423,6 +423,10 @@ class RealExecutor:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"invalid_bbox_format:{len(bbox)}")
         px, py = self.driver.vision.to_absolute(nx, ny)
+        # #35：坐标越界保护——VLM 返回 50000/-100 时禁止点击（防危险区域）
+        if px <= 0 or py <= 0 or px > 20000 or py > 20000:
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"invalid_bbox_format:out_of_bounds:{px},{py}")
         # #17-E：点击前二次验证钩子——obs.frame_id 与当前帧一致才允许点击
         # （observe → click 之间的窗口期漂移检测；VLM 帧计数器接入后启用，
         # 默认恒过，与 S5 preconditions 相同的"契约先行"模式）
