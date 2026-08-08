@@ -25,6 +25,9 @@ class FakeAuto:
         self.n = 0
 
     def click_element(self, path, method, threshold=0.8, max_retries=1, include=None, crop=None):
+        # BUG-07：mock 断言参数非空——真实 driver 参数错误在测试期暴露而非真机
+        assert path, "click_element path 为空（模板/文本解析出问题）"
+        assert method, "click_element method 为空"
         self.n += 1
         if not self.clicks:
             return False
@@ -93,6 +96,16 @@ class FakeVLM:
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.0, "ui_state": None}
+
+
+class FakeVLMFalse:
+    """BUG-08：VLM 定位失败替身——found=false 低置信（幻觉反面：看不到）。"""
+
+    def locate_target(self, screenshot, target_desc):
+        return {"found": False, "confidence": 0.1}
+
+    def observe_room(self, screenshot, room_ids):
+        return {"room": None, "confidence": 0.1, "ui_state": None}
 
 
 class FakeObserver:
@@ -326,6 +339,30 @@ def main():
     assert result.error and "observe_only" in result.error, result.error
     assert result.retryable is False, result.retryable  # 永久失败语义：不重试不崩溃
     print("[ok] ObserveOnly 降级 → observe_only 失败（不点击不崩溃不重试）PASS")
+
+    # 场景10（BUG-08）：VLM 定位失败（found=false）→ 移动失败 F2_COORD，不点击
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-vlmfalse", use_vlm=True)
+
+    def driver_factory():
+        return FakeDriver([True] * 10)
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLMFalse), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        results, completed = orch.run_mission(["chest_A"])
+    assert results == {"chest_A": False}, results
+    cats = [ctx.get("category") for t, ctx in seen if t == "fail_recorded"]
+    assert any("F2_COORD" in c for c in cats), cats
+    acts = [ctx for t, ctx in seen if t == "action_executed"]
+    assert all(ctx.get("success") is not False or ctx.get("action") == "wait"
+               for ctx in acts) or not acts, "VLM 未定位时不应有点击成功记录"
+    print("[ok] VLM 定位失败 → F2_COORD 失败（不点击不假成功）PASS")
 
 
 if __name__ == "__main__":

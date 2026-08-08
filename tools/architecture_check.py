@@ -73,11 +73,21 @@ def _import_modules(tree):
                 mods.append(n.name)
         elif isinstance(node, ast.ImportFrom):
             if node.module and node.level == 0:
-                mods.append(node.module)
+                # BUG-03：`from runtime import executor` 实际访问 runtime.executor——
+                # 只记 node.module（runtime）会漏掉 alias 目标，依赖环检测漏边
+                for n in node.names:
+                    if n.name == "*":
+                        mods.append(node.module)
+                    else:
+                        mods.append(f"{node.module}.{n.name}")
             elif node.module and node.level > 0:
                 # 相对导入：由调用方传入当前包前缀补全（3.2-1 修复：
                 # from .step_executor import X → runtime.step_executor）
-                mods.append(("." * node.level + node.module))
+                for n in node.names:
+                    if n.name == "*":
+                        mods.append("." * node.level + node.module)
+                    else:
+                        mods.append(("." * node.level + node.module) + "." + n.name)
     return mods
 
 

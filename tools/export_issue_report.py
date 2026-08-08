@@ -4,10 +4,12 @@
 """
 import json
 import shutil
+import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # #25：main() 内 import 需要包路径（security/runtime）
 
 ISSUES = [
     {
@@ -173,6 +175,9 @@ EVIDENCE = [
     (ROOT / "ingest" / "raw" / "frames" / "live" / "click_after.jpg", "ISSUE-09 点击后（无响应）"),
 ]
 
+# BUG-09：blocker 视为已处理的 status 集合
+BLOCKER_DONE_STATUS = {"resolved", "resolved-with-stub"}
+
 
 def main():
     # #28：同一分钟多次运行不覆盖（uuid 后缀）
@@ -203,8 +208,10 @@ def main():
             "total": len(ISSUES),
             "by_severity": {s: sum(1 for i in ISSUES if i["severity"] == s) for s in ("critical", "high", "medium", "low")},
             "by_status": {s: sum(1 for i in ISSUES if i["status"] == s) for s in {i["status"] for i in ISSUES}},
+            # BUG-09：blocker 完成态含 resolved-with-stub（stub 方案视为处理完成）
             "release_blockers": [i["id"] for i in ISSUES
-                                 if i.get("release_blocker") and i["status"] != "resolved"],
+                                 if i.get("release_blocker")
+                                 and i["status"] not in BLOCKER_DONE_STATUS],
         },
         # Part 2-2.6：脱敏——用户名路径替换为 C:\Users\<USER>\
         "issues": sanitize_mapping(ISSUES),

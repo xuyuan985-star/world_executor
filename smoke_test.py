@@ -39,14 +39,14 @@ def main():
 
         # #20-3.1：截图/OCR 异常分类报告（CI 友好，禁止裸 traceback）
         try:
-            result = auto.take_screenshot()
+            shot_result = auto.take_screenshot()
         except Exception as e:
             print(f"[FAIL] category=capture exception={e!r}")
             sys.exit(1)
-        if result is None:
+        if shot_result is None:
             print("[FAIL] category=capture take_screenshot 失败（游戏未启动或窗口未找到）")
             sys.exit(1)
-        screenshot, pos, scale = result
+        screenshot, pos, scale = shot_result
         w, h = screenshot.size if hasattr(screenshot, "size") else screenshot.shape[:2][::-1]
         print(f"[ok] take_screenshot  {w}x{h} scale={scale}")
 
@@ -67,8 +67,8 @@ def main():
         import numpy as np
         raw = np.asarray(screenshot)
         try:
-            result = ocr_engine.run(raw)
-            lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []
+            ocr_result = ocr_engine.run(raw)
+            lines = [t["txt"] for t in ocr_result if isinstance(t, dict) and t.get("txt")] if ocr_result else []
             print(f"[ok] OCR 引擎 {len(lines)} 行: {lines[:8]}")
         except Exception as e:
             print(f"[FAIL] category=ocr_engine exception={e!r}")
