@@ -19,6 +19,7 @@ INPUT_ACTIONS = {"interact", "click_text", "move", "click"}
 FAILURE_SUBCLASSES = [
     ("uipi", "F6_PRIVILEGE"),
     ("admin", "F6_PRIVILEGE"),
+    ("observe_only", "F6_PRIVILEGE"),  # #42-B7：降级模式归权限类（非 F1 输入失败）
     ("executor_exception", "F1_EXEC"),
     ("unknown_method", "F1_INTERNAL"),
     ("unknown_entity", "F1_TEMPLATE"),
@@ -137,6 +138,16 @@ class RealExecutor:
         if self._input_override is not None:
             return self._input_override
         return self.driver.input
+
+    def set_input_backend(self, backend):
+        """#42-B6：正式注入接口（测试/路由用）——替代直接改私有字段。
+
+        校验 Protocol 契约（Fake/真实后端签名漂移在注入期即炸）。
+        """
+        from runtime.input.base import InputBackendProtocol
+        if backend is not None and not isinstance(backend, InputBackendProtocol):
+            raise TypeError(f"输入后端未实现 InputBackendProtocol: {type(backend).__name__}")
+        self._input_override = backend
 
     def register_method(self, name, handler):
         """#17-C：method 注册入口——白名单校验，未知/未审计 method 拒绝。"""

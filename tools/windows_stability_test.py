@@ -42,9 +42,12 @@ def main():
           f"visible={gw.visible} score={gw.score:.1f}")
     gw.pid = process_identity(gw.hwnd)[1]
     print(f"         pid={gw.pid}")
-    if gw.score < 70:
-        print("[FAIL] Test 1: 窗口评分过低（可能抓到非游戏窗口）")
+    # Bug10：评分分级（不同 DPI/分辨率/多屏 score 会变——不硬编码单阈值）
+    if gw.score < 50:
+        print("[FAIL] Test 1: 窗口评分 <50（大概率抓到非游戏窗口）")
         return 1
+    if gw.score < 70:
+        print("[WARN] Test 1: 窗口评分 50~70（可能是小窗口/异常变体，继续）")
     print("[PASS] Test 1 窗口枚举/评分")
 
     # Test 2：截图稳定

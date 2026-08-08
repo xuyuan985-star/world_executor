@@ -42,6 +42,7 @@ class FakeInput:
         self.click_result = click_result  # #26：vlm_bbox 路径也要能模拟失败
         # BUG-53：故障注入——SENDINPUT_FAIL / WINDOW_LOST / UI_NO_CHANGE
         self.fail_mode = fail_mode
+        self.clicks = []  # #42-B12：真实调用级点击记录（零误触断言核心）
 
     def _maybe_fail(self, action):
         if self.fail_mode == "SENDINPUT_FAIL":
@@ -61,6 +62,7 @@ class FakeInput:
         f = self._maybe_fail("click")
         if f:
             return f
+        self.clicks.append((x, y))
         return InputResult(success=self.click_result, action="click", backend="fake")
 
     def click_template(self, path, threshold, max_retries) -> InputResult:
@@ -68,6 +70,7 @@ class FakeInput:
         if f:
             return f
         ok = bool(self.auto.click_element(path, "image", threshold, max_retries))
+        self.clicks.append(("template", path))
         return InputResult(success=ok, action="click_template", backend="fake",
                            error=None if ok else "click_element_failed")
 
@@ -77,6 +80,7 @@ class FakeInput:
             return f
         ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,
                                           include=include, crop=crop))
+        self.clicks.append(("text", text))
         return InputResult(success=ok, action="click_text", backend="fake",
                            error=None if ok else "click_text_failed")
 
@@ -372,8 +376,10 @@ def main():
     def driver_factory():
         return FakeDriver([True] * 3)
 
+    # Bug5（测试审计）：observe_act 走 orch.observer（FakeBadVLM+FakeOCRDeny），
+    # 不经过 executor 内部 VLMVisionObserver——此处 patch 纯属多余且会误导
+    #（若未来 observe_act 内部改用 executor.vlm 会静默绕过幻觉测试）
     with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
-            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
             mock.patch("runtime.drivers.march7th.window.find_game_window",
                        return_value={"hwnd": 1, "client": (1920, 1080)}), \
             mock.patch.object(orch, "start_emergency", lambda: None):
@@ -452,7 +458,17 @@ def main():
     def driver_factory():
         return FakeDriver([True] * 10)
 
-    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+    # 场景10（BUG-08）：VLM 定位失败（found=false）→ 移动失败 F2_COORD，不点击
+    fake_input_10 = None
+
+    def driver_factory_10():
+        nonlocal fake_input_10
+        fake_input_10 = FakeInput([True] * 10)
+        d = FakeDriver([])
+        d.input = fake_input_10
+        return d
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory_10), \
             mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLMFalse), \
             mock.patch("runtime.drivers.march7th.window.find_game_window",
                        return_value={"hwnd": 1, "client": (1920, 1080)}), \
@@ -464,7 +480,14 @@ def main():
     acts = [ctx for t, ctx in seen if t == "action_executed"]
     assert all(ctx.get("success") is not False or ctx.get("action") == "wait"
                for ctx in acts) or not acts, "VLM 未定位时不应有点击成功记录"
-    print("[ok] VLM 定位失败 → F2_COORD 失败（不点击不假成功）PASS")
+    # #42-B12：调用级零误触断言——导航点击（move 模板）合法，
+    # 但 VLM 未定位时不得出现对目标 chest 的交互点击
+    chest_clicks = [c for c in (fake_input_10.clicks or [])
+                    if isinstance(c, tuple) and len(c) == 2
+                    and "chest" in str(c[1])]
+    assert fake_input_10 is not None and len(chest_clicks) == 0, \
+        f"VLM 未定位时仍发生目标交互点击: {chest_clicks}"
+    print("[ok] VLM 定位失败 → F2_COORD 失败（事件级+调用级零目标点击）PASS")
 
     # 场景11（Sprint B-2）：strict guard 拒绝未验证意图 → F4_VISION + 0 次 click
     from runtime.guards.action_guard import ActionGuard
