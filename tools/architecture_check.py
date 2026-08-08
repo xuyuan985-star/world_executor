@@ -50,6 +50,11 @@ def _import_modules(tree):
     return mods
 
 
+def _is_or_below(rel, mod):
+    """#30：模块边界必须精确——runtime2.xxx 不是 runtime，runtime.api 是 runtime 之下。"""
+    return rel == mod or rel.startswith(mod + ".")
+
+
 def check_file(path: Path, root: Path):
     rel = path.relative_to(root).as_posix()
     src = path.read_text(encoding="utf-8", errors="ignore")
@@ -61,8 +66,9 @@ def check_file(path: Path, root: Path):
     violations = []
     for mod in _import_modules(tree):
         for bad_from, bad_to in FORBIDDEN:
-            if rel_mod.startswith(bad_from) and (mod == bad_to or mod.startswith(bad_to + ".")):
-                if any(rel_mod.startswith(p) and (mod == q or mod.startswith(q + ".")) for p, q in ALLOW_PREFIX):
+            if _is_or_below(rel_mod, bad_from) and _is_or_below(mod, bad_to):
+                if any(_is_or_below(rel_mod, p) and _is_or_below(mod, q)
+                       for p, q in ALLOW_PREFIX):
                     continue
                 violations.append(f"{rel} 禁止 {rel_mod} → {mod}（{bad_to}）")
     return violations

@@ -1,15 +1,20 @@
 import json
 import threading
+from collections import deque
 from pathlib import Path
 
 from runtime.events.schema import WorldEvent
+
+
+# #34：内存事件流设上限（防长期运行无限增长）；持久化流不受限
+EVENT_RING_CAPACITY = 5000
 
 
 class EventBus:
     def __init__(self, persist_path=None):
         self._lock = threading.Lock()
         self._subscribers = []
-        self._events = []
+        self._events = deque(maxlen=EVENT_RING_CAPACITY)
         self._seq = 0
         self._persist_path = persist_path
         self._fh = None

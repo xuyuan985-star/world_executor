@@ -318,27 +318,44 @@ class RealExecutor:
         return True
 
     def portal_transition(self, portal, wait_base, threshold=0.8, verify_timeout=10):
-        """#16：点击成功 ≠ 传送成功——click → wait → verify_signal 三步缺一不可。"""
+        """#16：点击成功 ≠ 传送成功——click → wait → verify_signal 三步缺一不可。
+
+        #25：无 verify_template 时回退通用 loading 信号（模板存在才校验）。
+        """
         trigger = portal["trigger"]
         result = self.interact_template(portal["id"], trigger["threshold"])
         if not result.success:
             return False
         wait = self.naturalness.transition_wait(wait_base)
         time.sleep(wait)
-        vtmpl = trigger.get("verify_template")
-        if vtmpl:
-            return self.verify_signal(vtmpl, "present", verify_timeout)
+        vtmpl = trigger.get("verify_template") or "loading.png"
+        if self.pkg.template_exists(vtmpl):
+            return self.verify_signal(vtmpl, "vanished", verify_timeout)
         return True
 
     def verify_signal(self, template, expected, timeout, threshold=0.8):
+        """#24：template 必须解析在 templates_dir 内（防知识包路径穿越）。"""
+        tpl = self._resolve_template_path(template)
+        if tpl is None:
+            return False
         vision = self.driver.vision
         deadline = time.time() + timeout
         delay = 0.2
         while time.time() < deadline:
             # #17：阈值参数化（默认 0.8，后续可配置化），不硬编码
-            found = vision.find_template(str(self.pkg.templates_dir / template), threshold) is not None
+            found = vision.find_template(str(tpl), threshold) is not None
             if (expected == "vanished" and not found) or (expected == "present" and found):
                 return True
             time.sleep(delay)
             delay = min(delay * 1.5, 1.5)
         return False
+
+    def _resolve_template_path(self, template):
+        """模板名 → templates_dir 内绝对路径；越界/不存在返回 None。"""
+        try:
+            candidate = (self.pkg.templates_dir / template).resolve()
+        except Exception:
+            return None
+        if self.pkg.templates_dir.resolve() not in candidate.parents:
+            return None
+        return candidate

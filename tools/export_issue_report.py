@@ -175,7 +175,10 @@ EVIDENCE = [
 
 
 def main():
-    OUT = ROOT / "failure_reports" / f"{time.strftime('%Y%m%d_%H%M%S')}_session_all_issues"
+    # #28：同一分钟多次运行不覆盖（uuid 后缀）
+    import uuid
+    OUT = ROOT / "failure_reports" / \
+        f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_session_all_issues"
     OUT.mkdir(parents=True, exist_ok=True)
 
     ev_dir = OUT / "evidence"

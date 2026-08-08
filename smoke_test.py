@@ -15,8 +15,13 @@ def install_pylnk3_stub():
     stub = types.ModuleType("pylnk3")
 
     class Lnk:
+        # #33：补齐常用属性，避免后续代码访问 Lnk().path 等直接炸
+        path = ""
+        arguments = ""
+        work_dir = ""
+
         def __init__(self, f):
-            self.work_dir = ""
+            self.path = str(f)
 
     stub.Lnk = Lnk
     sys.modules["pylnk3"] = stub

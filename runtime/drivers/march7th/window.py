@@ -23,7 +23,8 @@ def find_game_window():
             return True
         rect = win32gui.GetWindowRect(hwnd)
         w, h = rect[2] - rect[0], rect[3] - rect[1]
-        if w <= 0 or h <= 0:
+        # #22 增强：过滤 0x0/极小窗口（游戏标题的托盘/隐藏变体）
+        if w < 500 or h < 500:
             return True
         if best is None or w * h > best[1]:
             best = (hwnd, w * h, (w, h))
@@ -69,8 +70,13 @@ def ensure_march7th_env():
         stub = types.ModuleType("pylnk3")
 
         class Lnk:
+            # #33：补齐常用属性，避免后续代码访问 Lnk().path 等直接炸
+            path = ""
+            arguments = ""
+            work_dir = ""
+
             def __init__(self, f):
-                self.work_dir = ""
+                self.path = str(f)
         stub.Lnk = Lnk
         sys.modules["pylnk3"] = stub
     if str(M7_ROOT) not in sys.path:
