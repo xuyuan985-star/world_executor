@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import time
 from pathlib import Path
 
@@ -25,7 +25,8 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
         portal = pkg.portal(step["portal_id"])
         print(f"  [SIM] {machine.state.name}  → portal step: {portal['id']} ({portal['from']}→{portal['to']})")
         _emit(bus, execution_id, "action_executed", detail=f"portal:{portal['id']}",
-              context={"room": sim_context["room"]})
+              context={"room": sim_context["room"], "reason": "portal_transition",
+                       "source": "decision_layer", "naturalized": True})
         machine.on(Event.PORTAL_EXPECTED, f"portal {portal['id']} ahead")
         time.sleep(0.05)
         machine.on(Event.PORTAL_DETECTED, "loading screen")
@@ -56,7 +57,8 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
         else:
             print(f"  [SIM] {machine.state.name}  → move to landmark {target} OK")
             _emit(bus, execution_id, "action_executed", detail=f"move:{target}",
-                  context={"room": sim_context["room"]})
+                  context={"room": sim_context["room"], "reason": "move_to_landmark",
+                           "source": "decision_layer", "naturalized": True})
         return True
 
     if kind == "visual_guided_move":

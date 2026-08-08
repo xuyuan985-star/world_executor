@@ -57,6 +57,18 @@ class RuntimeAPI:
         self._state = "paused"
         return self._state
 
+    def request_pause_human(self, reason="unknown_state"):
+        self._state = "paused_for_human"
+        self.bus.publish(make_event("pause_requested", self.execution_id,
+                                    context={"reason": reason}))
+        return self._state
+
+    def resume_check(self, checks=None):
+        self._state = "resume_check"
+        self.bus.publish(make_event("resume_checked", self.execution_id,
+                                    context={"checks": checks or []}))
+        return self._state
+
     def resume(self):
         self._state = "running"
         return self._state

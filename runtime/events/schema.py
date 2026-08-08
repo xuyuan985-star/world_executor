@@ -13,6 +13,8 @@ EVENT_TYPES = {
     "target_progress",
     "fail_recorded",
     "repair_recorded",
+    "pause_requested",
+    "resume_checked",
 }
 
 STATE_TYPES = {
@@ -29,7 +31,14 @@ STATE_TYPES = {
     "ABORT",
 }
 
-OBSERVER_TYPES = {"template_match", "ocr", "ui_signal", "inferred", "manual"}
+OBSERVER_TYPES = {"template_match", "ocr", "ui_signal", "inferred", "manual", "vlm_vision"}
+
+ACTION_CONTEXT_FIELDS = {
+    "reason": "决策层意图，回答为什么执行（如 objective_verify_chest）",
+    "source": "决定来源：decision_layer / manual / recovery",
+    "naturalized": "是否经自然性约束",
+    "delay_ms": "实际等待毫秒",
+}
 
 
 @dataclass

@@ -75,7 +75,7 @@ class RealExecutor:
         time.sleep(delay)
         auto.mouse_click()
         self._emit("action_executed", detail=f"{label}@({x:.2f},{y:.2f})",
-                   context={"humanized": True, "delay_ms": int(delay * 1000)})
+                   context={"naturalized": True, "delay_ms": int(delay * 1000)})
 
     def interact_template(self, template, threshold, scale_range):
         auto = self.ensure_auto()
@@ -89,7 +89,7 @@ class RealExecutor:
         time.sleep(delay)
         auto.mouse_click(cx, cy)
         self._emit("action_executed", detail=f"click:{template}",
-                   context={"humanized": True, "delay_ms": int(delay * 1000), "match": round(match, 3)})
+                   context={"naturalized": True, "delay_ms": int(delay * 1000), "match": round(match, 3)})
         return True
 
     def move_visual_guided(self, target_desc, ticks, step_seconds):
@@ -103,13 +103,13 @@ class RealExecutor:
                 auto = self.ensure_auto()
                 auto.press_key("w", wait_time=dur)
                 self._emit("action_executed", detail=f"move_forward:{dur:.1f}s",
-                           context={"humanized": True, "tick": i})
+                           context={"naturalized": True, "tick": i})
             else:
                 side = "d" if x < 0.5 else "a"
                 auto = self.ensure_auto()
                 auto.press_key(side, wait_time=self.naturalness.rotate_duration())
                 self._emit("action_executed", detail=f"steer:{side}",
-                           context={"humanized": True, "tick": i})
+                           context={"naturalized": True, "tick": i})
         return True
 
     def portal_transition(self, portal, wait_base):
