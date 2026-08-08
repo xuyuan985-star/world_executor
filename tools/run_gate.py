@@ -4,12 +4,13 @@
     python tools/run_gate.py --skip-smoke   # 跳过 orchestrator 冒烟
 
 流程：
-  [1/6] architecture lint（依赖方向 + 环 + 动态导入 + 危险调用）
-  [2/6] security scan（quarantine 自检 + 脱敏单测）
-  [3/6] unit checks（AST 全源码 + 关键单测断言）
-  [4/6] replay test（行为回放回归）
-  [5/6] smoke orchestrator（mock driver 9 场景；真机相关标记 SKIP(real device)）
-  [6/6] dry_run（知识包逻辑验证）
+  [1/7] architecture lint（依赖方向 + 环 + 动态导入 + 危险调用）
+  [2/7] security scan（quarantine 自检 + 脱敏单测）
+  [3/7] unit checks（AST 全源码 + 关键单测断言）
+  [4/7] replay test（行为回放回归）
+  [5/7] vision gate（双通道评分门 6 cases）
+  [6/7] smoke orchestrator（mock driver 10 场景；真机相关标记 SKIP(real device)）
+  [7/7] dry_run（知识包逻辑验证）
 
 任一失败 → 非零退出 + GATE FAIL。
 """
@@ -69,6 +70,9 @@ def run():
     def replay():
         return py("tests/replay/test_action_replay.py")
 
+    def gate_tests():
+        return py("tests/vision/test_gate.py")
+
     def smoke():
         return py("tools/smoke_orchestrator.py")
 
@@ -81,12 +85,13 @@ def run():
             ("security", security, False),
             ("unit checks", units, False),
             ("replay test", replay, False),
+            ("vision gate", gate_tests, False),
             ("smoke", smoke, args.skip_smoke),
             ("dry_run", dryrun, False)], start=1):
         if skip:
-            print(f"[{order}/6] {name} ... SKIP")
+            print(f"[{order}/7] {name} ... SKIP")
             continue
-        print(f"[{order}/6] {name} ...")
+        print(f"[{order}/7] {name} ...")
         ok, detail = func()
         if ok:
             print(f"  PASS {detail or ''}")
@@ -99,4 +104,6 @@ def run():
 
 if __name__ == "__main__":
     sys.exit(run())
+
+
 
