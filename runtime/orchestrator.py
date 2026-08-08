@@ -117,6 +117,17 @@ class WorkflowOrchestrator:
         if self.bus is not None:
             self.bus.publish(make_event(event_type, self.execution_id, **kw))
 
+    @staticmethod
+    def _evidence_from_observation(observation):
+        """Observation → VisionEvidence（视觉决策快照用）。"""
+        from runtime.vision_gate import VisionEvidence, OCREvidence, VLMEvidence
+        return VisionEvidence(
+            ocr=OCREvidence(texts=list(observation.text or [])),
+            vlm=VLMEvidence(scene=observation.ui_state, room=observation.room,
+                            confidence=observation.confidence),
+            frame_quality=getattr(observation, "frame_quality", None),
+        )
+
     # ---------- Emergency ----------
 
     def start_emergency(self):
@@ -348,6 +359,16 @@ class WorkflowOrchestrator:
                                         **observation.to_context()})
                     return self.executor.execute_intent(
                         self.planner.plan_wait("vision observe (ocr strong, vlm weak)"))
+                # B-08：视觉决策快照落盘（复盘"执行前看到什么"）
+                try:
+                    from runtime.vision_gate import dump_vision_decision
+                    dump_vision_decision("failure_reports/vision", observation.frame_id,
+                                         self._evidence_from_observation(observation),
+                                         {"allowed": False, "reason": gate["reason"],
+                                          "score": gate.get("score"),
+                                          "signals": gate.get("signals")})
+                except Exception:
+                    pass
                 self._emit("observation",
                            context={"observer": observation.source,
                                     "target": target,

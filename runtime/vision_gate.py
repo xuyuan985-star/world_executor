@@ -201,3 +201,29 @@ class VisionGate:
         d = self.evaluate(ev)
         return {"valid": d["allowed"], "reason": d["reason"],
                 "signals": d["signals"], "confidence": d["score"]}
+
+
+def dump_vision_decision(out_dir, frame_id, evidence, decision):
+    """B-08：视觉决策快照落盘（复盘"执行前看到什么"）。
+
+    目录：failure_reports/vision/——decision.json 含 OCR 文本/VLM 输出/
+    分数/信号/结论；帧与 OCR box 可另行关联。
+    """
+    import json
+    import time
+    from pathlib import Path
+    d = Path(out_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "ts": time.time(),
+        "frame_id": frame_id,
+        "ocr": {"text": list(evidence.ocr.texts or []),
+                "confidence": evidence.ocr.confidence},
+        "vlm": {"room": evidence.vlm.room, "ui_state": evidence.vlm.scene,
+                "confidence": evidence.vlm.confidence},
+        "frame_quality": evidence.frame_quality,
+        "decision": decision,
+    }
+    p = d / f"vision_{frame_id or int(time.time())}.json"
+    p.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    return p

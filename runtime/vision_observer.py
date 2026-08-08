@@ -11,9 +11,10 @@ from runtime.observation import Observation
 
 
 class OCRAdapter:
-    """March7th OCR 适配：detect(screenshot) → {"text": [...]}。
+    """March7th OCR 适配：detect(screenshot) → {"text": [...], "boxes": [...]}。
 
     统一 ocr.run 的 dict 列表返回（ISSUE-14 结构差异在适配层消化）。
+    B-03/B-08：保留 bbox——证据链记录 + 未来 UI 语义区域验证。
     """
 
     def __init__(self, ocr_engine):
@@ -23,10 +24,13 @@ class OCRAdapter:
         import numpy as np
         raw = np.asarray(screenshot)
         out = []
+        boxes = []
         for t in self.ocr.run(raw) or []:
             if isinstance(t, dict) and t.get("txt"):
                 out.append(str(t["txt"]))
-        return {"text": out}
+                box = t.get("box")
+                boxes.append(list(box) if box is not None else None)
+        return {"text": out, "boxes": boxes}
 
 
 def validate_vlm_output(data):
