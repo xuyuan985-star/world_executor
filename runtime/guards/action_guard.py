@@ -25,24 +25,33 @@ class ActionGuard:
         self.evidence_store = evidence_store  # id → {timestamp, confidence}
 
     def check(self, intent, observation=None):
-        """Sprint C-5：最终允许/拒绝——风险量化 + 策略规则 + 证据校验。
+        """Sprint C：最终允许/拒绝——风险量化 + 策略规则 + 证据校验。
 
         返回 {"allowed", "risk", "reason", "limit"}。
         """
         from runtime.guards.risk import calculate_risk
-        from runtime.guards.policy import allowed, risk_limit
+        from runtime.guards.policy import (allowed, risk_limit,
+                                           confidence_for, is_critical)
 
         evidence_age = self._evidence_age(intent.evidence_id)
         expired = evidence_age is not None and evidence_age > self.max_age
         risk = calculate_risk(intent, observation, evidence_expired=expired)
 
+        # BUG-54：critical 等级拒绝自动执行（人工确认）
+        if is_critical(getattr(intent, "risk", "low")):
+            return {"allowed": False, "risk": risk, "reason": "RISK_CRITICAL",
+                    "limit": None}
+
         # 证据/置信校验（先于策略——硬性门槛）
         if expired:
             return {"allowed": False, "risk": risk, "reason": "VISION_EXPIRED",
                     "limit": None}
-        if intent.vision_verified and intent.vision_confidence < self.min_confidence:
+        # BUG-54：risk 等级 → 置信要求（high 需双通道高置信）
+        required_conf = confidence_for(getattr(intent, "risk", "low"))
+        conf_threshold = max(self.min_confidence, required_conf)
+        if intent.vision_verified and intent.vision_confidence < conf_threshold:
             return {"allowed": False, "risk": risk, "reason": "VISION_LOW_CONFIDENCE",
-                    "limit": self.min_confidence}
+                    "limit": conf_threshold}
         if not intent.vision_verified and self.strict:
             return {"allowed": False, "risk": risk, "reason": "VISION_NOT_VERIFIED",
                     "limit": None}

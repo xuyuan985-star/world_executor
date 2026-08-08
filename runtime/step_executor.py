@@ -93,7 +93,8 @@ class RealExecutor:
     """
 
     def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True,
-                 natural_seed=None, input_override=None, guard=None, abort_check=None):
+                 natural_seed=None, input_override=None, guard=None, abort_check=None,
+                 min_action_interval=0.0):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
@@ -108,6 +109,9 @@ class RealExecutor:
         self._input_override = input_override
         # BUG-37：执行前中止检查（orchestrator 注入 emergency ∨ stall）
         self.abort_check = abort_check
+        # BUG-50：输入节流（秒；0=关。真机建议 0.5/危险 2.0）
+        self.min_action_interval = min_action_interval
+        self._last_action_at = 0.0
         # Sprint B-2：执行前安全闸门（默认宽松：workflow 模板路径兼容；
         # observe_act 通道的已验证意图仍完整校验）
         if guard is None:
@@ -318,6 +322,12 @@ class RealExecutor:
                                 "suggested_recovery": "retry"})
             return ExecutionResult(success=False, error="aborted_before_execute",
                                    retryable=True, category="F3")
+        # BUG-50：输入节流——VLM/OCR 抖动导致的连点保护（默认关，真机开启）
+        if self.min_action_interval > 0:
+            wait = self._last_action_at + self.min_action_interval - time.time()
+            if wait > 0:
+                time.sleep(wait)
+        self._last_action_at = time.time()
         from runtime.input.base import InputResult
         backend = self.input
         blocked = self._precondition_blocked(intent)  # S5：动作前验证

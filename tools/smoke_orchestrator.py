@@ -37,9 +37,29 @@ class FakeAuto:
 class FakeInput:
     name = "fake"
 
-    def __init__(self, clicks, click_result=True):
+    def __init__(self, clicks, click_result=True, fail_mode=None):
         self.auto = FakeAuto(clicks)
         self.click_result = click_result  # #26：vlm_bbox 路径也要能模拟失败
+        # BUG-53：故障注入——SENDINPUT_FAIL / WINDOW_LOST / UI_NO_CHANGE
+        self.fail_mode = fail_mode
+
+    def _maybe_fail(self, action):
+        if self.fail_mode == "SENDINPUT_FAIL":
+            return InputResult(success=False, action=action, backend="fake",
+                               error="uipi_block:sendinput_failed")
+        if self.fail_mode == "WINDOW_LOST":
+            return InputResult(success=False, action=action, backend="fake",
+                               error="window_lost")
+        if self.fail_mode == "UI_NO_CHANGE":
+            return InputResult(success=False, action=action, backend="fake",
+                               error="ui_no_change")
+        return None
+
+    def click(self, x, y):
+        f = self._maybe_fail("click")
+        if f:
+            return f
+        return InputResult(success=self.click_result, action="click", backend="fake")
 
     def click(self, x, y):
         return InputResult(success=self.click_result, action="click", backend="fake")

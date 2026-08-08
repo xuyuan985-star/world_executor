@@ -75,6 +75,24 @@ def main():
     assert not (fields & forbidden), f"ActionIntent 出现坐标字段: {fields & forbidden}"
     print("[guard] ActionIntent 字段白名单（无坐标）PASS")
 
+    # Sprint C（BUG-54）：risk 等级策略
+    def intent_risk(risk, conf=0.95):
+        return make_intent("interact", vision_verified=True, vision_confidence=conf) \
+            .__class__(action="interact", target="shop_button",
+                       method=ActionMethod.TEXT.value,
+                       vision_verified=True, vision_confidence=conf, risk=risk)
+    from runtime.guards.policy import confidence_for, is_critical
+    assert confidence_for("high") == 0.85 and confidence_for("low") == 0.0
+    assert is_critical("critical") and not is_critical("high")
+    # high 等级 + 0.8 置信（低于 0.85）→ 拒绝
+    r_high = guard.check(intent_risk("high", 0.8))
+    assert not r_high["allowed"] and r_high["reason"] == "VISION_LOW_CONFIDENCE", r_high
+    # high 等级 + 0.9 置信 → 放行
+    assert guard.check(intent_risk("high", 0.9))["allowed"]
+    # critical → 拒绝自动执行
+    assert not guard.check(intent_risk("critical"))["allowed"]
+    print("[guard] risk 四级策略（high 提置信/critical 人工确认）PASS")
+
     print("[guard] Case 1-4 + 幻觉风险 全部 PASS")
 
 
