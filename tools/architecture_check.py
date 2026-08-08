@@ -31,8 +31,9 @@ ALLOW_PREFIX = [
 
 # 目标 3（架构冻结）：runtime 业务核心禁止感知物理输入/屏幕合成捕获。
 # 豁免适配面：drivers/（March7th 适配）、input/（输入后端）、win_capture.py
-# （窗口捕获适配）。ctypes 不在此列（safety/health 系统探测属合法用途）。
-FORBIDDEN_RUNTIME_IMPORTS = {"pyautogui", "mss"}
+# （窗口捕获适配）。ctypes/win32gui 不列禁——safety/health 系统探测与
+# 窗口监控属合法用途（监控职责，非执行输入）。
+FORBIDDEN_RUNTIME_IMPORTS = {"pyautogui", "mss", "pynput", "mouse", "keyboard"}
 
 # 豁免模块（适配层，允许上述 import）
 RUNTIME_ADAPTER_MODULES = {

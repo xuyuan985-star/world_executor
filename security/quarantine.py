@@ -18,6 +18,9 @@ import sys
 import types
 from pathlib import Path
 
+# 被隔离的第三方包（禁止加载真实实现）
+QUARANTINED = {"pylnk3"}
+
 
 def install_pylnk3_stub(verbose=True):
     """注入 pylnk3 stub，防止安装/加载 PyPI 被投毒包。
@@ -50,6 +53,14 @@ def install_pylnk3_stub(verbose=True):
               "已解码审计（防破解校验，非数据窃取）；若进程无故退出请检查 "
               "March7th assets 完整性")
     return stub
+
+
+def install_security_stubs(verbose=True):
+    """聚合隔离入口——所有入口统一调用（将来新增隔离包在此注册）。"""
+    install_pylnk3_stub(verbose=verbose)
+    if verbose:
+        print("[security] quarantine enabled: " + ",".join(sorted(QUARANTINED)))
+    return sys.modules.get("pylnk3")
 
 
 def require_m7_path(m7_root):
