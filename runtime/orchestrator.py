@@ -10,9 +10,11 @@
 import threading
 import time
 
-from runtime.decision.action import ActionIntent
+from runtime.action_intent import ActionIntent, ActionMethod, ActionType
 from runtime.events.schema import make_event
 from runtime.execution import ExecutionResult
+from runtime.observation import Observation
+from runtime.planner import Planner
 from runtime.state_machine import Event, State, StateMachine
 
 TARGET_ALIVE = ("running", "succeeded", "failed")
@@ -92,6 +94,9 @@ class WorkflowOrchestrator:
         self._monitor = None
         self._watchdog = None
         self._records = {}
+        # #20-7：决策层——Planner 输入 Observation 输出 ActionIntent（零坐标）
+        self.planner = Planner()
+        self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
 
     @property
     def executor(self):
@@ -284,6 +289,31 @@ class WorkflowOrchestrator:
         return ExecutionResult(
             success=ok, error=None if ok else "verify_timeout",
             retryable=not ok, category="F2")
+
+    # ---------- 观察→规划→执行（#20-7 插层通道） ----------
+
+    def observe_act(self, target, observer=None):
+        """Observation → Planner → ActionIntent → execute_intent 一条龙。
+
+        observer 未注入时用 self.observer（None → 直接返回失败）。
+        不推进状态机（workflow 步骤路径保持原有迁移语义）——
+        本通道供自主决策/观察驱动流程使用。
+        """
+        obs = (observer or self.observer)
+        if obs is None:
+            return ExecutionResult(success=False, error="no_observer",
+                                   retryable=False, category="F3")
+        observation = obs.observe()
+        if not isinstance(observation, Observation):
+            return ExecutionResult(success=False, error="observer:bad_return",
+                                   retryable=False, category="F3")
+        intent = self.planner.decide(observation, target)
+        if intent.action == ActionType.WAIT.value:
+            self._emit("observation",
+                       context={"observer": observation.source,
+                                "target": target,
+                                **observation.to_context()})
+        return self.executor.execute_intent(intent)
 
     # ---------- 辅助 ----------
 

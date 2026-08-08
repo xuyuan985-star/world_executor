@@ -2,7 +2,7 @@
 from collections import deque
 from pathlib import Path
 
-from runtime.decision.action import ActionIntent, ActionMethod
+from runtime.action_intent import ActionIntent, ActionMethod, ActionType
 from runtime.errors import (ErrorCode, PERMANENT_CODES, SUBCLASS_BY_CODE,
                             code_of)
 from runtime.execution import ExecutionResult
@@ -242,6 +242,18 @@ class RealExecutor:
                             "screen_x": bbox[0] if bbox else None,
                             "screen_y": bbox[1] if bbox else None})
         return bbox
+
+    def execute_intent(self, intent: ActionIntent) -> ExecutionResult:
+        """#20-7 协议入口：Planner 产出的意图 → 执行（零坐标，适配层转译）。
+
+        WAIT 语义：不触 backend，直接成功（决策层等待占位）。
+        其余动作与 execute() 同一 method 分派。
+        """
+        if intent.action == ActionType.WAIT.value or intent.action == ActionType.NONE.value:
+            self._emit("action_executed", detail=f"wait:{intent.reason or 'none'}",
+                       context={"naturalized": False, **intent.to_context()})
+            return ExecutionResult(success=True, category="F2")
+        return self.execute(intent)
 
     # ---------- 执行（ActionIntent） ----------
 

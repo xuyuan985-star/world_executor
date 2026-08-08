@@ -24,7 +24,7 @@ class FakeAuto:
         self.clicks = clicks
         self.n = 0
 
-    def click_element(self, path, method, threshold, max_retries):
+    def click_element(self, path, method, threshold=0.8, max_retries=1, include=None, crop=None):
         self.n += 1
         if not self.clicks:
             return False
@@ -93,6 +93,20 @@ class FakeVLM:
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.0, "ui_state": None}
+
+
+class FakeObserver:
+    """#20-7 观察器替身：观察 → Observation（不产决策）。"""
+
+    def __init__(self, text=None, entities=None):
+        self.text = text or ["chest_A"]
+        self.entities = entities or []
+
+    def observe(self):
+        from runtime.observation import Observation
+        return Observation(ui_state="test", text=list(self.text),
+                           entities=list(self.entities),
+                           confidence=1.0, source="fake", frame_id="fake-1")
 
 
 def run_scenario(clicks, label):
@@ -193,6 +207,30 @@ def main():
     ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
     assert ev and ev[-1].get("category") == "F3_WINDOW", ev
     print("[ok] 窗口消失 → F3_WINDOW 即停 PASS")
+
+    # 场景6（#20-7）：观察→规划→执行插层链路——FakeObserver 文本命中 → planner
+    # 产 INTERACT intent → executor.execute_intent 走 click_text → success
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-obsact", use_vlm=True)
+    orch.observer = FakeObserver(text=["chest_A"])
+
+    def driver_factory():
+        return FakeDriver([True] * 3)
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        result = orch.observe_act("chest_A")
+    assert result.success, result
+    assert result.error is None, result.error
+    acts = [ctx for t, ctx in seen if t == "action_executed"]
+    assert acts and acts[-1].get("method") == "text", acts
+    print("[ok] observe→plan→execute 链路（FakeObserver → Planner → click_text）PASS")
 
 
 if __name__ == "__main__":
