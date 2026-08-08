@@ -24,23 +24,39 @@ class ActionGuard:
         self.strict = strict        # True：未验证意图直接拒绝
         self.evidence_store = evidence_store  # id → {timestamp, confidence}
 
+    def check(self, intent, observation=None):
+        """Sprint C-5：最终允许/拒绝——风险量化 + 策略规则 + 证据校验。
+
+        返回 {"allowed", "risk", "reason", "limit"}。
+        """
+        from runtime.guards.risk import calculate_risk
+        from runtime.guards.policy import allowed, risk_limit
+
+        evidence_age = self._evidence_age(intent.evidence_id)
+        expired = evidence_age is not None and evidence_age > self.max_age
+        risk = calculate_risk(intent, observation, evidence_expired=expired)
+
+        # 证据/置信校验（先于策略——硬性门槛）
+        if expired:
+            return {"allowed": False, "risk": risk, "reason": "VISION_EXPIRED",
+                    "limit": None}
+        if intent.vision_verified and intent.vision_confidence < self.min_confidence:
+            return {"allowed": False, "risk": risk, "reason": "VISION_LOW_CONFIDENCE",
+                    "limit": self.min_confidence}
+        if not intent.vision_verified and self.strict:
+            return {"allowed": False, "risk": risk, "reason": "VISION_NOT_VERIFIED",
+                    "limit": None}
+
+        # 策略：动作类型 × 风险门槛
+        if not allowed(intent.action, risk):
+            return {"allowed": False, "risk": risk, "reason": "ACTION_RISK_HIGH",
+                    "limit": risk_limit(intent.action)}
+        return {"allowed": True, "risk": risk, "reason": "OK", "limit": None}
+
     def allow(self, intent):
-        """返回 (allowed, reason)。"""
-        if not intent.vision_verified:
-            if self.strict:
-                return False, "VISION_NOT_VERIFIED"
-            return True, "OK_LAX"  # 兼容模式（workflow 模板路径）
-
-        high = intent.risk == "high"
-        age = self._evidence_age(intent.evidence_id)
-        if age is not None and age > (HIGH_RISK_MAX_AGE if high else self.max_age):
-            return False, "VISION_EXPIRED"
-
-        threshold = HIGH_RISK_CONFIDENCE if high else self.min_confidence
-        if intent.vision_confidence < threshold:
-            return False, "VISION_LOW_CONFIDENCE"
-
-        return True, "OK"
+        """兼容旧接口（bool 语义）：返回 (allowed, reason)。"""
+        r = self.check(intent)
+        return r["allowed"], r["reason"]
 
     def _evidence_age(self, evidence_id):
         if not evidence_id or self.evidence_store is None:

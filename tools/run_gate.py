@@ -73,6 +73,9 @@ def run():
     def gate_tests():
         return py("tests/vision/test_gate.py")
 
+    def guard_tests():
+        return py("tools/action_guard_test.py")
+
     def smoke():
         return py("tools/smoke_orchestrator.py")
 
@@ -86,12 +89,13 @@ def run():
             ("unit checks", units, False),
             ("replay test", replay, False),
             ("vision gate", gate_tests, False),
+            ("action guard", guard_tests, False),
             ("smoke", smoke, args.skip_smoke),
             ("dry_run", dryrun, False)], start=1):
         if skip:
-            print(f"[{order}/7] {name} ... SKIP")
+            print(f"[{order}/8] {name} ... SKIP")
             continue
-        print(f"[{order}/7] {name} ...")
+        print(f"[{order}/8] {name} ...")
         ok, detail = func()
         if ok:
             print(f"  PASS {detail or ''}")
@@ -104,6 +108,7 @@ def run():
 
 if __name__ == "__main__":
     sys.exit(run())
+
 
 
 

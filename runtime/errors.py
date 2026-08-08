@@ -29,6 +29,7 @@ class ErrorCode(str, Enum):
     MOVE_STUCK = "move_stuck"                 # 移动卡死（目标不动）
     PRECONDITION_BLOCKED = "precondition"     # 动作前置条件不满足
     VISION_UNTRUSTED = "vision_untrusted"     # Sprint B：画面内容不可信（多信号不足）
+    ACTION_BLOCKED = "action_blocked"         # Sprint C：策略层拒绝（风险过高）
     UNKNOWN = "unknown_error"                 # 未归类（兜底）
 
 
@@ -50,7 +51,14 @@ SUBCLASS_BY_CODE = {
     ErrorCode.MOVE_STUCK: "F2_COORD",
     ErrorCode.PRECONDITION_BLOCKED: "F3",
     ErrorCode.VISION_UNTRUSTED: "F4_VISION",
+    ErrorCode.ACTION_BLOCKED: "F5_ACTION_BLOCK",
 }
+
+# Sprint C：F5 子分类特征
+ACTION_SUBCLASSES = [
+    ("ACTION_RISK_HIGH", "F5_RISK_HIGH"),
+    ("risk", "F5_RISK_HIGH"),
+]
 
 # Sprint B-2：F4_VISION 子分类特征（error/reason 文本匹配）
 VISION_SUBCLASSES = [

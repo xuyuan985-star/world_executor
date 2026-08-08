@@ -273,18 +273,22 @@ class RealExecutor:
             return ExecutionResult(success=True, category="F2")
         allowed, reason = self.guard.allow(intent)
         if not allowed:
-            # Sprint B-2：F4_VISION 分类 + 证据记录（fail_recorded 带原因）
-            self._emit("fail_recorded", detail=f"F4_VISION:{reason}:{intent.target}",
-                       context={"category": "F4_VISION", "target": intent.target,
-                                "error": f"vision_guard:{reason}",
+            # Sprint C：策略拒绝（F5_ACTION_BLOCK）与视觉拒绝（F4_VISION）分离
+            f5 = reason in ("ACTION_RISK_HIGH",)
+            cat = "F5_ACTION_BLOCK" if f5 else "F4_VISION"
+            code = ErrorCode.ACTION_BLOCKED if f5 else ErrorCode.VISION_UNTRUSTED
+            self._emit("fail_recorded", detail=f"{cat}:{reason}:{intent.target}",
+                       context={"category": cat, "target": intent.target,
+                                "error": f"{code.value}:{reason}",
                                 "failure_signature":
-                                    f"F4_VISION:{intent.action}:{intent.target}:{reason}",
+                                    f"{cat}:{intent.action}:{intent.target}:{reason}",
                                 "suggested_recovery": "reobserve",
                                 "vision_confidence": intent.vision_confidence,
-                                "evidence_id": intent.evidence_id})
-            return ExecutionResult(success=False, error=f"vision_guard:{reason}",
-                                   retryable=False, category="F4_VISION",
-                                   code=ErrorCode.VISION_UNTRUSTED)
+                                "evidence_id": intent.evidence_id,
+                                "guard_reason": reason})
+            return ExecutionResult(success=False, error=f"action_blocked:{reason}"
+                                   if f5 else f"vision_guard:{reason}",
+                                   retryable=False, category=cat, code=code)
         return self.execute(intent)
 
     # ---------- 执行（ActionIntent） ----------

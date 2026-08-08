@@ -54,6 +54,8 @@ CATEGORY_TEXT = {
     "F4_EXPIRED": "F4 证据过期",
     "F4_NOT_VERIFIED": "F4 未验证",
     "F4_FRAME": "F4 帧异常",
+    "F5_ACTION_BLOCK": "F5 动作被策略拦截",
+    "F5_RISK_HIGH": "F5 风险过高",
     "EMERGENCY": "EMERGENCY 人工介入",
 }
 
