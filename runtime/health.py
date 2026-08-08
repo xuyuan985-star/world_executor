@@ -103,7 +103,10 @@ def check_health(verbose=False, game_required=True):
         except Exception as e:
             errors["input_l1"] = f"{type(e).__name__}: {e}"
 
-        # L2: 游戏响应（仅游戏窗口存在时；ESC → 截图 → 画面变化或 OCR 命中菜单词）
+        # L2: 游戏响应探测（InputProbe，仅游戏窗口存在时）
+        # 判据：以"画面变化显著"为主，OCR 命中菜单词为辅。
+        # 不绑定 ESC 的行为语义：ESC 可能被剧情/战斗/UI 状态吃掉——
+        # 关键判据是"按任意输入后游戏画面是否响应"，词表可配置。
         result["input_l2"] = None  # 未测
         if result["window"] and result["capture"]:
             try:

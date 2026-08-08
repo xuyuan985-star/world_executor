@@ -1,6 +1,10 @@
 """Emergency Pause：人工安全刹车（v0.12.1，M1 阶段强制开启）。
 
 任何"人接手了电脑"的信号 → 立即 human_intervention + pause，绝不继续执行。
+
+权限边界（Errata）：本层只回答"还能不能安全继续"，
+**不监控**：键盘输入 / 行为分析 / 用户意图识别（禁止演化为输入监控系统）。
+触发源仅限：光标移动、前台窗口切换。
 """
 import ctypes
 import threading

@@ -45,3 +45,25 @@ class KnowledgePackage:
 
     def template_exists(self, name):
         return (self.templates_dir / name).exists()
+
+    def entity_templates(self):
+        """实体→模板映射：扫描 workflows/*.json 的 interact 步骤，
+        并合并 portals/landmarks 的 trigger 模板。
+        entity_id（世界实体）→ 模板文件名（driver/executor 层解析用）。"""
+        mapping = {}
+        if self.workflows_dir.exists():
+            for p in sorted(self.workflows_dir.glob("*.json")):
+                try:
+                    wf = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                tid = wf.get("target_id")
+                for step in wf.get("steps", []):
+                    if step.get("type") == "interact" and step.get("template"):
+                        mapping[tid] = step["template"]
+                        break
+        for item in (self.portals or []) + (self.landmarks or []):
+            trig = item.get("trigger") or {}
+            if item.get("id") and trig.get("template"):
+                mapping.setdefault(item["id"], trig["template"])
+        return mapping

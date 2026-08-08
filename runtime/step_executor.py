@@ -22,9 +22,10 @@ class RealExecutor:
         self.naturalness = NaturalnessPolicy()
         self.vlm = VLMVisionObserver() if use_vlm else None
         self._driver = None
-        self._last_vlm_pos = None  # (norm_x, norm_y) 归一化 0-1
-
-    # ---------- driver / 事件 ----------
+        self._entity_templates = None
+        self._obs_store = {}        # 世界实体 id → 最近观测 bbox（归一化 0-1）
+        self._recent_events = []    # 最近事件 id（fail_recorded.related_events 用）
+        self._MAX_RECENT = 20
 
     @property
     def driver(self):
@@ -36,10 +37,29 @@ class RealExecutor:
     def _emit(self, event_type, **kw):
         if self.bus is not None:
             from runtime.events.schema import make_event
-            self.bus.publish(make_event(event_type, self.execution_id, **kw))
+            ev = make_event(event_type, self.execution_id, **kw)
+            self.bus.publish(ev)
+            self._recent_events.append(ev.id)
+            if len(self._recent_events) > self._MAX_RECENT:
+                self._recent_events.pop(0)
+            return ev
+        return None
+
+    def entity_templates(self):
+        if self._entity_templates is None:
+            self._entity_templates = self.pkg.entity_templates()
+        return self._entity_templates
+
+    def resolve_template(self, entity_id):
+        """世界实体 id → 模板路径（executor 层解析，intent 不携带模板名）。"""
+        name = self.entity_templates().get(entity_id)
+        if not name:
+            return None
+        path = self.pkg.templates_dir / name
+        return str(path) if path.exists() else None
 
     def screenshot_path(self):
-        return self.driver["vision"].screenshot_path("ingest/raw/frames/live")
+        return self.driver.vision.screenshot_path("ingest/raw/frames/live")
 
     # ---------- 观测（observer 通道，不产决策） ----------
 
@@ -63,48 +83,72 @@ class RealExecutor:
         data = self.vlm.locate_target(shot, target_desc)
         found = data.get("found") is True
         x, y = data.get("screen_x"), data.get("screen_y")
+        bbox = None
         if found and x and y:
-            self._last_vlm_pos = (float(x) / 1000.0, float(y) / 1000.0)
-        else:
-            self._last_vlm_pos = None
+            bbox = (float(x) / 1000.0, float(y) / 1000.0)
+            self._obs_store[target_desc] = bbox
         self._emit("observation", detail=f"locate:{'found' if found else 'miss'}",
                    context={"observer": "vlm_vision", "target": target_desc,
                             "confidence": data.get("confidence"),
-                            "screen_x": self._last_vlm_pos[0] if self._last_vlm_pos else None,
-                            "screen_y": self._last_vlm_pos[1] if self._last_vlm_pos else None})
-        return self._last_vlm_pos
+                            "screen_x": bbox[0] if bbox else None,
+                            "screen_y": bbox[1] if bbox else None})
+        return bbox
 
     # ---------- 执行（ActionIntent） ----------
 
     def execute(self, intent: ActionIntent):
-        """执行动作意图。坐标不进入 intent：vlm_absolute 由本层换算。"""
-        backend = self.driver["input"]
+        """执行动作意图。坐标不进入 intent：位置来自实体观测记录（executor 解析）。"""
+        backend = self.driver.input
         delay = self.naturalness.click_delay()
         time.sleep(delay)
-        if intent.method == "vlm_absolute":
-            result = self._click_vlm_absolute(intent)
+        if intent.method == "template":
+            result = self._execute_template(intent)
+        elif intent.method == "vlm_bbox":
+            result = self._execute_vlm_bbox(intent)
         else:
             result = backend.execute(intent)
         self._emit("action_executed", detail=f"{intent.action}:{intent.target}",
                    context={"naturalized": True, "delay_ms": int(delay * 1000),
                             **intent.to_context(), **result.to_context()})
+        if not result.success:
+            self._record_failure(intent, result, category="F1")
         return result.success
 
-    def _click_vlm_absolute(self, intent):
-        if self._last_vlm_pos is None:
-            from runtime.input.base import InputResult
-            return InputResult(success=False, action="click_vlm_absolute",
-                               backend=self.driver["input"].name,
-                               error="no_vlm_position: 缺少最近一次定位观测")
-        nx, ny = self._last_vlm_pos
-        px, py = self.driver["vision"].to_absolute(nx, ny)
-        return self.driver["input"].click(px, py)
+    def _execute_template(self, intent):
+        from runtime.input.base import InputResult
+        path = self.resolve_template(intent.target)
+        if path is None:
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"unknown_entity:{intent.target}")
+        params = intent.params
+        ok = bool(self.driver.input.auto.click_element(
+            path, "image", params.get("threshold", 0.85),
+            max_retries=params.get("max_retries", 3)))
+        return InputResult(success=ok, action="click_template", backend="march7th",
+                           error=None if ok else "click_element_failed")
+
+    def _execute_vlm_bbox(self, intent):
+        from runtime.input.base import InputResult
+        bbox = self._obs_store.get(intent.target)
+        if bbox is None:
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"no_observation:{intent.target}")
+        nx, ny = bbox
+        px, py = self.driver.vision.to_absolute(nx, ny)
+        return self.driver.input.click(px, py)
+
+    def _record_failure(self, intent, result, category):
+        self._emit("fail_recorded", detail=f"{category}:{intent.action}:{intent.target}",
+                   context={"category": category, "target": intent.target,
+                            "error": result.error,
+                            "related_events": list(self._recent_events[-8:])})
 
     # ---------- 便捷包装（调用方免构造 intent） ----------
 
-    def interact_template(self, template, threshold=0.85, max_retries=3):
+    def interact_template(self, entity_id, threshold=0.85, max_retries=3):
+        """entity_id = 世界实体 id（chest_A），模板解析在本层完成。"""
         return self.execute(ActionIntent(
-            action="interact", target=template, method="template",
+            action="interact", target=entity_id, method="template",
             params={"threshold": threshold, "max_retries": max_retries},
             reason="objective_interact"))
 
@@ -114,6 +158,12 @@ class RealExecutor:
             params={"include": include, "max_retries": max_retries, "crop": crop},
             reason="objective_ui"))
 
+    def click_vlm_entity(self, entity_id):
+        """按世界实体 id 点击：位置取自该实体的最近观测记录。"""
+        return self.execute(ActionIntent(
+            action="interact", target=entity_id, method="vlm_bbox",
+            reason="objective_interact_vlm"))
+
     def move_visual_guided(self, target_desc, ticks, step_seconds):
         for i in range(ticks):
             pos = self.locate_target(target_desc)
@@ -122,19 +172,19 @@ class RealExecutor:
             x, y = pos
             dur = self.naturalness.sprint_duration(step_seconds)
             if 0.4 < x < 0.6:
-                self.driver["input"].press_key("w", wait_time=dur)
+                self.driver.input.press_key("w", wait_time=dur)
                 self._emit("action_executed", detail=f"move_forward:{dur:.1f}s",
                            context={"naturalized": True, "tick": i})
             else:
                 side = "d" if x < 0.5 else "a"
-                self.driver["input"].press_key(side, wait_time=self.naturalness.rotate_duration())
+                self.driver.input.press_key(side, wait_time=self.naturalness.rotate_duration())
                 self._emit("action_executed", detail=f"steer:{side}",
                            context={"naturalized": True, "tick": i})
         return True
 
     def portal_transition(self, portal, wait_base):
         trigger = portal["trigger"]
-        ok = self.interact_template(trigger["template"], trigger["threshold"])
+        ok = self.interact_template(portal["id"], trigger["threshold"])
         if not ok:
             return False
         wait = self.naturalness.transition_wait(wait_base)
@@ -142,7 +192,7 @@ class RealExecutor:
         return True
 
     def verify_signal(self, template, expected, timeout):
-        vision = self.driver["vision"]
+        vision = self.driver.vision
         deadline = time.time() + timeout
         while time.time() < deadline:
             found = vision.find_template(str(self.pkg.templates_dir / template), 0.8) is not None

@@ -6,7 +6,7 @@
     {"type": "portal", "portal_id": "door_A"},
     {"type": "move", "target": "lm_left_wing_end", "timeout": 20, "retry_on_fail": true},
     {"type": "visual_guided_move", "ticks": 3, "step_seconds": 2},
-    {"type": "interact", "template": "chest_D.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "retry": 2},
+    {"type": "interact", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "retry": 2},
     {"type": "verify", "signal": "minimap_icon", "expected": "vanished", "timeout": 30}
   ]
 }
