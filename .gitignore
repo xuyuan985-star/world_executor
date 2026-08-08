@@ -24,6 +24,7 @@ runtime.db-*
 攻略视频/
 ingest/raw/frames/
 ingest/raw/events/*.json
+ingest/raw/videos/
 ingest/tmp/
 
 # 密钥与本地配置
