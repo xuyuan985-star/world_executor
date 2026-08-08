@@ -184,12 +184,34 @@ class RealExecutor:
     def screenshot_path(self):
         return self.driver.vision.screenshot_path("ingest/raw/frames/live")
 
+    def _capture_for_vlm(self):
+        """#17-B2：截图真实性前置——VLM 不吃垃圾输入。
+
+        take_screenshot 已记录 last_quality（#17-G 结构校验）；非 ok 时
+        重截一次（前台切换/瞬时黑帧自愈），仍非 ok → 放弃观测（返回 None），
+        VLM 永远只看到 quality=ok 的帧。
+        """
+        vision = getattr(self.driver, "vision", None)
+        if vision is None:
+            return None
+        for _ in range(2):
+            shot = vision.screenshot_path("ingest/raw/frames/live")
+            quality = getattr(vision, "last_quality", None)
+            if quality is None or quality.quality == "ok":
+                return shot
+            self._emit("observation", detail="frame_rejected",
+                       context={"observer": "frame_validator", "quality": quality.quality,
+                                "reason": quality.reason})
+        return None
+
     # ---------- 观测（observer 通道，不产决策） ----------
 
     def observe_room(self, room_ids):
         if self.vlm is None:
             return None, None
-        shot = self.screenshot_path()
+        shot = self._capture_for_vlm()
+        if shot is None:
+            return None, None
         data = self.vlm.observe_room(shot, room_ids)
         room = data.get("room")
         confidence = data.get("confidence")
@@ -202,7 +224,9 @@ class RealExecutor:
     def locate_target(self, target_desc):
         if self.vlm is None:
             return None
-        shot = self.screenshot_path()
+        shot = self._capture_for_vlm()
+        if shot is None:
+            return None  # 帧质量不合格 → 本次定位放弃（不把垃圾帧交给 VLM）
         data = self.vlm.locate_target(shot, target_desc)
         found = data.get("found") is True
         x, y = data.get("screen_x"), data.get("screen_y")
