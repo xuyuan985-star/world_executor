@@ -112,6 +112,16 @@ class RuntimeHealthBar(QWidget):
             box = self._items.get(key)
             if box is None:
                 continue
+            if key == "input" and ("input_l0" in health or "input_l1" in health):
+                l0 = "L0✓" if health.get("input_l0") else "L0✗"
+                l1 = "L1✓" if health.get("input_l1") else "L1✗"
+                l2 = "L2?" if health.get("input_l2") is None else ("L2✓" if health.get("input_l2") else "L2✗")
+                mark = "✓" if ok else "✗"
+                color = "#3BA55D" if ok else "#FF6B6B"
+                box.setText(f"[{mark}] 输入 {l0} {l1} {l2}")
+                box.setStyleSheet(f"color: {color}; font-size: 11px; border: 1px solid #24405F;"
+                                  "border-radius: 4px; padding: 2px 8px;")
+                continue
             mark = "✓" if ok else "✗"
             color = "#3BA55D" if ok else "#FF6B6B"
             label = HEALTH_LABELS.get(key, key)
@@ -130,9 +140,10 @@ class FailureInspector(CardWidget):
         card_layout(self).addWidget(self._body)
         card_layout(self).addStretch(1)
 
-    def on_failure(self, run_no, state, observation, action, input_info, reason):
+    def on_failure(self, run_no, state, observation, action, input_info, reason, category=None):
+        cat_text = f"[{category}] " if category else ""
         lines = [
-            f"Run #{run_no}  FAILED",
+            f"Run #{run_no}  FAILED  {cat_text}",
             f"State: {state or '—'}",
             f"Last observation: {observation or '—'}",
             f"Action: {action or '—'}",
@@ -247,7 +258,8 @@ class CommandDeck(QWidget):
                     run_no=self._run_no, state=self._last_state,
                     observation=self.snapshot._body.text(),
                     action="—", input_info="—",
-                    reason=ctx.get("reason") or "目标失败")
+                    reason=ctx.get("reason") or "目标失败",
+                    category=ctx.get("category") or "F3 决策漂移")
         elif event.type == "observation":
             ctx = event.context
             self.snapshot.update_snapshot(
@@ -263,7 +275,18 @@ class CommandDeck(QWidget):
                     run_no=self._run_no, state=self._last_state,
                     observation=self.snapshot._body.text(),
                     action=event.detail, input_info=f"{ctx.get('backend')} ✗",
-                    reason=f"{reason} → 建议: {suggested}")
+                    reason=f"{reason} → 建议: {suggested}",
+                    category="F1 输入失败")
+        elif event.type == "human_intervention":
+            ctx = event.context
+            self.led.setText("⚠ 人工介入")
+            self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+            self.inspector.on_failure(
+                run_no=self._run_no, state=self._last_state,
+                observation=self.snapshot._body.text(),
+                action="—", input_info="—",
+                reason=f"人工介入: {ctx.get('reason')} {ctx.get('detail', '')}",
+                category="EMERGENCY")
 
     def reset(self):
         self.sm_view.reset()

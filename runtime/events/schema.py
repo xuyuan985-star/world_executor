@@ -15,6 +15,7 @@ EVENT_TYPES = {
     "repair_recorded",
     "pause_requested",
     "resume_checked",
+    "human_intervention",
 }
 
 STATE_TYPES = {
