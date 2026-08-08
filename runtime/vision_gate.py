@@ -119,7 +119,8 @@ class VisionGate:
         else:
             reasons.append(f"帧质量 {evidence.frame_quality}")
 
-        has_vlm = vlm.scene or vlm.room
+        # VLM 通道存在性：scene/room 有效，或置信度>0（存在但弱=走双通道评分）
+        has_vlm = bool(vlm.scene or vlm.room or (vlm.confidence or 0.0) > 0)
         if has_vlm:
             score = OCR_WEIGHT * ocr_score + VLM_WEIGHT * vlm_score \
                 + CONSISTENCY_WEIGHT * consistency
@@ -135,8 +136,21 @@ class VisionGate:
         score = round(min(1.0, max(0.0, score)), 3)
 
         allowed = score >= threshold
+
+        # Sprint B-6 融合语义：三元判定（ACCEPT / OBSERVE / REJECT）
+        #   OCR高 + VLM高 → accept（confirmed）
+        #   OCR高 + VLM低 → observe（可观察不执行，等待重试）
+        #   VLM高 + OCR无 → reject（vlm_only——幻觉特征）
+        #   都弱          → reject
+        mode = "accept" if allowed else "reject"
+        if not allowed and ocr_hits and not vlm_ok:
+            mode = "observe"
+        elif not allowed and not ocr_hits and vlm_ok:
+            mode = "reject"  # vlm_only
+
         return {
             "allowed": allowed,
+            "mode": mode,
             "score": score,
             "threshold": threshold,
             "reason": "vision verified" if allowed

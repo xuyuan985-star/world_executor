@@ -75,7 +75,18 @@ def main():
     small = fv3.validate(np.zeros((800, 600), dtype=np.uint8))
     assert small.quality == "size_mismatch", small.quality
 
-    print("[gate] 6 cases + 静态/尺寸 附加断言 全部 PASS")
+    # Case 7（Sprint B-6）：OCR 强 + VLM 弱 → observe（观察不执行）
+    r7 = gate.evaluate(ev(["商店", "购买"], {"ui_state": None, "confidence": 0.2}))
+    assert not r7["allowed"], r7
+    assert r7["mode"] == "observe", r7
+
+    # Case 8（Sprint B-6）：VLM 高 + OCR 无命中 → reject（vlm_only 幻觉特征）
+    r8 = gate.evaluate(ev(["一些不相关文字"], {"ui_state": "game", "room": "base_zone",
+                                             "confidence": 0.95}))
+    assert not r8["allowed"], r8
+    assert r8["mode"] == "reject", r8
+
+    print("[gate] 6 cases + 静态/尺寸 + observe/vlm_only 三元语义 全部 PASS")
 
 
 if __name__ == "__main__":

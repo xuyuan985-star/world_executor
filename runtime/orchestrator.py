@@ -320,6 +320,16 @@ class WorkflowOrchestrator:
                      "room": observation.room,
                      "confidence": observation.confidence})
             if not gate["valid"]:
+                if gate.get("mode") == "observe":
+                    # Sprint B-6：OCR 强但 VLM 弱 → 观察模式（不执行，可重试）
+                    self._emit("observation",
+                               context={"observer": observation.source,
+                                        "target": target,
+                                        "gate": "VISION_OBSERVE",
+                                        "reason": gate["reason"],
+                                        **observation.to_context()})
+                    return self.executor.execute_intent(
+                        self.planner.plan_wait("vision observe (ocr strong, vlm weak)"))
                 self._emit("observation",
                            context={"observer": observation.source,
                                     "target": target,
