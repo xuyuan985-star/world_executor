@@ -11,13 +11,14 @@ from ingest.vlm_client import QwenVLProvider
 
 FRAME_DIR = Path("ingest/raw/frames/capture")
 FPS_INTERVAL = 3
+SCALE = 1280
 
 
-def extract_frames(video):
+def extract_frames(video, scale=SCALE):
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-        "-vf", f"fps=1/{FPS_INTERVAL},scale=1280:-1",
+        "-vf", f"fps=1/{FPS_INTERVAL},scale={scale}:-1",
         str(FRAME_DIR / "f_%04d.jpg"),
     ], check=True)
     return sorted(FRAME_DIR.glob("f_*.jpg"))
@@ -46,7 +47,8 @@ def ask_frame(provider, frame, index):
 
 def main():
     video = sys.argv[1]
-    frames = extract_frames(video)
+    scale = int(sys.argv[2]) if len(sys.argv) > 2 else SCALE
+    frames = extract_frames(video, scale=scale)
     print(f"抽帧 {len(frames)} 张")
     provider = QwenVLProvider()
     results = []
