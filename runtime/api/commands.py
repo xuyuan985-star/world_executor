@@ -50,7 +50,8 @@ class RuntimeAPI:
             self._state = "running"
             bus.publish(make_event("run_started", execution_id,
                                    context={"knowledge": spec.knowledge_dir,
-                                            "targets": targets, "mode": spec.mode}))
+                                            "targets": targets, "mode": spec.mode,
+                                            "knowledge_hash": pkg.package_hash()}))
             if spec.mode == "real":
                 from runtime.orchestrator import WorkflowOrchestrator
                 orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=execution_id,

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -24,6 +25,26 @@ class KnowledgePackage:
         self.chests = self._load("chests.json") or []
         self.templates_dir = self.root / "templates"
         self.workflows_dir = self.root / "workflows"
+        # #28：启动即冻结——workflow 缓存 + 内容 hash，运行中改文件不影响执行链
+        self._workflow_cache = {}
+        self._package_hash = None
+
+    def package_hash(self):
+        """#28：知识包内容指纹（json 数据 + workflows），mission 事件携带。"""
+        if self._package_hash is not None:
+            return self._package_hash
+        h = hashlib.sha256()
+        for name in ("package.json", "rooms.json", "portals.json",
+                     "landmarks.json", "chests.json"):
+            p = self.root / name
+            if p.exists():
+                h.update(name.encode())
+                h.update(p.read_bytes())
+        for p in sorted(self.workflows_dir.glob("*.json")):
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
+        self._package_hash = h.hexdigest()[:12]
+        return self._package_hash
 
     def _check_schema_version(self):
         """#37：schema_version 不匹配 → 拒绝加载并告警（fail-fast）。"""
@@ -48,10 +69,15 @@ class KnowledgePackage:
         return json.loads(p.read_text(encoding="utf-8"))
 
     def workflow(self, target_id):
+        # #28：缓存冻结——执行链不感知运行期文件修改
+        if target_id in self._workflow_cache:
+            return self._workflow_cache[target_id]
         p = self.workflows_dir / f"{target_id}.json"
         if not p.exists():
             return None
-        return json.loads(p.read_text(encoding="utf-8"))
+        wf = json.loads(p.read_text(encoding="utf-8"))
+        self._workflow_cache[target_id] = wf
+        return wf
 
     def spawn_room(self):
         return self.rooms["spawn_room"] if self.rooms else None

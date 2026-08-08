@@ -235,25 +235,17 @@ class RealExecutor:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"unknown_entity:{intent.target}")
         params = intent.params
-        ok = bool(self.driver.input.auto.click_element(
-            path, "image", params.get("threshold", 0.85),
-            max_retries=params.get("max_retries", 3)))
-        # #11：action 保持 intent 语义，backend 方法记录在 method 字段，不污染 action
-        return InputResult(success=ok, action=intent.action, backend="march7th",
-                           method="template",
-                           error=None if ok else "click_element_failed")
+        # #36：executor 只调 backend 原语，不摸 .auto（March7th 细节隔离在适配层）
+        return self.driver.input.click_template(
+            path, params.get("threshold", 0.85), params.get("max_retries", 3))
 
     def _execute_text(self, intent):
         """text 定位专用路径（与 template/vlm_bbox 对称，不依赖 backend 自定义 execute）。"""
-        from runtime.input.base import InputResult
-        ok = bool(self.driver.input.auto.click_text(
+        return self.driver.input.click_text(
             intent.target,
-            include=intent.params.get("include", True),
-            max_retries=intent.params.get("max_retries", 3),
-            crop=intent.params.get("crop")))
-        return InputResult(success=ok, action=intent.action, backend="march7th",
-                           method="text",
-                           error=None if ok else "click_text_failed")
+            intent.params.get("include", True),
+            intent.params.get("max_retries", 3),
+            intent.params.get("crop"))
 
     def _execute_vlm_bbox(self, intent):
         from runtime.input.base import InputResult
@@ -285,8 +277,11 @@ class RealExecutor:
         # #30：按 result.error 特征细分子分类（保持 F1/F2/F3 主类冻结）
         sub = subclass_for(result.error)
         cat = sub or "F1"
+        # #31 失败指纹：同因失败可聚合（统计/去重），error 截断防指纹膨胀
+        signature = f"{cat}:{intent.action}:{intent.target}:{(result.error or '')[:40]}"
         ctx = {"category": cat, "target": intent.target,
                "error": result.error,
+               "failure_signature": signature,
                "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         try:

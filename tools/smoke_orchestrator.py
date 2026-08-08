@@ -39,6 +39,17 @@ class FakeInput:
     def click(self, x, y):
         return InputResult(success=self.click_result, action="click", backend="fake")
 
+    def click_template(self, path, threshold, max_retries):
+        ok = bool(self.auto.click_element(path, "image", threshold, max_retries))
+        return InputResult(success=ok, action="click_template", backend="fake",
+                           error=None if ok else "click_element_failed")
+
+    def click_text(self, text, include, max_retries, crop):
+        ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,
+                                          include=include, crop=crop))
+        return InputResult(success=ok, action="click_text", backend="fake",
+                           error=None if ok else "click_text_failed")
+
     def press_key(self, key, wait_time=0):
         return InputResult(success=True, action="press_key", backend="fake")
 
@@ -107,7 +118,29 @@ def main():
     results, state = run_scenario([True] * 10, "ok")
     assert results == {"chest_A": True}, results
     assert state == State.DONE, state
-    print("[ok] 全链路成功 PASS")
+
+    # #42：事件顺序断言——mission 生命周期必须按序出现
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append(e.type))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-order", use_vlm=True)
+
+    def driver_factory():
+        return FakeDriver([True] * 10)
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.step_executor.VLMVisionObserver", FakeVLM), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch.run_mission(["chest_A"])
+    order = [t for t in seen if t in
+             ("state_changed", "action_executed", "target_progress")]
+    assert order[0] == "state_changed", order[:2]     # 状态机先启动
+    assert "action_executed" in order
+    assert order[-1] == "target_progress", order[-2:]  # done 事件收尾
+    print("[ok] 事件生命周期顺序 PASS")
 
     results, state = run_scenario([True, False, False, False], "fail")
     assert results == {"chest_A": False}, results

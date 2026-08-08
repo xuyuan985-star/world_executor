@@ -19,8 +19,25 @@ class March7thVision:
         self.ocr = ocr
 
     def take_screenshot(self):
-        """PrintWindow 后台截图。返回 (PIL.Image, screenshot_pos, scale_factor)。"""
-        return self.auto.take_screenshot()
+        """#39 截图降级链：PrintWindow 后台 → 前台 mss（失败不裸崩）。
+
+        返回 (PIL.Image, screenshot_pos, scale_factor)。
+        """
+        try:
+            return self.auto.take_screenshot()
+        except Exception:
+            pass
+        try:
+            from runtime.win_capture import capture_game_foreground
+            from runtime.drivers.march7th.window import find_game_window
+            game = find_game_window()
+            if game is None:
+                raise RuntimeError("no game window for foreground capture")
+            img = capture_game_foreground(game)
+            left, top = game["client"][0], game["client"][1]
+            return img, (left, top, game["client"][0], game["client"][1]), 1.0
+        except Exception:
+            raise RuntimeError("截图降级链失败：PrintWindow 与前台 mss 均不可用")
 
     def screenshot_path(self, out_dir):
         """后台截图落盘，返回路径（VLM 观测帧用）。"""
