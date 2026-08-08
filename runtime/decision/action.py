@@ -5,6 +5,18 @@ from types import MappingProxyType
 from typing import Mapping
 
 
+def _deep_freeze(value):
+    """#17-B：递归不可变化——MappingProxyType 只冻结表层 dict，
+    嵌套 dict/list/set 仍可被改写（planner 偷偷改 intent 的隐患）。"""
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(v) for v in value)
+    if isinstance(value, set):
+        return frozenset(_deep_freeze(v) for v in value)
+    return value
+
+
 class ActionMethod(Enum):
     """intent.method 白名单（#28）：字符串散落是 typo 源头，运行时才炸。"""
     TEMPLATE = "template"
@@ -42,7 +54,7 @@ class ActionIntent:
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:
             raise ValueError(f"非法 method: {self.method}（允许: {sorted(m.value for m in ActionMethod)}）")
-        object.__setattr__(self, "params", MappingProxyType(dict(self.params)))
+        object.__setattr__(self, "params", _deep_freeze(self.params))
 
     def to_context(self):
         ctx = {"action": self.action, "target": self.target, "method": self.method,

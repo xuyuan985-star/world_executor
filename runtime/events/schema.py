@@ -13,6 +13,7 @@ EVENT_TYPES = {
     "state_changed",
     "observation",
     "action_executed",
+    "move_completed",  # #17-H：移动聚合事件（长移动只发一条，防 tick 风暴）
     "target_progress",
     "fail_recorded",
     "repair_recorded",

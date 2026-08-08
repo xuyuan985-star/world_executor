@@ -3,6 +3,8 @@ from collections import deque
 from pathlib import Path
 
 from runtime.decision.action import ActionIntent, ActionMethod
+from runtime.errors import (ErrorCode, PERMANENT_CODES, SUBCLASS_BY_CODE,
+                            code_of)
 from runtime.execution import ExecutionResult
 from runtime.naturalness import NaturalnessPolicy
 from runtime.observation_store import ObservationStore
@@ -104,11 +106,22 @@ class RealExecutor:
         self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
         self._MAX_RECENT = 100
         # #1：method → 处理器 registry（扩展定位方式=注册，不改 execute）
+        # #17-C：白名单冻结——register_method 只接受核心 method，未来插件
+        # 扩展须显式审计（防"知识包注册 shell"式入口污染）
         self._method_handlers = {
             ActionMethod.TEMPLATE.value: self._execute_template,
             ActionMethod.VLM_BBOX.value: self._execute_vlm_bbox,
             ActionMethod.TEXT.value: self._execute_text,
         }
+        self._core_methods = frozenset(self._method_handlers)  # 冻结白名单
+
+    def register_method(self, name, handler):
+        """#17-C：method 注册入口——白名单校验，未知/未审计 method 拒绝。"""
+        if name not in self._core_methods:
+            raise ValueError(
+                f"method 不在核心白名单: {name}（允许: {sorted(self._core_methods)}，"
+                f"插件扩展须先审计进 ALLOWED_METHODS）")
+        self._method_handlers[name] = handler
 
     @property
     def driver(self):
@@ -247,13 +260,20 @@ class RealExecutor:
 
     @staticmethod
     def _to_result(intent, result) -> ExecutionResult:
-        sub = subclass_for(result.error)
+        # #17-A：code 优先判定（枚举契约），子串表仅兜底 backend 外来文本
+        code = code_of(result.error)
+        sub = (SUBCLASS_BY_CODE.get(code) if code else None) or subclass_for(result.error)
+        if code is not None:
+            retryable = (code not in PERMANENT_CODES) if intent.idempotent else False
+        else:
+            retryable = retryable_for(result.error) if intent.idempotent else False
         cat = sub or "F1"
         return ExecutionResult(
             success=result.success,
             error=result.error,
-            retryable=retryable_for(result.error) if intent.idempotent else False,
+            retryable=retryable,
             category=cat,
+            code=code if code is not None and code is not ErrorCode.UNKNOWN else None,
         )
 
     def _execute_template(self, intent):
@@ -302,7 +322,19 @@ class RealExecutor:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"invalid_bbox_format:{len(bbox)}")
         px, py = self.driver.vision.to_absolute(nx, ny)
+        # #17-E：点击前二次验证钩子——obs.frame_id 与当前帧一致才允许点击
+        # （observe → click 之间的窗口期漂移检测；VLM 帧计数器接入后启用，
+        # 默认恒过，与 S5 preconditions 相同的"契约先行"模式）
+        if not self._pre_click_verify(intent, obs):
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"stale_observation:{intent.target}:frame_changed")
         return self.driver.input.click(px, py)
+
+    @staticmethod
+    def _pre_click_verify(intent, obs):
+        """#17-E：观察-动作原子性钩子。默认放行；接入帧校验后：
+        对比 obs.frame_id 与当前帧 id，不一致 → 返回 False 强制重新 observe。"""
+        return True
 
     def _record_failure(self, intent, result):
         # #30：按 result.error 特征细分子分类（保持 F1/F2/F3 主类冻结）
@@ -368,6 +400,8 @@ class RealExecutor:
         located = 0
         last_x = None
         stuck = 0
+        forward_sec = 0.0
+        steer_count = 0
         for i in range(ticks):
             if abort_check and abort_check():
                 return ExecutionResult(success=False, error="move_aborted",
@@ -392,13 +426,17 @@ class RealExecutor:
             dur = self.naturalness.sprint_duration(step_seconds)
             if abs(x - 0.5) < 0.1:
                 self.driver.input.press_key("w", wait_time=dur)
-                self._emit("action_executed", detail=f"move_forward:{dur:.1f}s",
-                           context={"naturalized": True, "tick": i})
+                forward_sec += dur
             else:
                 side = "a" if x < 0.5 else "d"  # 目标在左 → 左转
                 self.driver.input.press_key(side, wait_time=self.naturalness.rotate_duration())
-                self._emit("action_executed", detail=f"steer:{side}",
-                           context={"naturalized": True, "tick": i})
+                steer_count += 1
+        # #17-H：move 事件聚合——长移动只发一条 summary，不刷 tick 风暴
+        self._emit("move_completed",
+                   detail=f"move:{target_desc}",
+                   context={"ticks": ticks, "located": located,
+                            "forward_seconds": round(forward_sec, 2),
+                            "steer_count": steer_count})
         if located == 0:
             return ExecutionResult(success=False, error="no_observation",
                                    retryable=False, category="F2_COORD")

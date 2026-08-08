@@ -17,27 +17,45 @@ class March7thVision:
         from module.ocr import ocr
         self.auto = auto
         self.ocr = ocr
+        # #17-G：最近一次截图的结构质量（成功 ≠ 正确，供调用方在进 VLM 前决策）
+        self.last_quality = None
+        self._validator = None
+
+    @property
+    def validator(self):
+        if self._validator is None:
+            from runtime.vision_quality import FrameValidator
+            self._validator = FrameValidator()
+        return self._validator
 
     def take_screenshot(self):
         """#39 截图降级链：PrintWindow 后台 → 前台 mss（失败不裸崩）。
 
         返回 (PIL.Image, screenshot_pos, scale_factor)。
+        #17-G：返回前做结构质量校验（全黑/全白/黑边），记入 self.last_quality——
+        不抛异常（截图本身成功），由调用方在进 OCR/VLM 前决策。
         """
+        source = "print_window"
         try:
-            return self.auto.take_screenshot()
+            out = self.auto.take_screenshot()
         except Exception:
-            pass
-        try:
-            from runtime.win_capture import capture_game_foreground
-            from runtime.drivers.march7th.window import find_game_window
-            game = find_game_window()
-            if game is None:
-                raise RuntimeError("no game window for foreground capture")
-            img = capture_game_foreground(game)
-            left, top = game["client"][0], game["client"][1]
-            return img, (left, top, game["client"][0], game["client"][1]), 1.0
-        except Exception:
-            raise RuntimeError("截图降级链失败：PrintWindow 与前台 mss 均不可用")
+            out = None
+        if out is None:
+            try:
+                from runtime.win_capture import capture_game_foreground
+                from runtime.drivers.march7th.window import find_game_window
+                game = find_game_window()
+                if game is None:
+                    raise RuntimeError("no game window for foreground capture")
+                img = capture_game_foreground(game)
+                left, top = game["client"][0], game["client"][1]
+                out = (img, (left, top, game["client"][0], game["client"][1]), 1.0)
+                source = "foreground_mss"
+            except Exception:
+                raise RuntimeError("截图降级链失败：PrintWindow 与前台 mss 均不可用")
+        img = out[0]
+        self.last_quality = self.validator.validate(img, source=source)
+        return out
 
     def screenshot_path(self, out_dir):
         """后台截图落盘，返回路径（VLM 观测帧用）。"""

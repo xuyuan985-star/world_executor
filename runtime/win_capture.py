@@ -9,6 +9,30 @@ GAME_TITLE = "崩坏：星穹铁道"
 GAME_PROCESS = "StarRail.exe"
 
 
+def process_identity(hwnd):
+    """#17-F：窗口身份三元组 (hwnd, pid, process_create_time)。
+
+    GetWindowThreadProcessId 取 pid；OpenProcess + GetProcessTimes 取创建时间。
+    创建时间取不到时返回 (hwnd, pid, None)——此时降级为二元组判定。
+    """
+    pid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None) or None
+    create_time = None
+    if pid:
+        import ctypes.wintypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            try:
+                created = ctypes.wintypes.FILETIME()
+                if ctypes.windll.kernel32.GetProcessTimes(
+                        handle, ctypes.byref(created), None, None, None):
+                    create_time = (created.dwHighDateTime << 32) | created.dwLowDateTime
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+    return (hwnd, pid, create_time)
+
+
 def find_game_window(title=GAME_TITLE):
     """枚举可见窗口：标题匹配 + 客户区面积最大。
 
@@ -49,11 +73,14 @@ class WindowStateMonitor:
     """#19：监测游戏窗口状态变化（旧名 WindowLock 误导——它不 lock，只 detect）。
 
     客户区尺寸变化 = 状态变化（resize/遮挡/最小化恢复），供调用方决策。
+    #17-F：身份三元组（hwnd + pid + 进程创建时间）——HWND 可被系统复用
+    （游戏重启/更新后旧句柄可能指向新窗口），仅靠 hwnd 会错绑。
     """
 
     def __init__(self, title=GAME_TITLE):
         self.title = title
         self._last_rect = None
+        self._identity = None  # (hwnd, pid, create_time)
 
     def acquire(self):
         info = find_game_window(self.title)
@@ -61,7 +88,12 @@ class WindowStateMonitor:
             raise RuntimeError("未找到可见的游戏窗口")
         rect = info["client"]
         changed = self._last_rect is not None and self._last_rect != rect
+        identity = process_identity(info["hwnd"])
+        if identity != self._identity:
+            changed = True  # 窗口句柄/进程变化（重启、复用）→ 视为窗口更换
         self._last_rect = rect
+        self._identity = identity
+        info["pid"] = identity[1] if identity else None
         return {**info, "changed": changed}
 
 

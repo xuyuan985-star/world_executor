@@ -30,7 +30,11 @@ class KnowledgePackage:
         self._package_hash = None
 
     def package_hash(self):
-        """#28：知识包内容指纹（json 数据 + workflows），mission 事件携带。"""
+        """#28 知识包内容指纹（json 数据 + workflows + 模板文件）。
+
+        #17-J：Merkle 式——templates/ 是执行依据（阈值匹配对象），漏 hash 会导致
+        "模板换了包却看起来没变"；相对路径参与 hash（改名即变指纹）。
+        """
         if self._package_hash is not None:
             return self._package_hash
         h = hashlib.sha256()
@@ -43,6 +47,12 @@ class KnowledgePackage:
         for p in sorted(self.workflows_dir.glob("*.json")):
             h.update(p.name.encode())
             h.update(p.read_bytes())
+        # 模板目录：递归所有文件（png/jpg/…），相对路径参与指纹
+        if self.templates_dir.exists():
+            for p in sorted(self.templates_dir.rglob("*")):
+                if p.is_file():
+                    h.update(str(p.relative_to(self.root)).encode())
+                    h.update(p.read_bytes())
         self._package_hash = h.hexdigest()[:12]
         return self._package_hash
 
