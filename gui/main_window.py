@@ -60,6 +60,22 @@ class MainWindow(FluentWindow):
         self.command_deck.run_requested.connect(self._start_run)
         self.command_deck.stop_requested.connect(self._stop_run)
 
+        from PySide6.QtCore import QThread, Signal
+
+        class HealthWorker(QThread):
+            done = Signal(dict)
+
+            def run(self):
+                from runtime.health import check_health
+                try:
+                    self.done.emit(check_health().get("capability", {}))
+                except Exception:
+                    self.done.emit({})
+
+        self._health_worker = HealthWorker(self)
+        self._health_worker.done.connect(self.command_deck.set_health)
+        self._health_worker.start()
+
     def _start_run(self, targets):
         from runtime.api.commands import MissionSpec
         spec = MissionSpec(knowledge_dir="knowledge/source/black_tower_test",

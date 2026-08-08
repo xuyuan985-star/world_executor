@@ -69,13 +69,15 @@ class RealExecutor:
         return (x, y) if found else None
 
     def click_at(self, x, y, label="click"):
-        auto = self.ensure_auto()
-        auto.mouse_move(int(x * auto.width), int(y * auto.height))
+        from runtime.input import get_backend
+        backend = get_backend()
         delay = self.naturalness.click_delay()
         time.sleep(delay)
-        auto.mouse_click()
+        result = backend.click(x, y)
         self._emit("action_executed", detail=f"{label}@({x:.2f},{y:.2f})",
-                   context={"naturalized": True, "delay_ms": int(delay * 1000)})
+                   context={"naturalized": True, "delay_ms": int(delay * 1000),
+                            **result.to_context()})
+        return result.success
 
     def interact_template(self, template, threshold, scale_range):
         auto = self.ensure_auto()
@@ -87,10 +89,13 @@ class RealExecutor:
         cy = (top_left[1] + bottom_right[1]) / 2
         delay = self.naturalness.interaction_delay()
         time.sleep(delay)
-        auto.mouse_click(cx, cy)
+        from runtime.input import get_backend
+        backend = get_backend()
+        result = backend.click(cx, cy)
         self._emit("action_executed", detail=f"click:{template}",
-                   context={"naturalized": True, "delay_ms": int(delay * 1000), "match": round(match, 3)})
-        return True
+                   context={"naturalized": True, "delay_ms": int(delay * 1000),
+                            "match": round(match, 3), **result.to_context()})
+        return result.success
 
     def move_visual_guided(self, target_desc, ticks, step_seconds):
         for i in range(ticks):

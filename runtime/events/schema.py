@@ -38,6 +38,9 @@ ACTION_CONTEXT_FIELDS = {
     "source": "决定来源：decision_layer / manual / recovery",
     "naturalized": "是否经自然性约束",
     "delay_ms": "实际等待毫秒",
+    "backend": "输入后端：mock / march7th / win32",
+    "success": "输入是否成功（InputResult.success）",
+    "error": "输入失败原因（如 uipi_block）",
 }
 
 

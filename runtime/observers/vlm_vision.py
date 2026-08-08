@@ -1,6 +1,7 @@
 import json
 import re
 import tempfile
+import time
 from pathlib import Path
 
 from ingest.vlm_client import get_provider
@@ -90,3 +91,43 @@ class VLMVisionObserver:
             "你是镜头朝向判定器，只做观测。",
             prompt,
         )
+
+    def sample_stability(self, capture_fn, observe_fn, samples=3, interval=2.5, min_agree=0.75):
+        """时间稳定性采样：连续 samples 帧独立观测，统计一致率。
+
+        capture_fn: () -> PIL.Image 截图
+        observe_fn: (image) -> dict 单帧观测（如 self.observe_room / self.locate_target）
+        返回: {"samples": n, "stable": bool, "consistency": 0~1, "decision": 主决策值,
+               "reads": [逐帧关键值]}
+        """
+        reads = []
+        key = None
+        for _ in range(samples):
+            shot = capture_fn()
+            if shot is None:
+                reads.append(None)
+                continue
+            data = observe_fn(shot)
+            if "room" in data:
+                key = "room"
+            elif "found" in data:
+                key = "found"
+            else:
+                key = key or "value"
+            reads.append(data.get(key))
+            time.sleep(interval)
+        reads = [r for r in reads if r is not None]
+        if not reads:
+            return {"samples": 0, "stable": False, "consistency": 0.0, "decision": None, "reads": []}
+        from collections import Counter
+        counts = Counter(repr(r) for r in reads)
+        decision, count = counts.most_common(1)[0]
+        decision = reads[[repr(r) for r in reads].index(decision)]
+        consistency = count / len(reads)
+        return {
+            "samples": len(reads),
+            "stable": consistency >= min_agree,
+            "consistency": round(consistency, 2),
+            "decision": decision,
+            "reads": reads,
+        }
