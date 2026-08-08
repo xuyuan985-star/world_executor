@@ -86,7 +86,7 @@ ISSUES = [
         "status": "resolved-workaround",
     },
     {
-        "id": "ISSUE-09", "category": "input", "severity": "critical", "release_blocker": True,
+        "id": "ISSUE-09", "category": "input", "severity": "critical", "release_blocker": True, "blocking_reason": "cannot perform real click (UIPI/SendInput)",
         "title": "输入注入被 UIPI 拦截（SendInput ret=0），pyautogui 完全失效",
         "symptom": "pyautogui.moveTo/click 光标不动（GetCursorPos 无变化）；SendInput 返回 0",
         "root_cause": "UIPI（用户界面特权隔离）：普通权限进程无法向高权限前台窗口注入输入（游戏/March7th 要求管理员，March7th app.py 用 pyuac 提权）",
@@ -105,7 +105,7 @@ ISSUES = [
         "status": "resolved",
     },
     {
-        "id": "ISSUE-11", "category": "input", "severity": "high", "release_blocker": True,
+        "id": "ISSUE-11", "category": "input", "severity": "high", "release_blocker": True, "blocking_reason": "UAC elevation flow not verified on real machine",
         "title": "UAC 提权弹窗未确认，进程挂起",
         "symptom": "consent.exe 不存在（弹窗未显示/未点），父进程 7292 挂起等待子进程，结果文件未生成",
         "root_cause": "UAC 弹窗需要用户交互；用户当时离开/未注意",

@@ -67,6 +67,7 @@ VISION_SUBCLASSES = [
     ("wrong_window", "F4_WRONG_WINDOW"),
     ("size_mismatch", "F4_WRONG_WINDOW"),
     ("conflict", "F4_CONFLICT"),     # OCR/VLM 冲突
+    ("不一致", "F4_CONFLICT"),        # BUG-25：gate reason 是中文（"OCR/VLM 不一致"）
     ("low confidence", "F4_LOW_CONF"),
     ("VISION_NOT_VERIFIED", "F4_NOT_VERIFIED"),
     ("VISION_LOW_CONFIDENCE", "F4_LOW_CONF"),

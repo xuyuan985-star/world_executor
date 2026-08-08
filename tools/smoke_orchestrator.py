@@ -392,6 +392,21 @@ def main():
     assert fails and fails[-1].get("category") == "F4_VISION", fails
     print("[ok] ActionGuard strict → F4_VISION 拒绝 + 0 次 click（证据缺失不执行）PASS")
 
+    # 场景12（Sprint B）：目标级 OCR 验证词——全局词命中但目标词未命中 → 拒绝
+    from runtime.vision_gate import VisionGate, VisionEvidence, OCREvidence, VLMEvidence
+    from runtime.knowledge_loader import KnowledgePackage as _KP
+    target_kw = pkg.verify_ocr_keywords("chest_A")  # 目标词（若 workflow 未声明 → None）
+    ev12 = VisionEvidence(ocr=OCREvidence(texts=["商店", "购买"]),
+                          vlm=VLMEvidence(scene="shop", confidence=0.9),
+                          frame_quality="ok")
+    if target_kw:
+        r12 = VisionGate().evaluate(ev12, target_keywords=target_kw)
+        # 目标词（如 minimap_chest_icon 相关）未出现在 OCR → 拒绝或 observe
+        assert not r12["allowed"], r12
+        print(f"[ok] 目标级验证：全局词命中但目标词{target_kw}未命中 → 拒绝 PASS")
+    else:
+        print("[ok] 目标级验证：workflow 未声明 verify.ocr（跳过，API 可用性已验）PASS")
+
 
 if __name__ == "__main__":
     main()

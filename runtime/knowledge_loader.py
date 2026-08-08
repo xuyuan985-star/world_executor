@@ -89,6 +89,22 @@ class KnowledgePackage:
         self._workflow_cache[target_id] = wf
         return wf
 
+    def verify_ocr_keywords(self, target_id):
+        """Sprint B：目标级 OCR 验证关键词（Target Knowledge schema 打底）。
+
+        workflow.verify.ocr 声明该目标的前置画面词（如 ["商店","商品","购买"]）；
+        未声明 → None（调用方回退全局关键词）。
+        """
+        wf = self.workflow(target_id)
+        if not wf:
+            return None
+        for step in (wf.get("steps") or []):
+            if step.get("type") == "verify":
+                ocr = step.get("ocr")
+                if isinstance(ocr, list) and ocr:
+                    return [str(k) for k in ocr]
+        return None
+
     def spawn_room(self):
         return self.rooms["spawn_room"] if self.rooms else None
 

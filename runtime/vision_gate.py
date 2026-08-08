@@ -76,22 +76,33 @@ class VisionGate:
         self.ui_states = ui_states
         self.scene_aliases = scene_aliases
 
-    def evaluate(self, evidence: VisionEvidence):
+    def evaluate(self, evidence: VisionEvidence, target_keywords=None):
+        """评估视觉证据。target_keywords：目标级 OCR 词（Sprint B——按目标
+        声明的画面前置词，如 workflow.verify.ocr）；None → 全局词。"""
         signals = []
         reasons = []
         joined = "".join(evidence.ocr.texts or [])
 
-        # OCR 评分：正向命中 + 负向压制（单关键词命中即视为有游戏文本信号）
-        ocr_hits = sum(1 for k in self.ocr_keywords if k in joined)
+        # OCR 评分：目标级词优先（命中比例——目标词集合决定置信），否则全局词
+        if target_keywords:
+            target_hits = [k for k in target_keywords if k in joined]
+            ocr_hits = len(target_hits)
+            ocr_score = min(1.0, ocr_hits)  # 目标词单命中即视为确认
+            if target_hits:
+                signals.append("ocr_target_keyword")
+            if not target_hits and evidence.ocr.texts:
+                reasons.append("OCR 未命中目标验证词")
+        else:
+            ocr_hits = sum(1 for k in self.ocr_keywords if k in joined)
+            ocr_score = min(1.0, ocr_hits)
+            if ocr_hits:
+                signals.append("ocr_game_keyword")
+            if not ocr_hits and evidence.ocr.texts:
+                reasons.append("OCR 无游戏关键词")
         non_game = any(k in joined for k in self.non_game_keywords)
-        ocr_score = min(1.0, ocr_hits)
-        if ocr_hits:
-            signals.append("ocr_game_keyword")
         if non_game:
             ocr_score *= 0.2  # 负向命中 → 压制
             reasons.append("OCR 命中非游戏词")
-        if not ocr_hits and evidence.ocr.texts:
-            reasons.append("OCR 无游戏关键词")
 
         # VLM 评分
         vlm = evidence.vlm

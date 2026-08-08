@@ -3,6 +3,19 @@ import ctypes
 import sys
 
 
+def init_dpi():
+    """BUG-27：DPI context 统一初始化——所有入口第一行调用。
+
+    SetProcessDPIAware 必须在任何 GDI/窗口 API 之前（import 期可能已读窗口）。
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 def is_admin():
     """当前进程是否为管理员（UIPI 拦截 SendInput 的解除条件之一）。"""
     if sys.platform != "win32":

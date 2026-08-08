@@ -5,6 +5,7 @@
     {"type": "move", "target": "lm_hall_center", "timeout": 20},
     {"type": "visual_guided_move", "ticks": 4, "step_seconds": 2},
     {"type": "interact", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "retry": 2},
-    {"type": "verify", "signal": "minimap_chest_icon", "expected": "vanished", "timeout": 30}
+    {"type": "verify", "signal": "minimap_chest_icon", "expected": "vanished", "timeout": 30,
+     "ocr": ["宝箱", "任务", "委托"]}
   ]
 }

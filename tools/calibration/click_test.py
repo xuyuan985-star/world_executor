@@ -25,6 +25,9 @@ def tee(msg):
 
 
 def ocr_lines(ocr_engine, img):
+    # BUG-23：空图保护（np.asarray(None) → object 数组会让 RapidOCR 崩）
+    if img is None:
+        return []
     import numpy as np
     arr = np.asarray(img)
     r = ocr_engine.run(arr)
@@ -110,9 +113,9 @@ def main():
     print("[ok] 点击前证据已保存 click_before.jpg")
     txt, box = target
     lx, ly = box_center(box)
-    # 截图内坐标 → 绝对屏幕坐标（>1920 截图时需除以 scale_factor 还原）
-    px = pos_left + int(lx / scale_factor if scale_factor and scale_factor != 1 else lx)
-    py = pos_top + int(ly / scale_factor if scale_factor and scale_factor != 1 else ly)
+    # BUG-22：换算收敛到平台层（单一实现，防 DPI 修一处漏一处）
+    from runtime.platform.windows.coords import screenshot_to_screen
+    px, py = screenshot_to_screen(lx, ly, screenshot_pos, scale_factor)
     print(f"[ok] 找到“{txt}” 截图内({lx:.0f},{ly:.0f}) + pos({pos_left},{pos_top}) → 绝对({px},{py})")
 
     # Sprint A-5：分步 PASS 记录（OCR/坐标/注入/UI响应 → G2 PASS）

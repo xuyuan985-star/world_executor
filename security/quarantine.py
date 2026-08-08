@@ -39,6 +39,11 @@ def install_pylnk3_stub(verbose=True):
             self.path = ""
             self.arguments = ""
             self.work_dir = ""
+            # BUG-18：补齐常见属性——March7th 读取链可能触碰，防 AttributeError
+            self.icon = ""
+            self.icon_file = ""
+            self.description = ""
+            self.name = ""
             if f is not None:
                 f.read()  # 消费流，不解析（.lnk 解析链路禁用）
 

@@ -30,3 +30,14 @@ def physical_to_logical(x, y, space: CoordinateSpace):
     if space.scale <= 0:
         return int(x), int(y)
     return int(x / space.scale), int(y / space.scale)
+
+
+def screenshot_to_screen(x, y, pos, scale=1.0):
+    """BUG-22：截图内坐标 → 绝对屏幕坐标（唯一实现，工具共用）。
+
+    pos = (left, top, right, bottom) 客户区绝对屏幕位置。
+    """
+    if not scale:
+        scale = 1.0
+    return (pos[0] + int(x / scale),
+            pos[1] + int(y / scale))

@@ -27,6 +27,9 @@ def require_m7():
 
 
 def main():
+    # BUG-27：DPI context 入口第一行（import module.automation 前，防读取窗口尺寸已迟）
+    from runtime.platform.windows.privilege import init_dpi
+    init_dpi()
     # #17：脚本退出/异常时恢复 cwd（March7th 运行期间必须 chdir，结束即还原）
     old = os.getcwd()
     try:
