@@ -97,8 +97,10 @@ def check_health(verbose=False, game_required=True):
         user32 = ctypes.windll.user32
         user32.SetProcessDPIAware()
 
-        # L0: 光标移动回读
+        # L0: 光标移动回读（GUI-2：探测后必须恢复原位——否则启动 GUI 鼠标跳左上角）
         try:
+            saved_pt = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(saved_pt))
             r = user32.SetCursorPos(100, 100)
             pt = wintypes.POINT()
             time.sleep(0.1)
@@ -106,6 +108,8 @@ def check_health(verbose=False, game_required=True):
             result["input_l0"] = bool(r) and abs(pt.x - 100) < 50 and abs(pt.y - 100) < 50
             if not result["input_l0"]:
                 errors["input_l0"] = "光标回读不一致（注入通道异常）"
+            # 恢复原鼠标位置（探测副作用最小化）
+            user32.SetCursorPos(saved_pt.x, saved_pt.y)
         except Exception as e:
             errors["input_l0"] = f"{type(e).__name__}: {e}"
 

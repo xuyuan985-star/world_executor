@@ -36,6 +36,16 @@ VIDEO_AREA_OVERRIDES = {
     "禁闭舱段": "detention_zone",
 }
 
+# 视频文件名 → 大地图目录（跨区域视频，如"黑塔币"全空间站收集）
+VIDEO_MAP_OVERRIDES = {
+    "黑塔": "02_herta_space_station",
+    "雅利洛": "03_jarilo_vi",
+    "罗浮": "04_xianzhou_luofu",
+    "匹诺康尼": "05_penacony",
+    "翁法罗斯": "06_amphoreus",
+    "二相乐园": "07_dream_paradise",
+}
+
 
 def resolve_map_area(video_name):
     """文件名 → (map_dir, area_id)。
@@ -50,7 +60,12 @@ def resolve_map_area(video_name):
         if key in stem:
             area_id = aid
             break
-    # 2) 遍历所有地图的 areas，找名称匹配的区域文件 → 得地图目录
+    # 2) 地图级 override（跨区域视频：黑塔币等）——region 用地图 id
+    for key, mdir in VIDEO_MAP_OVERRIDES.items():
+        if key in stem:
+            mid = mdir.split("_", 1)[1]
+            return mdir, mid, None
+    # 3) 遍历所有地图的 areas，找名称匹配的区域文件 → 得地图目录
     for md in sorted(GUIDES.iterdir()):
         if not md.is_dir():
             continue

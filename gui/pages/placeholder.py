@@ -119,8 +119,12 @@ class StudioPage(QWidget):
     def _refresh(self):
         from pathlib import Path
         root = Path(__file__).resolve().parent.parent.parent
-        vdir = root / "ingest" / "raw" / "videos"
-        self._videos = sorted(vdir.glob("*.mp4")) if vdir.exists() else []
+        dirs = [root / "ingest" / "raw" / "videos",
+                root.parent / "攻略视频"]  # 高清视频目录（Open Code 根）
+        self._videos = []
+        for d in dirs:
+            if d.exists():
+                self._videos.extend(sorted(d.glob("*.mp4")))
         self.video_list.clear()
         for v in self._videos:
             QListWidgetItem(f"{v.name}  ({v.stat().st_size//1024//1024}MB)",
