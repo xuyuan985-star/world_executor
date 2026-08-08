@@ -74,6 +74,56 @@ def check_file(path: Path, root: Path):
     return violations
 
 
+def find_cycles(root: Path):
+    """#15：runtime 包内模块依赖环（A→B→A），DFS 检测并报告环路径。
+
+    只扫 runtime 树（业务内核）；工具/入口不参与环判定。
+    """
+    runtime_dir = root / "runtime"
+    if not runtime_dir.exists():
+        return []
+    graph = {}
+    for py in sorted(runtime_dir.rglob("*.py")):
+        if any(part in IGNORE_DIRS for part in py.parts):
+            continue
+        mod = ".".join(py.relative_to(root).as_posix().replace(".py", "").split("/"))
+        src = py.read_text(encoding="utf-8", errors="ignore")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        deps = []
+        for m in _import_modules(tree):
+            if m == "runtime" or m.startswith("runtime."):
+                deps.append(m)
+        graph[mod] = deps
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {m: WHITE for m in graph}
+    stack = []
+    cycles = []
+
+    def dfs(node):
+        color[node] = GRAY
+        stack.append(node)
+        for dep in graph.get(node, []):
+            dep_mod = dep
+            if dep_mod not in graph:
+                continue
+            if color[dep_mod] == GRAY:
+                i = stack.index(dep_mod)
+                cycles.append(stack[i:] + [dep_mod])
+            elif color[dep_mod] == WHITE:
+                dfs(dep_mod)
+        stack.pop()
+        color[node] = BLACK
+
+    for m in graph:
+        if color[m] == WHITE:
+            dfs(m)
+    return cycles
+
+
 def main():
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
     issues = []
@@ -81,12 +131,18 @@ def main():
         if any(part in IGNORE_DIRS for part in py.parts):
             continue
         issues += check_file(py, root)
+    cycles = find_cycles(root)
     if issues:
         print("架构边界违规：")
         for i in issues:
             print(f"  [违规] {i}")
         sys.exit(1)
-    print("[ok] 架构边界检查通过")
+    if cycles:
+        print("runtime 依赖环（#15）：")
+        for c in cycles:
+            print(f"  [环] {' -> '.join(c)}")
+        sys.exit(1)
+    print("[ok] 架构边界检查通过（无违规、无依赖环）")
 
 
 if __name__ == "__main__":

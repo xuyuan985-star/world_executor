@@ -47,41 +47,46 @@ def require_m7():
 
 
 def main():
-    require_m7()
-    print("[smoke] March7thAssistant 依赖导入中 ...")
-    from module.automation import auto
-    from module.ocr import ocr
-
-    print(f"[smoke] window_title = {auto.window_title}")
-
-    result = auto.take_screenshot()
-    if result is None:
-        print("[FAIL] take_screenshot 失败（游戏未启动或窗口未找到）")
-        sys.exit(1)
-    screenshot, pos, scale = result
-    w, h = screenshot.size if hasattr(screenshot, "size") else screenshot.shape[:2][::-1]
-    print(f"[ok] take_screenshot  {w}x{h} scale={scale}")
-
-    found = auto.find_text_element("收容舱段", ["收容", "舱段"], need_ocr=True, relative=True)
-    if found:
-        text, pos = found
-        print(f"[ok] OCR find_text_element -> {text} @ {pos}")
-    else:
-        print("[warn] OCR 未找到目标文本（可能不在该界面）")
-
-    from module.ocr import ocr as ocr_engine
-
-    # #22：RapidOCR 要求 ndarray，统一 np.asarray（与 coords_calibrate 一致）
-    import numpy as np
-    raw = np.asarray(screenshot)
+    # #17：脚本退出/异常时恢复 cwd（March7th 运行期间必须 chdir，结束即还原）
+    old = os.getcwd()
     try:
-        result = ocr_engine.run(raw)
-        lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []
-        print(f"[ok] OCR 引擎 {len(lines)} 行: {lines[:8]}")
-    except Exception as e:
-        print(f"[warn] OCR 引擎失败: {e}")
+        require_m7()
+        print("[smoke] March7thAssistant 依赖导入中 ...")
+        from module.automation import auto
+        from module.ocr import ocr
 
-    print("[smoke] 全部完成")
+        print(f"[smoke] window_title = {auto.window_title}")
+
+        result = auto.take_screenshot()
+        if result is None:
+            print("[FAIL] take_screenshot 失败（游戏未启动或窗口未找到）")
+            sys.exit(1)
+        screenshot, pos, scale = result
+        w, h = screenshot.size if hasattr(screenshot, "size") else screenshot.shape[:2][::-1]
+        print(f"[ok] take_screenshot  {w}x{h} scale={scale}")
+
+        found = auto.find_text_element("收容舱段", ["收容", "舱段"], need_ocr=True, relative=True)
+        if found:
+            text, pos = found
+            print(f"[ok] OCR find_text_element -> {text} @ {pos}")
+        else:
+            print("[warn] OCR 未找到目标文本（可能不在该界面）")
+
+        from module.ocr import ocr as ocr_engine
+
+        # #22：RapidOCR 要求 ndarray，统一 np.asarray（与 coords_calibrate 一致）
+        import numpy as np
+        raw = np.asarray(screenshot)
+        try:
+            result = ocr_engine.run(raw)
+            lines = [t["txt"] for t in result if isinstance(t, dict) and t.get("txt")] if result else []
+            print(f"[ok] OCR 引擎 {len(lines)} 行: {lines[:8]}")
+        except Exception as e:
+            print(f"[warn] OCR 引擎失败: {e}")
+
+        print("[smoke] 全部完成")
+    finally:
+        os.chdir(old)
 
 
 if __name__ == "__main__":

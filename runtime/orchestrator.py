@@ -250,8 +250,10 @@ class WorkflowOrchestrator:
         ticks = step.get("ticks", 3)
         step_seconds = step.get("step_seconds", 2)
         # #42：VGM 结果以真实定位为准——目标从未出现即失败，不污染状态机
+        # #41：循环可中断（emergency / watchdog stall）
         return self.executor.move_visual_guided(
-            f"{wf.get('target_id')} 附近的可互动宝箱实体", ticks, step_seconds)
+            f"{wf.get('target_id')} 附近的可互动宝箱实体", ticks, step_seconds,
+            abort_check=lambda: self._emergency_paused() or self._stall_detected())
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")

@@ -1,4 +1,5 @@
 ﻿import time
+from collections import deque
 from pathlib import Path
 
 from runtime.decision.action import ActionIntent, ActionMethod
@@ -76,8 +77,8 @@ class RealExecutor:
         self.obs_store = ObservationStore()
         self._driver = None
         self._entity_templates = None
-        self._recent_events = []    # 最近事件 id（fail_recorded.related_events 用）
-        self._MAX_RECENT = 20
+        self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
+        self._MAX_RECENT = 100
 
     @property
     def driver(self):
@@ -92,8 +93,6 @@ class RealExecutor:
             ev = make_event(event_type, self.execution_id, **kw)
             self.bus.publish(ev)
             self._recent_events.append(ev.id)
-            if len(self._recent_events) > self._MAX_RECENT:
-                self._recent_events.pop(0)
             return ev
         return None
 
@@ -203,6 +202,8 @@ class RealExecutor:
                 result = self._execute_template(intent)
             elif intent.method == ActionMethod.VLM_BBOX.value:
                 result = self._execute_vlm_bbox(intent)
+            elif intent.method == ActionMethod.TEXT.value:
+                result = self._execute_text(intent)
             else:
                 result = backend.execute(intent)
         except Exception as e:
@@ -242,6 +243,18 @@ class RealExecutor:
                            method="template",
                            error=None if ok else "click_element_failed")
 
+    def _execute_text(self, intent):
+        """text 定位专用路径（与 template/vlm_bbox 对称，不依赖 backend 自定义 execute）。"""
+        from runtime.input.base import InputResult
+        ok = bool(self.driver.input.auto.click_text(
+            intent.target,
+            include=intent.params.get("include", True),
+            max_retries=intent.params.get("max_retries", 3),
+            crop=intent.params.get("crop")))
+        return InputResult(success=ok, action=intent.action, backend="march7th",
+                           method="text",
+                           error=None if ok else "click_text_failed")
+
     def _execute_vlm_bbox(self, intent):
         from runtime.input.base import InputResult
         obs = self.obs_store.get(intent.target)
@@ -274,7 +287,7 @@ class RealExecutor:
         cat = sub or "F1"
         ctx = {"category": cat, "target": intent.target,
                "error": result.error,
-               "related_events": list(self._recent_events[-8:])}
+               "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         try:
             if self.driver.vision is not None:
@@ -326,6 +339,8 @@ class RealExecutor:
         状态机不会被假成功污染。
         """
         located = 0
+        last_x = None
+        stuck = 0
         for i in range(ticks):
             if abort_check and abort_check():
                 return ExecutionResult(success=False, error="move_aborted",
@@ -338,6 +353,15 @@ class RealExecutor:
             # 收敛：目标已在屏幕中央附近 → 停（避免撞墙/来回）
             if abs(x - 0.5) < 0.05 and abs(y - 0.5) < 0.15:
                 break
+            # #9 stuck 检测：连续多 tick 目标横向位置几乎不动（撞墙/被挡）→ 失败
+            if last_x is not None and abs(x - last_x) < 0.01:
+                stuck += 1
+                if stuck >= 3:
+                    return ExecutionResult(success=False, error="move_stuck",
+                                           retryable=True, category="F2_COORD")
+            else:
+                stuck = 0
+            last_x = x
             dur = self.naturalness.sprint_duration(step_seconds)
             if abs(x - 0.5) < 0.1:
                 self.driver.input.press_key("w", wait_time=dur)
