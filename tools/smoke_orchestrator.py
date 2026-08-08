@@ -279,6 +279,54 @@ def main():
     assert memory.label == "STABLE" and memory.hits == 2, memory.label
     print("[ok] VLM幻觉+OCR否认 → fusion=0.3 → Planner WAIT 禁止点击 PASS")
 
+    # 场景8（#20-9）：ReplayInput 确定性输入——回放 [True,True,False] 驱动 observe_act
+    from runtime.input.replay import ReplayInput
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    pkg = KnowledgePackage(KNOWLEDGE)
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-replay", use_vlm=False)
+    orch.observer = FakeObserver(text=["chest_A"])
+    replay = ReplayInput([True, True, False])
+
+    def driver_factory():
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch._executor = orch.executor  # 确保已构造
+        orch.executor._input_override = replay
+        result = orch.observe_act("chest_A")
+    assert result.success, result
+    assert replay.consumed == 1, replay.consumed
+    print("[ok] ReplayInput 确定性输入（回放驱动，替代 Fake 手工 mock）PASS")
+
+    # 场景9（#20-9）：ObserveOnly 降级——无输入权限时执行不崩溃，
+    # 返回 observe_only 结构化失败 + fail_recorded
+    from runtime.input.observe import ObserveOnlyInput
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-observeonly", use_vlm=False)
+    orch.observer = FakeObserver(text=["chest_A"])
+    observe = ObserveOnlyInput()
+
+    def driver_factory():
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch.executor._input_override = observe
+        result = orch.observe_act("chest_A")
+    assert not result.success, result
+    assert result.error and "observe_only" in result.error, result.error
+    assert result.retryable is False, result.retryable  # 永久失败语义：不重试不崩溃
+    print("[ok] ObserveOnly 降级 → observe_only 失败（不点击不崩溃不重试）PASS")
+
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,4 @@
-﻿import time
+import time
 from collections import deque
 from pathlib import Path
 
@@ -36,6 +36,7 @@ PERMANENT_MARKERS = (
     "unknown_entity", "unknown_method", "invalid_bbox_format",
     "no_observation", "low_confidence", "stale_observation",
     "executor_exception", "uipi_block", "gate_blocked",
+    "observe_only",  # #20-9：降级模式失败为永久（重试无意义，等待权限恢复）
 )
 
 # #19 RecoveryPolicy：失败 → 恢复建议（轻量版，供 orchestrator/GUI 决策）
@@ -92,7 +93,7 @@ class RealExecutor:
     """
 
     def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True,
-                 natural_seed=None):
+                 natural_seed=None, input_override=None):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
@@ -102,6 +103,9 @@ class RealExecutor:
         self.vlm = VLMVisionObserver() if use_vlm else None
         self.obs_store = ObservationStore()
         self._driver = None
+        # #20-9：输入后端注入点（ExecutionRouter 选中 / Replay / ObserveOnly）——
+        # 默认 None = driver.input（March7th 真实后端）
+        self._input_override = input_override
         self._entity_templates = None
         self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
         self._MAX_RECENT = 100
@@ -114,6 +118,13 @@ class RealExecutor:
             ActionMethod.TEXT.value: self._execute_text,
         }
         self._core_methods = frozenset(self._method_handlers)  # 冻结白名单
+
+    @property
+    def input(self):
+        """当前输入后端：注入优先，否则 driver.input（March7th）。"""
+        if self._input_override is not None:
+            return self._input_override
+        return self.driver.input
 
     def register_method(self, name, handler):
         """#17-C：method 注册入口——白名单校验，未知/未审计 method 拒绝。"""
@@ -152,12 +163,12 @@ class RealExecutor:
     def emergency_stop(self):
         """#42：紧急停止——esc 打断当前交互 + 兜底释放可能卡住的按键。"""
         try:
-            self.driver.input.press_key("esc", wait_time=0.3)
+            self.input.press_key("esc", wait_time=0.3)
         except Exception:
             pass
         for k in ("w", "a", "s", "d", "shift"):
             try:
-                self.driver.input.release_key(k)
+                self.input.release_key(k)
             except Exception:
                 pass
 
@@ -265,7 +276,7 @@ class RealExecutor:
         - #44：natural_mode=False 时确定性（delay=0）
         """
         from runtime.input.base import InputResult
-        backend = self.driver.input
+        backend = self.input
         blocked = self._precondition_blocked(intent)  # S5：动作前验证
         if blocked:
             self._emit("fail_recorded", detail=f"F3:precondition:{intent.target}",
@@ -298,10 +309,11 @@ class RealExecutor:
     def _to_result(intent, result) -> ExecutionResult:
         # #17-A：code 优先判定（枚举契约），子串表仅兜底 backend 外来文本
         code = code_of(result.error)
-        sub = (SUBCLASS_BY_CODE.get(code) if code else None) or subclass_for(result.error)
-        if code is not None:
+        if code is not None and code is not ErrorCode.UNKNOWN:
+            sub = SUBCLASS_BY_CODE.get(code)
             retryable = (code not in PERMANENT_CODES) if intent.idempotent else False
         else:
+            sub = subclass_for(result.error)
             retryable = retryable_for(result.error) if intent.idempotent else False
         cat = sub or "F1"
         return ExecutionResult(
@@ -320,7 +332,7 @@ class RealExecutor:
                                error=f"unknown_entity:{intent.target}")
         params = intent.params
         # #5：模板路径/阈值进 result detail——复盘时知道点了哪个模板什么阈值
-        result = self.driver.input.click_template(
+        result = self.input.click_template(
             path, params.get("threshold", 0.85), params.get("max_retries", 3))
         result.detail.update({"template": str(path),
                               "threshold": params.get("threshold", 0.85)})
@@ -328,7 +340,7 @@ class RealExecutor:
 
     def _execute_text(self, intent):
         """text 定位专用路径（与 template/vlm_bbox 对称，不依赖 backend 自定义 execute）。"""
-        return self.driver.input.click_text(
+        return self.input.click_text(
             intent.target,
             intent.params.get("include", True),
             intent.params.get("max_retries", 3),
@@ -364,7 +376,7 @@ class RealExecutor:
         if not self._pre_click_verify(intent, obs):
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"stale_observation:{intent.target}:frame_changed")
-        return self.driver.input.click(px, py)
+        return self.input.click(px, py)
 
     @staticmethod
     def _pre_click_verify(intent, obs):
@@ -461,11 +473,11 @@ class RealExecutor:
             last_x = x
             dur = self.naturalness.sprint_duration(step_seconds)
             if abs(x - 0.5) < 0.1:
-                self.driver.input.press_key("w", wait_time=dur)
+                self.input.press_key("w", wait_time=dur)
                 forward_sec += dur
             else:
                 side = "a" if x < 0.5 else "d"  # 目标在左 → 左转
-                self.driver.input.press_key(side, wait_time=self.naturalness.rotate_duration())
+                self.input.press_key(side, wait_time=self.naturalness.rotate_duration())
                 steer_count += 1
         # #17-H：move 事件聚合——长移动只发一条 summary，不刷 tick 风暴
         self._emit("move_completed",
