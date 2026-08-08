@@ -1,0 +1,12 @@
+[
+  {
+    "id": "herta_base_zone_003",
+    "name": "基座舱段·电梯口扑满",
+    "type": "warptrotter",
+    "region": "base_zone",
+    "x": 0.55, "y": 0.71,
+    "rarity": "warptrotter",
+    "tier": "T1",
+    "note": "会逃跑，先用远程攻击"
+  }
+]

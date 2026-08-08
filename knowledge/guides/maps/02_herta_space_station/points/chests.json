@@ -1,0 +1,22 @@
+[
+  {
+    "id": "herta_base_zone_001",
+    "name": "基座舱段·入口走廊宝箱",
+    "type": "chest",
+    "region": "base_zone",
+    "x": 0.42, "y": 0.35,
+    "rarity": "normal",
+    "tier": "T0",
+    "note": "主线必经，顺手开"
+  },
+  {
+    "id": "herta_base_zone_002",
+    "name": "基座舱段·控制台旁宝箱",
+    "type": "chest",
+    "region": "base_zone",
+    "x": 0.68, "y": 0.52,
+    "rarity": "rare",
+    "tier": "T1",
+    "note": "需要按顺序点亮屏幕"
+  }
+]

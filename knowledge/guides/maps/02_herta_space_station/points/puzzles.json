@@ -1,0 +1,11 @@
+[
+  {
+    "id": "herta_base_zone_004",
+    "name": "基座舱段·主控舱段连接处解谜",
+    "type": "puzzle",
+    "region": "base_zone",
+    "x": 0.30, "y": 0.45,
+    "tier": "T1",
+    "note": "三色连线机关"
+  }
+]
