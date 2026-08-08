@@ -80,6 +80,22 @@ def resolve_map_area(video_name):
     return None, None, f"视频名未匹配到任何区域（{stem}）"
 
 
+def room_to_area(mdir, room_text):
+    """VLM room 输出 → 具体区域（标题未标注时自动识别）。
+
+    规则：areas 名称出现在 room 文本中（取最长匹配——防"收容舱段"被
+    "舱段"等短名干扰）。无匹配 → None（保持地图级）。
+    """
+    if not room_text:
+        return None
+    best_id, best_name = None, ""
+    for a in (GUIDES / mdir / "areas").glob("*.json"):
+        adoc = json.loads(a.read_text(encoding="utf-8"))
+        if adoc["name"] in room_text and len(adoc["name"]) > len(best_name):
+            best_id, best_name = a.stem, adoc["name"]
+    return best_id
+
+
 def make_point(area_id, map_id, kind, bbox, frame_no):
     """VLM bbox → 攻略点位（bbox [x1,y1,x2,y2] 0-1000 → 归一化中心）。"""
     try:
@@ -154,14 +170,20 @@ def main():
         data = ask_frame(provider, f, i)
         if not data or "chest" not in data:
             continue
+        # 特殊任务视频（标题无区域）→ 用 VLM room 输出自动映射具体区域
+        point_area = area_id
+        if data.get("room"):
+            mapped = room_to_area(mdir, str(data["room"]))
+            if mapped:
+                point_area = mapped
         if data.get("chest", {}).get("found"):
-            pt = make_point(area_id, mdir.split("_", 1)[1], "chest",
+            pt = make_point(point_area, mdir.split("_", 1)[1], "chest",
                             data["chest"].get("bbox"), i)
             if pt:
                 msg = archive_point(mdir, pt, args.dry_run)
                 if "归档" in msg:
                     archived += 1
-                print(f"  f_{i:04d} chest -> {msg}")
+                print(f"  f_{i:04d} chest[{point_area}] -> {msg}")
         if data.get("room"):
             print(f"  f_{i:04d} room={data['room']}")
 
