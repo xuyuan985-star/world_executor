@@ -36,7 +36,8 @@ def main():
     if gw is None:
         print("[SKIP] Test 1: 游戏未启动（请先启动《崩坏：星穹铁道》）")
         print("STABILITY: SKIP")
-        return 2
+        # #20：SKIP 用 exit 0（CI 语义：未满足前提条件 ≠ 失败）
+        return 0
     print(f"[Test 1] found hwnd={hex(gw.hwnd)} {gw.width}x{gw.height} "
           f"visible={gw.visible} score={gw.score:.1f}")
     gw.pid = process_identity(gw.hwnd)[1]

@@ -93,6 +93,24 @@ def main():
     assert not guard.check(intent_risk("critical"))["allowed"]
     print("[guard] risk 四级策略（high 提置信/critical 人工确认）PASS")
 
+    # #24：错误成功测试——失败 InputResult 不得被转成 success=True
+    from runtime.input.base import InputResult
+    from runtime.step_executor import RealExecutor
+    from unittest import mock
+    from pathlib import Path
+    from runtime.knowledge_loader import KnowledgePackage
+    pkg = KnowledgePackage(Path(__file__).resolve().parent.parent /
+                           "knowledge" / "source" / "black_tower_test")
+    ex = RealExecutor(pkg, use_vlm=False)
+    with mock.patch("runtime.drivers.march7th.get_driver"):
+        r_fail = ex._to_result(
+            make_intent("interact", vision_verified=True, vision_confidence=0.9),
+            InputResult(success=False, action="click", backend="fake",
+                        error="click_element_failed"))
+    assert r_fail.success is False, "失败 InputResult 被误转为成功！"
+    assert r_fail.retryable is True, r_fail  # transient 可重试
+    print("[guard] 错误成功防护（失败不被当成功）PASS")
+
     print("[guard] Case 1-4 + 幻觉风险 全部 PASS")
 
 

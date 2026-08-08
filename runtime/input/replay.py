@@ -33,7 +33,9 @@ class ReplayInput:
         return self.index
 
     def click(self, x, y) -> InputResult:
-        return self._next("click")
+        r = self._next("click")
+        r.detail.update({"x": x, "y": y})  # #22：记录点击坐标（测试可断言点在哪）
+        return r
 
     def press_key(self, key, wait_time=0.2) -> InputResult:
         return self._next("press_key")

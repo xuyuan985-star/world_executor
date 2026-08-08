@@ -53,6 +53,8 @@ class FakeInput:
         if self.fail_mode == "UI_NO_CHANGE":
             return InputResult(success=False, action=action, backend="fake",
                                error="ui_no_change")
+        if self.fail_mode == "EXCEPTION":
+            raise TimeoutError("simulated input crash")  # 崩溃注入（F1_EXEC 路径）
         return None
 
     def click(self, x, y) -> InputResult:
@@ -61,15 +63,18 @@ class FakeInput:
             return f
         return InputResult(success=self.click_result, action="click", backend="fake")
 
-    def click(self, x, y) -> InputResult:
-        return InputResult(success=self.click_result, action="click", backend="fake")
-
     def click_template(self, path, threshold, max_retries) -> InputResult:
+        f = self._maybe_fail("click_template")
+        if f:
+            return f
         ok = bool(self.auto.click_element(path, "image", threshold, max_retries))
         return InputResult(success=ok, action="click_template", backend="fake",
                            error=None if ok else "click_element_failed")
 
     def click_text(self, text, include, max_retries, crop) -> InputResult:
+        f = self._maybe_fail("click_text")
+        if f:
+            return f
         ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,
                                           include=include, crop=crop))
         return InputResult(success=ok, action="click_text", backend="fake",
@@ -91,6 +96,25 @@ class FakeVision:
 
     def to_absolute(self, nx, ny):
         return int(nx * 1920), int(ny * 1080)
+
+
+class FakeVisionDPI125:
+    """#13：125% DPI 变体——client 1536x864 / physical 1920x1080。
+
+    真实换算：0.5,0.5 → (960,540)（物理），不是 (768,432)。
+    Fake 不再掩盖 DPI bug。
+    """
+    LOGICAL = (1536, 864)
+    PHYSICAL = (1920, 1080)
+
+    def screenshot_path(self, sub):
+        return "C:/fake/dpi125.png"
+
+    def find_template(self, path, threshold):
+        return None
+
+    def to_absolute(self, nx, ny):
+        return int(nx * self.PHYSICAL[0]), int(ny * self.PHYSICAL[1])
 
 
 class FakeDriver:
@@ -119,11 +143,17 @@ print("[contract] InputBackendProtocol 签名比对 PASS")
 
 
 class FakeVLM:
-    """VLM 观察者替身：#42 VGM 定位路径需要真实命中才 success。"""
+    """VLM 观察者替身：#42 VGM 定位路径需要真实命中才 success。
+    #14：按目标返回不同坐标——防"所有目标点击同一点"掩盖绑定 bug。"""
+
+    TARGET_POS = {"chest_A": (500, 500), "lm_hall_center": (800, 400),
+                  "door_A": (1000, 700)}
 
     def locate_target(self, screenshot, target_desc):
-        return {"found": True, "screen_x": 500, "screen_y": 500,
-                "confidence": 0.9, "bbox": [0.5, 0.5, 0.5, 0.5]}
+        x, y = self.TARGET_POS.get(target_desc, (500, 500))
+        return {"found": True, "screen_x": x, "screen_y": y,
+                "confidence": 0.9, "bbox": [x / 1000.0, y / 1000.0,
+                                            x / 1000.0, y / 1000.0]}
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.0, "ui_state": None}
@@ -240,15 +270,22 @@ def main():
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-emergency", use_vlm=False)
 
     class FakePaused:
+        # #16：spy——确认 monitor 真的被轮询（防代码路径跳过导致假成功）
+        def __init__(self):
+            self.polls = 0
+
         def is_paused(self):
+            self.polls += 1
             return True
 
         def stop(self):
             pass
 
-    orch._monitor = FakePaused()
+    spy = FakePaused()
+    orch._monitor = spy
     with mock.patch.object(orch, "start_emergency", lambda: None):
         results, completed = orch.run_mission(["chest_A"])
+    assert spy.polls > 0, "EmergencyMonitor.is_paused 从未被调用（测试假成功！）"
     assert results == {"chest_A": False}, results
     assert completed == [], completed
     ev = [ctx for t, ctx in seen if t == "target_progress" and ctx.get("status") == "failed"]
@@ -323,6 +360,9 @@ def main():
     acts = [ctx for t, ctx in seen if t == "action_executed"]
     assert acts and acts[-1].get("action") == "wait", acts[-1]
     assert acts[-1].get("reason") == "low confidence", acts[-1]
+    # #15：显式统计零点击（防"wait 后还点了"漏网）
+    clicks = [ctx for ctx in acts if ctx.get("action") in ("interact", "click")]
+    assert len(clicks) == 0, f"幻觉场景不应有任何点击: {clicks}"
     first_obs = orch.observer.observe()
     assert first_obs.confidence == 0.3, first_obs.confidence
     memory.update(first_obs)
@@ -436,16 +476,36 @@ def main():
     # 场景12（Sprint B）：目标级 OCR 验证词——全局词命中但目标词未命中 → 拒绝
     from runtime.vision_gate import VisionGate, VisionEvidence, OCREvidence, VLMEvidence
     target_kw = pkg.verify_expectations("chest_A").get("ocr")  # 目标词（未声明 → None）
+    assert target_kw is not None, "workflow 必须声明 verify.ocr（#19：配置缺失=安全规则失效，测试应失败）"
     ev12 = VisionEvidence(ocr=OCREvidence(texts=["商店", "购买"]),
                           vlm=VLMEvidence(scene="shop", confidence=0.9),
                           frame_quality="ok")
-    if target_kw:
-        r12 = VisionGate().evaluate(ev12, target_keywords=target_kw)
-        # 目标词（如 minimap_chest_icon 相关）未出现在 OCR → 拒绝或 observe
-        assert not r12["allowed"], r12
-        print(f"[ok] 目标级验证：全局词命中但目标词{target_kw}未命中 → 拒绝 PASS")
-    else:
-        print("[ok] 目标级验证：workflow 未声明 verify.ocr（跳过，API 可用性已验）PASS")
+    r12 = VisionGate().evaluate(ev12, target_keywords=target_kw)
+    # 目标词（如 minimap_chest_icon 相关）未出现在 OCR → 拒绝或 observe
+    assert not r12["allowed"], r12
+    print(f"[ok] 目标级验证：全局词命中但目标词{target_kw}未命中 → 拒绝 PASS")
+
+    # 场景13（#23）：崩溃注入——输入层抛异常 → F1_EXEC 可观测失败（不黑盒崩溃）
+    from runtime.input.replay import ReplayInput as _RI
+    bus = EventBus()
+    seen = []
+    bus.subscribe(lambda e: seen.append((e.type, e.context)))
+    orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-crash", use_vlm=False)
+    orch.observer = FakeObserver(text=["chest_A"])
+
+    def driver_factory():
+        return FakeDriver([])
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory), \
+            mock.patch("runtime.drivers.march7th.window.find_game_window",
+                       return_value={"hwnd": 1, "client": (1920, 1080)}), \
+            mock.patch.object(orch, "start_emergency", lambda: None):
+        orch.executor._input_override = FakeInput([True], fail_mode="EXCEPTION")
+        result = orch.observe_act("chest_A")
+    assert not result.success, result
+    assert result.error and "executor_exception" in result.error, result.error
+    assert result.category == "F1_EXEC", result.category
+    print("[ok] 崩溃注入 → F1_EXEC 可观测失败（不黑盒崩溃）PASS")
 
 
 if __name__ == "__main__":
