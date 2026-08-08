@@ -8,7 +8,7 @@ M7 = ROOT.parent / "March7thAssistant"
 
 
 def main():
-    from runtime.security import install_pylnk3_stub, require_m7_path
+    from security.quarantine import install_pylnk3_stub, require_m7_path
     require_m7_path(M7)
     install_pylnk3_stub()
     os.chdir(M7)

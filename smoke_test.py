@@ -7,7 +7,7 @@ M7 = ROOT.parent / "March7thAssistant"
 
 
 def require_m7():
-    from runtime.security import install_pylnk3_stub, require_m7_path
+    from security.quarantine import install_pylnk3_stub, require_m7_path
     require_m7_path(M7)
     if not (M7 / "module").exists():
         print("未找到 March7thAssistant，请确认其位于 world_executor/March7thAssistant")

@@ -85,6 +85,7 @@ class RuntimeAPI:
         #15：spec.requires 可追加任务必需能力键。
         """
         from runtime.health import check_health
+        from runtime.capability import detect_capability
         h = check_health()
         cap = h["capability"]
         critical = ["window", "capture", "ocr", "vlm", "foreground", "admin"]
@@ -96,9 +97,13 @@ class RuntimeAPI:
             if req not in cap or not cap.get(req):
                 fails.append(req)
         if fails:
+            # 目标 4：能力报告——区分 OBSERVE_ONLY（可观测但输入被拦）与 BLOCKED（观测不可用）
+            cap_report = detect_capability(h)
             bus.publish(make_event("run_finished", execution_id,
                                    context={"result": "gate_blocked",
                                             "fails": fails,
+                                            "mode": cap_report.mode,
+                                            "reasons": cap_report.reasons,
                                             "errors": h["errors"]}))
             self._state = "gate_blocked"
             return "gate_blocked"

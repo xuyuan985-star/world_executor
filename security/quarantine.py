@@ -1,6 +1,10 @@
-"""安全设施（Part 2 安全审计落地）：
+"""依赖隔离层（目标 1：安全审计闭环——从临时防护升级为系统级机制）。
 
-1. install_pylnk3_stub()——pylnk3 投毒包拦截的单一实现。
+所有入口（smoke_test/live_monitor/live_probe/click_test/coords_calibrate/
+runtime driver）统一 `from security.quarantine import ...`——单一实现，
+任何新入口不会漏防护。
+
+1. install_pylnk3_stub()——pylnk3 投毒包拦截（DisabledLnk：不伪装完整对象）。
    注意（审计修正）：stub 只保证 `from pylnk3 import Lnk` 成功；module/config/
    __init__.py 同行的 base64 exec payload 仍会执行（已解码审计：检查
    %ProgramData%/March7thAssistant/disclaimer 与 sponsor.jpg MD5，不匹配

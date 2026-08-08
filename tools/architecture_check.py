@@ -29,6 +29,18 @@ ALLOW_PREFIX = [
     ("runtime", "runtime.api"),
 ]
 
+# 目标 3（架构冻结）：runtime 业务核心禁止感知物理输入/屏幕合成捕获。
+# 豁免适配面：drivers/（March7th 适配）、input/（输入后端）、win_capture.py
+# （窗口捕获适配）。ctypes 不在此列（safety/health 系统探测属合法用途）。
+FORBIDDEN_RUNTIME_IMPORTS = {"pyautogui", "mss"}
+
+# 豁免模块（适配层，允许上述 import）
+RUNTIME_ADAPTER_MODULES = {
+    "runtime.drivers",
+    "runtime.input",
+    "runtime.win_capture",
+}
+
 # #24：第三方/产物目录不扫描（CI 不应因 vendor/March7th 代码炸）
 IGNORE_DIRS = {"__pycache__", ".venv", "node_modules", "vendor", "March7thAssistant", "tests", "examples"}
 
@@ -99,6 +111,15 @@ def check_file(path: Path, root: Path):
         return []
     rel_mod = ".".join(rel.replace(".py", "").split("/"))
     violations = []
+    # 目标 3：runtime 业务核心禁止 pyautogui/mss（物理输入不泄漏进核心）
+    is_runtime = _is_or_below(rel_mod, "runtime")
+    is_adapter = any(_is_or_below(rel_mod, a) for a in RUNTIME_ADAPTER_MODULES)
+    if is_runtime and not is_adapter:
+        for mod in _resolve_imports(tree, path, root):
+            top = mod.split(".")[0]
+            if top in FORBIDDEN_RUNTIME_IMPORTS or mod in FORBIDDEN_RUNTIME_IMPORTS:
+                violations.append(
+                    f"{rel} 禁止 {rel_mod} → {mod}（runtime 核心不得感知物理输入/屏幕捕获）")
     for mod in _resolve_imports(tree, path, root):
         for bad_from, bad_to in FORBIDDEN:
             if _is_or_below(rel_mod, bad_from) and _is_or_below(mod, bad_to):

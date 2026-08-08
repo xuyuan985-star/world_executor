@@ -62,7 +62,7 @@ class FailureReporter:
             "environment": environment_snapshot(),  # 复现依据（git commit/DPI/OS）
         }
         # Part 2-2.6：脱敏（用户名路径 → C:\Users\<USER>\）
-        from runtime.security import sanitize_mapping
+        from security.quarantine import sanitize_mapping
         doc["context"] = sanitize_mapping(doc["context"])
         doc["vlm_outputs"] = sanitize_mapping(doc["vlm_outputs"])
         doc["detail"] = sanitize_mapping(doc["detail"])

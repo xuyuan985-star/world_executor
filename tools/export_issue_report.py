@@ -178,7 +178,7 @@ def main():
     # #28：同一分钟多次运行不覆盖（uuid 后缀）
     import uuid
     import argparse
-    from runtime.security import sanitize_mapping
+    from security.quarantine import sanitize_mapping
     parser = argparse.ArgumentParser(description="导出会话问题报告")
     parser.add_argument("--include-evidence", action="store_true",
                         help="附带证据截图（默认 metadata only，防泄露用户环境）")

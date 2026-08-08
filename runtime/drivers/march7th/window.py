@@ -65,7 +65,7 @@ def ensure_march7th_env():
     投毒包（0.4.2 恶意版本事件），本项目不启动游戏、不用 .lnk 解析，
     禁止装真包（ISSUE-03；payload 已解码审计，见 runtime/security.py）。
     """
-    from runtime.security import install_pylnk3_stub, require_m7_path
+    from security.quarantine import install_pylnk3_stub, require_m7_path
     install_pylnk3_stub()
     require_m7_path(M7_ROOT)  # #18-2.4：路径注入前校验结构
     if str(M7_ROOT) not in sys.path:
