@@ -1,7 +1,8 @@
 ﻿import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from PySide6.QtWidgets import QApplication
 
@@ -17,9 +18,9 @@ def main():
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)
 
-    pkg = KnowledgePackage(Path("knowledge/source/black_tower_test"))
+    pkg = KnowledgePackage(ROOT / "knowledge/source/black_tower_test")
     targets = pkg.chests or []
-    bus = EventBus(persist_path="ingest/raw/events/studio.jsonl")
+    bus = EventBus(persist_path=str(ROOT / "ingest/raw/events/studio.jsonl"))
     api = RuntimeAPI(bus)
     window = MainWindow(targets, bus, api)
     window.show()

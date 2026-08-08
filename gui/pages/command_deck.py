@@ -291,10 +291,12 @@ class CommandDeck(QWidget):
         elif event.type == "pause_requested":
             self.led.setText("⏸ 已暂停")
             self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+            self.sm_view.add_overlay("PAUSED", event.context.get("reason", ""))
         elif event.type == "human_intervention":
             ctx = event.context
             self.led.setText("⚠ 人工介入")
             self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+            self.sm_view.add_overlay("HUMAN_INTERVENTION", ctx.get("reason") or "")
             self.inspector.on_failure(
                 run_no=self._run_no, state=self._last_state,
                 observation=self.snapshot._body.text(),

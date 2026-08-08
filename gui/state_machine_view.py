@@ -15,7 +15,15 @@ MAIN_STATES = [
     "DONE",
 ]
 
-OVERLAY_EVENTS = {"combat", "dialogue", "portal_failed", "event_interrupt"}
+# 非状态机事件 → overlay 展示（v0.12.1 Emergency Pause 链路）
+OVERLAY_EVENTS = {
+    "combat",
+    "dialogue",
+    "portal_failed",
+    "event_interrupt",
+    "human_intervention",
+    "pause_requested",
+}
 
 
 class _Canvas(QWidget):
@@ -45,6 +53,8 @@ class StateMachineView(QScrollArea):
         self._timer = self.startTimer(50)
 
     def on_state(self, prev, new, detail):
+        # 11 态已在映射表全覆盖：EVENT_INTERRUPT/PORTAL_TRANSITION_FAILED/ABORT 走 overlay，
+        # 其余均在 MAIN_STATES；未知状态兜底 NAVIGATING 仅为未来新增状态的容错（企划冻结期不会触发）。
         mapped = new
         if new in ("EVENT_INTERRUPT", "PORTAL_TRANSITION_FAILED", "ABORT"):
             self._overlays.append((new, detail))
@@ -59,6 +69,12 @@ class StateMachineView(QScrollArea):
         self._current = mapped
         self._transition_flash = (prev, mapped)
         self._flash_alpha = 1.0
+        self.viewport().update()
+        self._canvas.update()
+
+    def add_overlay(self, name, detail):
+        """非状态机事件（human_intervention / pause_requested）进入 overlay，避免被误读为 NAVIGATING。"""
+        self._overlays.append((name, detail))
         self.viewport().update()
         self._canvas.update()
 
