@@ -9,20 +9,7 @@ GAME_TITLE = "崩坏：星穹铁道"
 
 
 def find_game_window(title=GAME_TITLE):
-    best = None
-    best_client = 0
-    results = []
-
-    def cb(hwnd, _):
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
-            return
-        if win32gui.GetWindowText(hwnd) != title:
-            return
-        cl = win32gui.GetClientRect(hwnd)
-        area = cl[2] * cl[3]
-        results.append((hwnd, cl, area))
-        nonlocal_best = None
-    # 收集后再排序
+    """枚举可见窗口，按客户区面积取最大（唯一选择逻辑，无第二套实现）。"""
     found = []
 
     def collect(hwnd, _):
@@ -67,24 +54,47 @@ def capture_game_background(info, flags=3):
     w, h = info["client"]
     if w <= 0 or h <= 0:
         raise RuntimeError(f"游戏客户区为空: {w}x{h}")
-    hwndDC = win32gui.GetWindowDC(hwnd)
-    mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-    saveDC = mfcDC.CreateCompatibleDC()
-    bmp = win32ui.CreateBitmap()
-    bmp.CreateCompatibleBitmap(mfcDC, w, h)
-    saveDC.SelectObject(bmp)
-    result = ctypes.windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), flags)
-    from PIL import Image
-    bmpinfo = bmp.GetInfo()
-    buf = bmp.GetBitmapBits(True)
-    img = Image.frombuffer("RGB", (bmpinfo["bmWidth"], bmpinfo["bmHeight"]), buf, "raw", "BGRX", 0, 1)
-    win32gui.DeleteObject(bmp.GetHandle())
-    saveDC.DeleteDC()
-    mfcDC.DeleteDC()
-    win32gui.ReleaseDC(hwnd, hwndDC)
-    if result != 1:
-        raise RuntimeError(f"PrintWindow 失败 code={result}")
-    return img
+    hwndDC = None
+    mfcDC = None
+    saveDC = None
+    bmp = None
+    try:
+        hwndDC = win32gui.GetWindowDC(hwnd)
+        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+        saveDC = mfcDC.CreateCompatibleDC()
+        bmp = win32ui.CreateBitmap()
+        bmp.CreateCompatibleBitmap(mfcDC, w, h)
+        saveDC.SelectObject(bmp)
+        result = ctypes.windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), flags)
+        from PIL import Image
+        bmpinfo = bmp.GetInfo()
+        buf = bmp.GetBitmapBits(True)
+        img = Image.frombuffer("RGB", (bmpinfo["bmWidth"], bmpinfo["bmHeight"]), buf, "raw", "BGRX", 0, 1)
+        if result != 1:
+            raise RuntimeError(f"PrintWindow 失败 code={result}")
+        return img
+    finally:
+        # GDI 资源必须释放，中途异常也不得泄漏（DC/bitmap handle）
+        if bmp is not None:
+            try:
+                win32gui.DeleteObject(bmp.GetHandle())
+            except Exception:
+                pass
+        if saveDC is not None:
+            try:
+                saveDC.DeleteDC()
+            except Exception:
+                pass
+        if mfcDC is not None:
+            try:
+                mfcDC.DeleteDC()
+            except Exception:
+                pass
+        if hwndDC is not None:
+            try:
+                win32gui.ReleaseDC(hwnd, hwndDC)
+            except Exception:
+                pass
 
 
 def set_foreground_with_retry(hwnd):
@@ -110,6 +120,7 @@ def set_foreground_with_retry(hwnd):
         pass
     fg = user32.GetForegroundWindow()
     if fg:
+        attached = False
         try:
             fg_tid = user32.GetWindowThreadProcessId(fg, None)
             this_tid = kernel32.GetCurrentThreadId()

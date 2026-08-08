@@ -83,7 +83,7 @@ ISSUES = [
         "status": "resolved-workaround",
     },
     {
-        "id": "ISSUE-09", "category": "input", "severity": "critical",
+        "id": "ISSUE-09", "category": "input", "severity": "critical", "release_blocker": True,
         "title": "输入注入被 UIPI 拦截（SendInput ret=0），pyautogui 完全失效",
         "symptom": "pyautogui.moveTo/click 光标不动（GetCursorPos 无变化）；SendInput 返回 0",
         "root_cause": "UIPI（用户界面特权隔离）：普通权限进程无法向高权限前台窗口注入输入（游戏/March7th 要求管理员，March7th app.py 用 pyuac 提权）",
@@ -102,7 +102,7 @@ ISSUES = [
         "status": "resolved",
     },
     {
-        "id": "ISSUE-11", "category": "input", "severity": "high",
+        "id": "ISSUE-11", "category": "input", "severity": "high", "release_blocker": True,
         "title": "UAC 提权弹窗未确认，进程挂起",
         "symptom": "consent.exe 不存在（弹窗未显示/未点），父进程 7292 挂起等待子进程，结果文件未生成",
         "root_cause": "UAC 弹窗需要用户交互；用户当时离开/未注意",
@@ -184,6 +184,8 @@ doc = {
         "total": len(ISSUES),
         "by_severity": {s: sum(1 for i in ISSUES if i["severity"] == s) for s in ("critical", "high", "medium", "low")},
         "by_status": {s: sum(1 for i in ISSUES if i["status"] == s) for s in {i["status"] for i in ISSUES}},
+        "release_blockers": [i["id"] for i in ISSUES
+                             if i.get("release_blocker") and i["status"] != "resolved"],
     },
     "issues": ISSUES,
 }
@@ -206,3 +208,5 @@ for i in ISSUES:
 print(f"错误报告已导出: {OUT}")
 print(f"  问题数: {len(ISSUES)}")
 print(f"  证据截图: {len(EVIDENCE)} 张")
+blockers = doc["summary"]["release_blockers"]
+print(f"  Release blockers（未解决）: {len(blockers)} {blockers if blockers else ''}")

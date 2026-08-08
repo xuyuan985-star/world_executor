@@ -13,6 +13,8 @@ def check_health(verbose=False, game_required=True):
         "capture": False,
         "ocr": False,
         "vlm": False,
+        "foreground": False,
+        "admin": False,
         "input": False,
         "input_l0": False,
         "input_l1": False,
@@ -22,6 +24,15 @@ def check_health(verbose=False, game_required=True):
 
     import time
 
+    # 0. 管理员权限（SendInput/UIPI 前置条件）
+    try:
+        import ctypes
+        result["admin"] = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        if not result["admin"]:
+            errors["admin"] = "非管理员权限（SendInput 可能被 UIPI 拦截）"
+    except Exception as e:
+        errors["admin"] = f"{type(e).__name__}: {e}"
+
     # 1. 窗口锁定（driver.window 可见窗口枚举）
     try:
         from runtime.drivers.march7th.window import find_game_window
@@ -29,6 +40,13 @@ def check_health(verbose=False, game_required=True):
         result["window"] = game is not None
         if not game:
             errors["window"] = "未找到可见的游戏窗口"
+        else:
+            # 前台锁定：操作前游戏必须在前台（M1-A 输入前提）
+            import ctypes
+            fg = ctypes.windll.user32.GetForegroundWindow()
+            result["foreground"] = fg == game["hwnd"]
+            if not result["foreground"]:
+                errors["foreground"] = f"游戏窗口不在前台 (0x{fg:x})"
     except Exception as e:
         errors["window"] = f"{type(e).__name__}: {e}"
 

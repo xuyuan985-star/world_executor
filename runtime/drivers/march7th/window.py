@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "March7thAssistant"
+M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent / "March7thAssistant"
 
 
 def find_game_window():
@@ -58,7 +58,21 @@ def set_foreground_with_retry(hwnd, attempts=3):
 
 
 def ensure_march7th_env():
-    """March7th 硬约束：cwd 必须为根目录（CONFIG_PATH=./config.yaml）。"""
+    """March7th 硬约束：cwd 必须为根目录（CONFIG_PATH=./config.yaml）。
+
+    同时注入 pylnk3 stub：pylnk3 是 PyPI 历史投毒包（0.4.2 恶意版本事件，
+    module/config 存在混淆授权校验），本项目不启动游戏、不用 .lnk 解析，
+    禁止装真包（ISSUE-03）。
+    """
+    import types
+    if not sys.modules.get("pylnk3"):
+        stub = types.ModuleType("pylnk3")
+
+        class Lnk:
+            def __init__(self, f):
+                self.work_dir = ""
+        stub.Lnk = Lnk
+        sys.modules["pylnk3"] = stub
     if str(M7_ROOT) not in sys.path:
         sys.path.insert(0, str(M7_ROOT))
     import os

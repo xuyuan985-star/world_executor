@@ -1,8 +1,11 @@
 """附录 D.1 依赖方向 lint：违反冻结规则的 import 直接拒绝合并。
 
 用法: python tools/architecture_check.py [repo_root]
+
+AST 检查（替代 regex）：覆盖 import runtime.executor as x / from runtime import executor
+等 alias 写法——任何形式的 import 都可能产生模块访问，漏检即违规。
 """
-import re
+import ast
 import sys
 from pathlib import Path
 
@@ -27,20 +30,38 @@ ALLOW_PREFIX = [
 ]
 
 
+def _import_modules(tree):
+    """收集文件里所有被 import 的模块全名（含 alias 形式）。"""
+    mods = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for n in node.names:
+                mods.append(n.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0:
+                mods.append(node.module)
+            elif node.module and node.level > 0:
+                # 相对导入：runtime 内部使用（如 from . import db），按包起点补全
+                base = ".".join(node.module.split(".")[:1])
+                mods.append(base)
+    return mods
+
+
 def check_file(path: Path, root: Path):
     rel = path.relative_to(root).as_posix()
     src = path.read_text(encoding="utf-8", errors="ignore")
-    if not re.search(r"^(import|from)\s+", src, re.M):
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
         return []
     rel_mod = ".".join(rel.replace(".py", "").split("/"))
     violations = []
-    for imp in re.finditer(r"^\s*(?:import|from)\s+([\w\.]+)", src, re.M):
-        mod = imp.group(1)
+    for mod in _import_modules(tree):
         for bad_from, bad_to in FORBIDDEN:
             if rel_mod.startswith(bad_from) and (mod == bad_to or mod.startswith(bad_to + ".")):
                 if any(rel_mod.startswith(p) and (mod == q or mod.startswith(q + ".")) for p, q in ALLOW_PREFIX):
                     continue
-                violations.append(f"{rel}:{src.count(chr(10), 0, imp.start()) + 1} 禁止 {rel_mod} → {mod}（{bad_to}）")
+                violations.append(f"{rel} 禁止 {rel_mod} → {mod}（{bad_to}）")
     return violations
 
 

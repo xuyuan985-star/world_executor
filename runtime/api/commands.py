@@ -68,11 +68,15 @@ class RuntimeAPI:
         return self.execution_id
 
     def _gate_check(self, bus, execution_id, pkg):
-        """G3 门槛：health 全绿才进 real mission（企划 v0.12.2 §2.4）。"""
+        """G3 门槛：health 全绿才进 real mission（企划 v0.12.2 §2.4）。
+
+        含 Capability Gate（第四批审查 P0）：window/capture/ocr/vlm + foreground/admin + input L0/L1，
+        L2 失败即拦——避免"点击失败→重试→点击失败→F1"死循环（根因：权限/前台未满足）。
+        """
         from runtime.health import check_health
         h = check_health()
         cap = h["capability"]
-        critical = ["window", "capture", "ocr", "vlm"]
+        critical = ["window", "capture", "ocr", "vlm", "foreground", "admin"]
         fails = [k for k in critical if not cap.get(k)] + [k for k in ("input_l0", "input_l1")
                                                            if not cap.get(k)]
         if cap.get("input_l2") is False:

@@ -25,7 +25,9 @@ class FakeAuto:
 
     def click_element(self, path, method, threshold, max_retries):
         self.n += 1
-        return self.clicks.pop(0) if self.clicks else self.clicks[-1]
+        if not self.clicks:
+            return False
+        return self.clicks.pop(0)
 
 
 class FakeInput:
@@ -52,9 +54,12 @@ class FakeVision:
 
 
 class FakeDriver:
+    """每个场景独立实例：不共享类变量，避免测试互相污染。"""
     name = "fake"
-    input = FakeInput([True] * 10)
-    vision = FakeVision()
+
+    def __init__(self, clicks):
+        self.input = FakeInput(clicks)
+        self.vision = FakeVision()
 
 
 def run_scenario(clicks, label):
@@ -62,11 +67,13 @@ def run_scenario(clicks, label):
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
 
-    FakeDriver.input = FakeInput(clicks)
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=f"smoke-{label}", use_vlm=False)
 
-    with mock.patch("runtime.drivers.march7th.get_driver", return_value=FakeDriver):
+    def driver_factory():
+        return FakeDriver(list(clicks))
+
+    with mock.patch("runtime.drivers.march7th.get_driver", side_effect=driver_factory):
         results = orch.run_mission(["chest_A"])
 
     end_state = orch._machine.state

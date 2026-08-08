@@ -96,6 +96,8 @@ class ObservationSnapshot(CardWidget):
 
 HEALTH_LABELS = {
     "window": "窗口",
+    "foreground": "前台",
+    "admin": "提权",
     "capture": "截屏",
     "ocr": "OCR",
     "vlm": "VLM",

@@ -97,16 +97,24 @@ class RealExecutor:
     # ---------- 执行（ActionIntent） ----------
 
     def execute(self, intent: ActionIntent):
-        """执行动作意图。坐标不进入 intent：位置来自实体观测记录（executor 解析）。"""
+        """执行动作意图。坐标不进入 intent：位置来自实体观测记录（executor 解析）。
+
+        异常 = 可观测失败（executor_exception → fail_recorded F1），禁止黑盒崩溃。
+        """
+        from runtime.input.base import InputResult
         backend = self.driver.input
         delay = self.naturalness.click_delay()
         time.sleep(delay)
-        if intent.method == "template":
-            result = self._execute_template(intent)
-        elif intent.method == "vlm_bbox":
-            result = self._execute_vlm_bbox(intent)
-        else:
-            result = backend.execute(intent)
+        try:
+            if intent.method == "template":
+                result = self._execute_template(intent)
+            elif intent.method == "vlm_bbox":
+                result = self._execute_vlm_bbox(intent)
+            else:
+                result = backend.execute(intent)
+        except Exception as e:
+            result = InputResult(success=False, action=intent.action, backend="march7th",
+                                 error=f"executor_exception:{type(e).__name__}:{e}")
         self._emit("action_executed", detail=f"{intent.action}:{intent.target}",
                    context={"naturalized": True, "delay_ms": int(delay * 1000),
                             **intent.to_context(), **result.to_context()})
@@ -129,11 +137,18 @@ class RealExecutor:
 
     def _execute_vlm_bbox(self, intent):
         from runtime.input.base import InputResult
-        bbox = self._obs_store.get(intent.target)
-        if bbox is None:
+        obs = self._obs_store.get(intent.target)
+        if obs is None:
             return InputResult(success=False, action=intent.action, backend="march7th",
                                error=f"no_observation:{intent.target}")
-        nx, ny = bbox
+        if len(obs) == 2:
+            nx, ny = obs
+        elif len(obs) == 4:
+            x1, y1, x2, y2 = obs
+            nx, ny = (x1 + x2) / 2, (y1 + y2) / 2
+        else:
+            return InputResult(success=False, action=intent.action, backend="march7th",
+                               error=f"invalid_bbox_format:{len(obs)}")
         px, py = self.driver.vision.to_absolute(nx, ny)
         return self.driver.input.click(px, py)
 
@@ -194,9 +209,11 @@ class RealExecutor:
     def verify_signal(self, template, expected, timeout):
         vision = self.driver.vision
         deadline = time.time() + timeout
+        delay = 0.2
         while time.time() < deadline:
             found = vision.find_template(str(self.pkg.templates_dir / template), 0.8) is not None
             if (expected == "vanished" and not found) or (expected == "present" and found):
                 return True
-            time.sleep(1.5)
+            time.sleep(delay)
+            delay = min(delay * 1.5, 1.5)
         return False
