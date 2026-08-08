@@ -30,6 +30,12 @@ ingest/tmp/
 # 密钥与本地配置
 settings.local.json
 
+# 企划/报告（不入库，仅本地）
+docs/企划书-*.md
+docs/阶段报告-*.md
+docs/变更与问题报告.md
+failure_reports/
+
 # IDE
 .idea/
 .vscode/
