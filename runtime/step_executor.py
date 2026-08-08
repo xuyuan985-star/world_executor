@@ -79,23 +79,44 @@ class RealExecutor:
                             **result.to_context()})
         return result.success
 
-    def interact_template(self, template, threshold, scale_range):
+    def interact_template(self, template, threshold, max_retries=3):
+        """基于 March7th 官方原语：auto.click_element(路径, "image", threshold, max_retries)。
+        内部完成 截图→模板匹配→绝对坐标换算→pyautogui 点击，坐标体系由 March7th 保证。"""
         auto = self.ensure_auto()
-        top_left, bottom_right, match = auto.find_image_element(
-            str(self.pkg.templates_dir / template), threshold, scale_range, relative=True)
-        if top_left is None:
-            return False
-        cx = (top_left[0] + bottom_right[0]) / 2
-        cy = (top_left[1] + bottom_right[1]) / 2
+        delay = self.naturalness.interaction_delay()
+        time.sleep(delay)
+        path = str(self.pkg.templates_dir / template)
+        from runtime.input import get_backend
+        backend = get_backend()
+        if backend.name == "mock":
+            ok = True
+            match = 0.99
+        else:
+            ok = bool(auto.click_element(path, "image", threshold, max_retries=max_retries))
+            match = None
+        self._emit("action_executed", detail=f"click:{template}",
+                   context={"naturalized": True, "delay_ms": int(delay * 1000),
+                            "match": match, "success": ok, "backend": backend.name,
+                            "error": None if ok else "click_element_failed"})
+        return ok
+
+    def click_text(self, text, include=True, max_retries=3, crop=None, action="click"):
+        """基于 March7th 官方原语：auto.click_element(文字, "text", include=...)。"""
+        auto = self.ensure_auto()
         delay = self.naturalness.interaction_delay()
         time.sleep(delay)
         from runtime.input import get_backend
         backend = get_backend()
-        result = backend.click(cx, cy)
-        self._emit("action_executed", detail=f"click:{template}",
+        if backend.name == "mock":
+            ok = True
+        else:
+            ok = bool(auto.click_element(text, "text", max_retries=max_retries,
+                                         include=include, crop=crop, action=action))
+        self._emit("action_executed", detail=f"{action}:{text}",
                    context={"naturalized": True, "delay_ms": int(delay * 1000),
-                            "match": round(match, 3), **result.to_context()})
-        return result.success
+                            "success": ok, "backend": backend.name,
+                            "error": None if ok else "click_text_failed"})
+        return ok
 
     def move_visual_guided(self, target_desc, ticks, step_seconds):
         for i in range(ticks):
@@ -118,9 +139,8 @@ class RealExecutor:
         return True
 
     def portal_transition(self, portal, wait_base):
-        auto = self.ensure_auto()
         trigger = portal["trigger"]
-        ok = self.interact_template(trigger["template"], trigger["threshold"], trigger["scale_range"])
+        ok = self.interact_template(trigger["template"], trigger["threshold"])
         if not ok:
             return False
         wait = self.naturalness.transition_wait(wait_base)
@@ -131,9 +151,8 @@ class RealExecutor:
         auto = self.ensure_auto()
         deadline = time.time() + timeout
         while time.time() < deadline:
-            top_left, _, _ = auto.find_image_element(
-                str(self.pkg.templates_dir / template), 0.8, (0.9, 1.1), relative=True)
-            found = top_left is not None
+            found = auto.find_element(
+                str(self.pkg.templates_dir / template), "image", 0.8, max_retries=1) is not None
             if (expected == "vanished" and not found) or (expected == "present" and found):
                 return True
             time.sleep(1.5)
