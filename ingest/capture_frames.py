@@ -16,11 +16,12 @@ FPS_INTERVAL = 3
 SCALE = 1280
 
 
-def extract_frames(video, scale=SCALE):
+def extract_frames(video, scale=SCALE, interval=None):
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
+    iv = interval or FPS_INTERVAL
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-        "-vf", f"fps=1/{FPS_INTERVAL},scale={scale}:-1",
+        "-vf", f"fps=1/{iv},scale={scale}:-1",
         str(FRAME_DIR / "f_%04d.jpg"),
     ], check=True)
     return sorted(FRAME_DIR.glob("f_*.jpg"))
