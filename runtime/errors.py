@@ -12,6 +12,34 @@
 from enum import Enum
 
 
+class DomainError(Exception):
+    """Bug 575：领域异常基类——按模块分类，携带 error_code（Bug 576）。"""
+
+    def __init__(self, message, error_code=None):
+        super().__init__(message)
+        self.error_code = error_code
+
+    def to_dict(self):
+        return {"type": type(self).__name__, "message": str(self),
+                "error_code": self.error_code}
+
+
+class VisionError(DomainError):
+    """视觉链路异常（截图/匹配/OCR/VLM）。"""
+
+
+class InputError(DomainError):
+    """输入链路异常（鼠标/键盘/窗口/权限）。"""
+
+
+class ConfigError(DomainError):
+    """配置异常（缺失/非法值/版本不匹配）。"""
+
+
+class StateError(DomainError):
+    """状态机/状态异常（非法迁移/损坏状态）。"""
+
+
 class ErrorCode(str, Enum):
     OBS_MISSING = "no_observation"            # 目标从未被观测到
     OBS_STALE = "stale_observation"           # 观测过期（>TTL）
