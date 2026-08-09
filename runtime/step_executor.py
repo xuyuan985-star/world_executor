@@ -479,12 +479,16 @@ class RealExecutor:
                "suggested_recovery": recovery_for(result.error),  # #19
                "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
+        # BUG-031：截图失败不静默——保留错误证据（不阻断主流程）
         try:
             if self.driver.vision is not None:
                 frame = self.driver.vision.screenshot_path(str(ROOT / "failure_reports/frames"))
                 ctx["frame"] = str(frame)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("runtime.step_executor").warning(
+                "失败现场截图失败: %s", e, exc_info=True)
+            ctx["frame_error"] = f"{type(e).__name__}: {e}"
         self._emit("fail_recorded", detail=f"{cat}:{intent.action}:{intent.target}",
                    context=ctx)
 

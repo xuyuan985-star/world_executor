@@ -680,10 +680,20 @@ class WorkflowOrchestrator:
 
     def _human_interrupted(self, target_id):
         # #42：紧急介入先做安全清理（esc + 释放可能卡住的按键），再中断
+        # BUG-037：安全路径禁止静默失败——释放失败必须 critical 记录
         try:
             self.executor.emergency_stop()
         except Exception:
-            pass
+            import logging
+            logging.getLogger("runtime.orchestrator").critical(
+                "EMERGENCY STOP 失败——按键/鼠标可能未释放！", exc_info=True)
+            try:  # 二级兜底：win32 release_all
+                backend = getattr(self.executor.input, "backend", None) \
+                    or getattr(self.executor.input, "backends", None)
+                if hasattr(self.executor.input, "release_all"):
+                    self.executor.input.release_all()
+            except Exception:
+                pass
         self._emit("target_progress",
                    context={"target": target_id, "status": "failed",
                             "reason": "human_interrupt", "category": "EMERGENCY"})

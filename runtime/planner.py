@@ -32,13 +32,23 @@ class Planner:
         if obs is None or obs.confidence < self.min_confidence:
             return self.plan_wait(
                 "low confidence" if obs is not None else "no observation")
+        # BUG-033：OCR 文本匹配防误触发——token 级精确优先；
+        # 中文无分词时：短目标（<2字，如"门"）必须 token 精确，长目标才允许包含
+        tokens = set()
+        for line in (obs.text or []):
+            tokens.update(str(line).split())
+        if target in tokens:
+            return self.plan_interact(target, method=ActionMethod.TEXT.value,
+                                      reason="target detected in OCR text",
+                                      confidence=obs.confidence)
         text = "".join(obs.text or [])
-        if target in text:
+        if len(target) >= 2 and target in text:
             return self.plan_interact(target, method=ActionMethod.TEXT.value,
                                       reason="target detected in OCR text",
                                       confidence=obs.confidence)
         for ent in (obs.entities or []):
-            if ent.get("id") == target and ent.get("confidence", 0) >= 0.6:
+            # BUG-032：实体置信度用统一阈值（不再硬编码 0.6）
+            if ent.get("id") == target and ent.get("confidence", 0) >= self.min_confidence:
                 return self.plan_interact(target, method=ActionMethod.TEMPLATE.value,
                                           reason="target entity located",
                                           confidence=ent.get("confidence", 0.0))
@@ -77,6 +87,10 @@ class Planner:
             workflow = pkg.workflow(goal)  # 知识包按 target_id 单文件加载
         if workflow is None:
             return {"plan": [], "status": "blocked", "reason": f"goal_unknown:{goal}"}
+        # BUG-035/036：workflow 结构本地防护（外部数据不可信——不依赖 validate）
+        if not isinstance(workflow.get("steps"), list):
+            return {"plan": [], "status": "blocked",
+                    "reason": f"invalid_workflow_schema:{goal}"}
 
         # 房间前置校验：workflow 声明 room → 当前状态必须匹配
         need_room = workflow.get("room")
@@ -89,11 +103,22 @@ class Planner:
         # 步骤 → 意图（move/interact 语义；verify 不产意图——由执行后校验闭环）
         plan = []
         for step in (workflow.get("steps") or []):
+            # BUG-035：步骤非 dict → 阻断（防 AttributeError）
+            if not isinstance(step, dict):
+                return {"plan": [], "status": "blocked",
+                        "reason": "invalid_step_schema"}
             st = step.get("type")
             if st == "move":
-                plan.append(self.plan_interact(
-                    step.get("target"), method=ActionMethod.TEMPLATE.value,
-                    reason=f"objective_navigate:{goal}"))
+                # BUG-034：move 必须产 ActionType.MOVE 意图（不能伪装 interact）
+                plan.append(ActionIntent(
+                    action=ActionType.MOVE.value,
+                    target=step.get("target"),
+                    method=ActionMethod.TEMPLATE.value,
+                    params={"threshold": self.default_threshold,
+                            "max_retries": self.max_retries},
+                    reason=f"objective_navigate:{goal}",
+                    source="planner",
+                    idempotent=True))
             elif st == "interact":
                 plan.append(self.plan_interact(
                     workflow.get("target_id") or step.get("target"),
