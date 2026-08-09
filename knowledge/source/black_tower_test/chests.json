@@ -1,6 +1,385 @@
 [
-  {"id": "chest_A", "room": "room_A", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_chest_icon"},
-  {"id": "chest_B", "room": "room_B", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_chest_icon"},
-  {"id": "chest_C", "room": "room_A", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": {"state_id": "switch_on", "precondition": ["switch"]}, "verify_signal": "minimap_chest_icon"},
-  {"id": "chest_D", "room": "room_B", "template": "chest.png", "threshold": 0.8, "scale_range": [0.9, 1.1], "state_gate": null, "verify_signal": "minimap_chest_icon"}
+  {
+    "id": "chest_A",
+    "room": "room_A",
+    "template": "chest.png",
+    "threshold": 0.8,
+    "scale_range": [
+      0.9,
+      1.1
+    ],
+    "state_gate": null,
+    "verify_signal": "minimap_chest_icon"
+  },
+  {
+    "id": "chest_B",
+    "room": "room_B",
+    "template": "chest.png",
+    "threshold": 0.8,
+    "scale_range": [
+      0.9,
+      1.1
+    ],
+    "state_gate": null,
+    "verify_signal": "minimap_chest_icon"
+  },
+  {
+    "id": "chest_C",
+    "room": "room_A",
+    "template": "chest.png",
+    "threshold": 0.8,
+    "scale_range": [
+      0.9,
+      1.1
+    ],
+    "state_gate": {
+      "state_id": "switch_on",
+      "precondition": [
+        "switch"
+      ]
+    },
+    "verify_signal": "minimap_chest_icon"
+  },
+  {
+    "id": "chest_D",
+    "room": "room_B",
+    "template": "chest.png",
+    "threshold": 0.8,
+    "scale_range": [
+      0.9,
+      1.1
+    ],
+    "state_gate": null,
+    "verify_signal": "minimap_chest_icon"
+  },
+  {
+    "id": "herta_space_station_base_zone_0006_87d3",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0006_87d3.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_base_zone_0009_1a42",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0009_1a42.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_base_zone_0021_0a41",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0021_0a41.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_base_zone_0029_eaaa",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0029_eaaa.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_base_zone_0037_93ec",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0037_93ec.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_base_zone_0053_fdf5",
+    "room": "base_zone",
+    "template": "herta_space_station_base_zone_0053_fdf5.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0021_ae26",
+    "room": "detention_zone",
+    "template": "herta_space_station_detention_zone_0021_ae26.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0038_2554",
+    "room": "detention_zone",
+    "template": "herta_space_station_detention_zone_0038_2554.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0039_028f",
+    "room": "detention_zone",
+    "template": "herta_space_station_detention_zone_0039_028f.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0047_6938",
+    "room": "detention_zone",
+    "template": "herta_space_station_detention_zone_0047_6938.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0056_42fb",
+    "room": "detention_zone",
+    "template": "herta_space_station_detention_zone_0056_42fb.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0021_1605",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0021_1605.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0022_92f9",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0022_92f9.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0046_e705",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0046_e705.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0049_6dfc",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0049_6dfc.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0053_7dc7",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0053_7dc7.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0054_b3d1",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0054_b3d1.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0055_2a8d",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0055_2a8d.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0056_9a6f",
+    "room": "storage_zone",
+    "template": "herta_space_station_storage_zone_0056_9a6f.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0001_6924",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0001_6924.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0002_b93e",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0002_b93e.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0003_e78f",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0003_e78f.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0005_4761",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0005_4761.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0009_826a",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0009_826a.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0010_dc3d",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0010_dc3d.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0012_2376",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0012_2376.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0013_ae57",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0013_ae57.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0014_97dd",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0014_97dd.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0023_4af8",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0023_4af8.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0034_cecc",
+    "room": "supply_zone",
+    "template": "herta_space_station_supply_zone_0034_cecc.png",
+    "threshold": 0.6,
+    "scale_range": [
+      0.5,
+      2.0
+    ],
+    "verify_signal": "宝箱"
+  }
 ]

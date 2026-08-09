@@ -84,11 +84,18 @@ def check_knowledge_pkg():
     pkg = KnowledgePackage(PKG_DIR)
     verrors, _ = validate(pkg, verbose=False)
     errors.extend(f"知识包: {e}" for e in verrors)
-    # 每条目标都有 workflow 且 dry_run 跑通
-    from runtime import dry_run
     wfs = list((PKG_DIR / "workflows").glob("*.json"))
     if not wfs:
         errors.append("知识包无 workflow")
+    # BUG-064：真正执行 dry_run（文件存在 ≠ 逻辑跑通）——
+    # 非法步骤类型/坏引用在此暴露
+    try:
+        from runtime import dry_run
+        rc = dry_run.dry_run(str(PKG_DIR))
+        if rc != 0:
+            errors.append("dry_run 执行失败（逻辑链路未跑通）")
+    except Exception as e:
+        errors.append(f"dry_run 执行异常: {type(e).__name__}: {e}")
     return errors
 
 

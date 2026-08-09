@@ -42,12 +42,14 @@ class TestKnowledgePackage(unittest.TestCase):
                          ["chest_1", "chest_10", "chest_2"])
 
     def test_unreachable_rooms(self):
-        # Bug 105：连通性——孤立房间被检出
+        # Bug 105：连通性——图中孤立房间被检出（有 portal 图时才判定）
         from ingest.compiler.validate_graph import validate
         d = self._pkg({
             "package.json": "{}",
             "rooms.json": {"spawn_room": "room_A",
-                           "rooms": [{"id": "room_A"}, {"id": "room_C"}]},
+                           "rooms": [{"id": "room_A"}, {"id": "room_B"},
+                                     {"id": "room_C"}]},
+            "portals.json": [{"id": "door_ab", "from": "room_A", "to": "room_B"}],
             "chests.json": [{"id": "c1", "room": "room_C"}],
         })
         pkg = KnowledgePackage(d)

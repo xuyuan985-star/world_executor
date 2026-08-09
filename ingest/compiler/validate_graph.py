@@ -73,8 +73,9 @@ def validate(pkg: KnowledgePackage, verbose=True):
             errors.append(f"传送门 {pid} 的触发模板缺失: templates/{p['trigger']['template']}")
 
     # Bug 105：连通性检测——从出生点 BFS，不可达房间/宝箱提前暴露
+    # 仅当知识包声明 portal 图时启用（无传送门 = 点位直点模式，区域独立可直达）
     spawn = pkg.spawn_room()
-    if room_ids and spawn:
+    if room_ids and spawn and pkg.portals:
         adj = {}
         for p in pkg.portals or []:
             adj.setdefault(p.get("from"), set()).add(p.get("to"))
@@ -87,7 +88,10 @@ def validate(pkg: KnowledgePackage, verbose=True):
                 continue
             reachable.add(r)
             stack.extend(adj.get(r, set()) - reachable)
-        unreachable = room_ids - reachable
+        # 仅图中节点参与可达性判定——未入图的房间（点位直点模式区域）
+        # 视为独立可直达，不误报
+        graph_nodes = set(adj)
+        unreachable = graph_nodes - reachable
         for r in sorted(unreachable):
             errors.append(f"房间 {r} 不可达（从出生点 {spawn} 无路径）")
         for c in pkg.chests or []:
@@ -118,6 +122,22 @@ def validate(pkg: KnowledgePackage, verbose=True):
                     portal = pkg.portal(step["portal_id"])
                     if portal and portal.get("to") != c.get("room"):
                         warnings.append(f"{c['id']} 经传送门 {step['portal_id']} 到达 {portal.get('to')}，但宝箱在 {c.get('room')}")
+
+    # BUG-069：孤儿 workflow——workflow 文件存在但 target 不在注册表（chests）
+    # 运行期会 target_not_found；加载后即报（pipeline 阻断）
+    if pkg.workflows_dir.exists():
+        chest_ids = {c.get("id") for c in (pkg.chests or [])
+                     if isinstance(c, dict)}
+        for wf_file in sorted(pkg.workflows_dir.glob("*.json")):
+            try:
+                wf = json.loads(wf_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                errors.append(f"workflow 损坏: {wf_file.name} ({type(e).__name__})")
+                continue
+            tid = wf.get("target_id") if isinstance(wf, dict) else None
+            if tid is not None and tid not in chest_ids:
+                errors.append(
+                    f"孤儿 workflow {wf_file.name}: target_id={tid} 不在 chests 注册表")
 
     if verbose:
         for w in warnings:
