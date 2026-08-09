@@ -6,8 +6,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image
 
-CAPTURE_DIR = Path("ingest/raw/frames/capture")
-TEMPLATE_DIR = Path("knowledge/source/black_tower_test/templates")
+# Bug 55：目录基于仓库根绝对定位（任意 cwd 启动不写错位置）
+ROOT = Path(__file__).resolve().parent.parent
+CAPTURE_DIR = ROOT / "ingest" / "raw" / "frames" / "capture"
+TEMPLATE_DIR = ROOT / "knowledge" / "source" / "black_tower_test" / "templates"
 
 
 def norm_box(box, w, h, pad=8):
@@ -45,17 +47,18 @@ def crop(frames, results, out_prefix, kind_name):
                 img_path = CAPTURE_DIR / r["frame"]
                 if not img_path.exists():
                     continue
-                img = Image.open(img_path)
-                w, h = img.size
-                n = norm_box(box, w, h)
-                if not n:
-                    continue
-                x1, y1, x2, y2 = n
-                if x2 - x1 < 10 or y2 - y1 < 10:
-                    continue
-                crop_img = img.crop((x1, y1, x2, y2))
-                name = f"{out_prefix}_{r['frame']}_{kind_name}_{len(out)}.png"
-                crop_img.save(TEMPLATE_DIR / name)
+                # Bug 56：with 打开防文件句柄泄漏（批量裁剪可能锁文件）
+                with Image.open(img_path) as img:
+                    w, h = img.size
+                    n = norm_box(box, w, h)
+                    if not n:
+                        continue
+                    x1, y1, x2, y2 = n
+                    if x2 - x1 < 10 or y2 - y1 < 10:
+                        continue
+                    crop_img = img.crop((x1, y1, x2, y2))
+                    name = f"{out_prefix}_{r['frame']}_{kind_name}_{len(out)}.png"
+                    crop_img.save(TEMPLATE_DIR / name)
                 out.append({"file": name, "frame": r["frame"], "label": label, "box": box})
     return out
 

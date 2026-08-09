@@ -193,6 +193,11 @@ def download(bvid, out_name=None, qn=80, p_index=0, cookie=None):
             raise BiliError(f"下载失败 {f.name}: {type(e).__name__}: {e}")
         print(f"    {f.name} {total // 1024 // 1024}MB 完成")
 
+    # Bug 46：ffmpeg 不存在先报（FileNotFoundError 无上下文）
+    import shutil
+    if shutil.which("ffmpeg") is None:
+        raise BiliError("未找到 ffmpeg——请安装并加入 PATH（https://ffmpeg.org）")
+
     # Bug 22：合并先写临时文件，成功才原子改名——坏 mp4 不冒充成品
     final_tmp = final.with_name(final.name + ".tmp")
     try:
@@ -202,13 +207,13 @@ def download(bvid, out_name=None, qn=80, p_index=0, cookie=None):
             "-c", "copy", str(final_tmp),
         ], check=True)
     except Exception as e:
+        # Bug 45：任何失败路径都清理残留 m4s/临时文件（防下次误用坏文件）
+        raise BiliError(f"ffmpeg 合并失败: {type(e).__name__}: {e}")
+    finally:
         final_tmp.unlink(missing_ok=True)
         vfile.unlink(missing_ok=True)
         afile.unlink(missing_ok=True)
-        raise BiliError(f"ffmpeg 合并失败: {type(e).__name__}: {e}")
     final_tmp.rename(final)
-    vfile.unlink()
-    afile.unlink()
     print(f"合成完成: {final} ({final.stat().st_size // 1024 // 1024}MB)")
     return final
 

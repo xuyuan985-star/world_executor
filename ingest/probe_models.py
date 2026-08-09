@@ -22,10 +22,15 @@ CANDIDATES = [
 ]
 
 BASE = settings.qwen_base_url()
-HEADERS = {"Authorization": f"Bearer {settings.qwen_api_key()}", "Content-Type": "application/json"}
+# Bug 57：API Key 未配置不发请求（Bearer None 是无意义请求）
+_API_KEY = settings.qwen_api_key()
+HEADERS = {"Authorization": f"Bearer {_API_KEY}", "Content-Type": "application/json"} if _API_KEY else {}
 
 
 def probe(model):
+    # Bug 57：key 缺失 → 明确返回（不再裸发无凭据请求）
+    if not _API_KEY:
+        return "NO_API_KEY"
     url = f"{BASE.rstrip('/')}/chat/completions"
     payload = {
         "model": model,
@@ -48,15 +53,15 @@ def probe(model):
 
 
 def main():
+    # Bug 58：输出目录基于仓库根绝对定位
+    out = Path(__file__).resolve().parent.parent / "ingest" / "raw" / "probe_results.json"
     results = {}
     for m in CANDIDATES:
         r = probe(m)
         results[m] = r
         print(f"{m:<28} {r}")
-    (Path("ingest/raw") / "probe_results.json").parent.mkdir(parents=True, exist_ok=True)
-    (Path("ingest/raw") / "probe_results.json").write_text(
-        json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

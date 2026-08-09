@@ -27,6 +27,9 @@ def validate(pkg: KnowledgePackage, verbose=True):
 
     if pkg.chests is None:
         errors.append("缺少 chests.json")
+    elif not isinstance(pkg.chests, list):
+        # Bug 52：chests 非 list（如 {} 或字符串）→ 明确格式错误而非遍历 key
+        errors.append(f"chests.json 格式错误（应为列表，实际 {type(pkg.chests).__name__}）")
     else:
         room_ids = pkg.room_ids()
         for c in pkg.chests:
@@ -64,10 +67,14 @@ def validate(pkg: KnowledgePackage, verbose=True):
             errors.append(f"地标 {l.get('id')} 的模板图片缺失: templates/{l['template']}")
 
     for c in pkg.chests or []:
-        wf = pkg.workflow(c["id"]) if c.get("id") else None
+        wf = pkg.workflow(c["id"]) if isinstance(c, dict) and c.get("id") else None
         if not wf:
             continue
         for i, step in enumerate(wf.get("steps", [])):
+            # Bug 53：steps 含 null/非对象 → 明确报错而非 AttributeError
+            if not isinstance(step, dict):
+                errors.append(f"{c.get('id')} workflow 第 {i} 步不是对象: {type(step).__name__}")
+                continue
             if step.get("type") not in ALLOWED_STEP_TYPES:
                 errors.append(f"{c['id']} workflow 第 {i} 步类型非法: {step.get('type')}")
             if step.get("type") == "portal" and step.get("portal_id"):

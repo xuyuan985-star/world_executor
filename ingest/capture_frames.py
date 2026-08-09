@@ -18,12 +18,19 @@ SCALE = 1280
 
 def extract_frames(video, scale=SCALE, interval=None):
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
+    # Bug 47：抽帧前清空旧帧（防第二次处理混入上次视频残留）
+    for f in FRAME_DIR.glob("f_*.jpg"):
+        f.unlink()
     iv = interval or FPS_INTERVAL
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-        "-vf", f"fps=1/{iv},scale={scale}:-1",
-        str(FRAME_DIR / "f_%04d.jpg"),
-    ], check=True)
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
+            "-vf", f"fps=1/{iv},scale={scale}:-1",
+            str(FRAME_DIR / "f_%04d.jpg"),
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        # Bug 48：抽帧失败带视频上下文（用户知道哪个视频/什么命令失败）
+        raise RuntimeError(f"视频抽帧失败: {video}（ffmpeg 返回 {e.returncode}）") from e
     return sorted(FRAME_DIR.glob("f_*.jpg"))
 
 
@@ -47,19 +54,19 @@ def ask_frame(provider, frame, index):
         n = provider.analyze_frames([str(frame)], "", PROMPT)
         text = n.description.strip()
         data = None
-        m = re.search(r"\{.*?\}", text, re.S)
-        if m:
+        # Bug 49：非贪婪正则会截断嵌套 JSON——直接取首尾花括号全段
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end > start:
             try:
-                data = json.loads(m.group(0))
+                data = json.loads(text[start:end + 1])
             except Exception:
                 data = None
-        if data is None:
-            start, end = text.find("{"), text.rfind("}")
-            if start != -1 and end > start:
-                data = json.loads(text[start:end + 1])
         if isinstance(data, dict):
             data.setdefault("observation_only", True)
-        return data or {}
+            return data
+        # Bug 50：JSON 解析失败保存原始响应（VLM 格式问题可追查）
+        return {"error": "json_parse_failed", "raw": text[:2000],
+                "index": index}
     except Exception as e:
         return {"error": str(e), "index": index}
 
@@ -75,8 +82,11 @@ def main():
         data = ask_frame(provider, f, i)
         print(f"  f_{i:04d} ({f.stat().st_size//1024}KB) -> {json.dumps(data, ensure_ascii=False)[:160]}")
         results.append({"frame": f.name, "data": data})
-        with open(RESULTS_FILE, "w", encoding="utf-8") as fh:
+        # Bug 51：结果原子写——临时文件完成后 rename（防中断损坏 results.json）
+        tmp = RESULTS_FILE.with_name(RESULTS_FILE.name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(results, fh, ensure_ascii=False, indent=2)
+        tmp.replace(RESULTS_FILE)
 
 
 if __name__ == "__main__":
