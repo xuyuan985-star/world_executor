@@ -56,8 +56,10 @@ class GuidesView(BasePage):
         ops.addStretch(1)
         dl.addLayout(ops)
         split.addWidget(self.detail)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
+        split.setStretchFactor(0, 2)   # 树 40%
+        split.setStretchFactor(1, 3)   # 详情 60%
+        self.tree.header().setStretchLastSection(True)
+        self.tree.resizeColumnToContents(0)
         self.content_layout.addWidget(split, 1)
 
         self._maps = {}

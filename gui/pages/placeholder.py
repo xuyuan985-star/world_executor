@@ -25,16 +25,16 @@ def error_page(source, error):
 
 
 def placeholder_page(title, note):
-    page = QWidget()
-    layout = QVBoxLayout(page)
-    layout.addStretch(1)
+    """占位页：卡片置顶（无顶部 stretch 空洞）。"""
+    from gui.pages.base_page import BasePage
+    page = BasePage(title)
     card = CardWidget()
-    card_title(card, title)
+    card_layout(card)
     label = BodyLabel(note)
     label.setStyleSheet("color: #7A90B0;")
     card_layout(card).addWidget(label)
-    layout.addWidget(card)
-    layout.addStretch(1)
+    page.content_layout.addWidget(card)
+    page.content_layout.addStretch(1)
     return page
 
 
@@ -51,11 +51,26 @@ class WorldGraphPage(QWidget):
 class ObservationPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._p = placeholder_page(
-            "观测 Observation",
-            "GUI-M0.3: state_observation 时间线 + fail/repair 审计 + Replay")
+        from gui.pages.base_page import BasePage
+        bp = BasePage("观察中心")
+        bp.set_status("运行事件将显示在此")
+        self._stats = BodyLabel("尚未开始任务 — 事件统计将显示在这里")
+        self._stats.setStyleSheet("color: #7A90B0;")
+        bp.content_layout.addWidget(self._stats)
+        bp.content_layout.addStretch(1)
         layout = QVBoxLayout(self)
-        layout.addWidget(self._p)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(bp)
+
+    def on_event(self, event):
+        # 观察中心：事件计数统计（时间线/失败统计后续接入）
+        if not hasattr(self, "_counts"):
+            self._counts = {}
+        self._counts[event.type] = self._counts.get(event.type, 0) + 1
+        total = sum(self._counts.values())
+        top = "、".join(f"{k}×{v}" for k, v in
+                       sorted(self._counts.items(), key=lambda x: -x[1])[:5])
+        self._stats.setText(f"已接收 {total} 事件 | {top}")
 
 
 class KnowledgePage(QWidget):
@@ -77,8 +92,12 @@ class StudioPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        title = StrongBodyLabel("视频攻略归档")
+        title = StrongBodyLabel("视频攻略")
         layout.addWidget(title)
+        # 首屏统计
+        self.video_stats = QLabel("")
+        self.video_stats.setStyleSheet("color: #7A90B0;")
+        layout.addWidget(self.video_stats)
 
         self.video_list = QListWidget()
         layout.addWidget(self.video_list)
@@ -131,6 +150,8 @@ class StudioPage(QWidget):
             if d.exists():
                 self._videos.extend(sorted(d.glob("*.mp4")))
         self.video_list.clear()
+        total_mb = sum(v.stat().st_size for v in self._videos) // 1024 // 1024
+        self.video_stats.setText(f"共 {len(self._videos)} 个视频 · {total_mb}MB · 已处理 → 攻略存档")
         for v in self._videos:
             QListWidgetItem(f"{v.name}  ({v.stat().st_size//1024//1024}MB)",
                             self.video_list)
@@ -193,10 +214,14 @@ class SettingsPage(QWidget):
         layout.addWidget(card)
         layout.addStretch(1)
 
-        # 保存
+        # 保存：右下固定宽（防撑满整行）
+        save_row = QHBoxLayout()
+        save_row.addStretch(1)
         save_btn = _PB("保存设置")
+        save_btn.setFixedWidth(130)
         save_btn.clicked.connect(self._save)
-        layout.addWidget(save_btn)
+        save_row.addWidget(save_btn)
+        layout.addLayout(save_row)
 
         self._load()
 
