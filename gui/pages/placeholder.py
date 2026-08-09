@@ -240,7 +240,11 @@ class VideoCard(CardWidget):
         info.setSpacing(4)
         self.name_label = StrongBodyLabel(video_path.name)
         self.name_label.setStyleSheet("font-size: 13px;")
-        mb = video_path.stat().st_size // 1024 // 1024
+        # Bug 9：文件可能在扫描后被删/移动——stat 异常不崩卡片
+        try:
+            mb = video_path.stat().st_size // 1024 // 1024
+        except (FileNotFoundError, OSError):
+            mb = 0
         self.size_label = BodyLabel(f"{mb} MB")
         self.size_label.setStyleSheet("color: #7A90B0; font-size: 12px;")
         info.addWidget(self.name_label)
@@ -314,10 +318,17 @@ class StudioPage(BasePage):
             import sys
             from pathlib import Path
             root = Path(__file__).resolve().parent.parent.parent
-            r = subprocess.run(
-                [sys.executable, str(root / "ingest" / "archive_video.py"),
-                 str(self.video), "--max-frames", "12"],
-                capture_output=True, text=True, cwd=str(root))
+            # Bug 10：subprocess 异常（python/路径问题）不吞——done 必须发出，
+            # 否则按钮永久卡"归档中"
+            try:
+                r = subprocess.run(
+                    [sys.executable, str(root / "ingest" / "archive_video.py"),
+                     str(self.video), "--max-frames", "12"],
+                    capture_output=True, text=True, cwd=str(root),
+                    timeout=600)
+            except Exception as e:
+                self.done.emit(False, f"归档进程异常: {type(e).__name__}: {e}")
+                return
             out = (r.stdout + r.stderr)
             for line in out.splitlines():
                 self.log.emit(line)
@@ -332,14 +343,20 @@ class StudioPage(BasePage):
             if d.exists():
                 self._videos.extend(sorted(d.glob("*.mp4")))
 
-        # 清空旧卡片
+        # 清空旧卡片（保留尾部 stretch 语义——刷新后恰一个撑开项，不累积）
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.deleteLater()
 
-        total_mb = sum(v.stat().st_size for v in self._videos) // 1024 // 1024
+        total_mb = 0
+        for v in self._videos:
+            try:
+                total_mb += v.stat().st_size
+            except (FileNotFoundError, OSError):
+                continue
+        total_mb //= 1024 * 1024
         self.video_stats.setText(
             f"共 {len(self._videos)} 个视频 · {total_mb}MB · 已处理 → 攻略存档")
 
@@ -357,6 +374,8 @@ class StudioPage(BasePage):
     def _archive(self, video):
         self._worker = self.ArchiveWorker(video)
         self._worker.done.connect(self._on_done)
+        # Bug 11：线程完成即回收（防旧线程对象残留）
+        self._worker.finished.connect(self._worker.deleteLater)
         # 禁用所有归档按钮
         for i in range(self.cards_layout.count()):
             w = self.cards_layout.itemAt(i).widget()

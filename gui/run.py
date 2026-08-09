@@ -12,6 +12,9 @@ from runtime.api.commands import RuntimeAPI
 from runtime.events.bus import EventBus
 from runtime.knowledge_loader import KnowledgePackage
 
+# Bug 13：单实例句柄进程级存活（模块顶层持有，防局部变量回收导致锁失效）
+SINGLE_INSTANCE = None
+
 
 def _elevate_if_needed():
     """BLOCKER-1：权限前置——启动即确认，不在运行途中临时弹 UAC。
@@ -20,6 +23,9 @@ def _elevate_if_needed():
     真机执行会被 G3 门槛 gate_blocked——health 已检 admin，绝不中途弹窗）。
     返回 True 表示已发起提权并应退出当前进程。
     """
+    # Bug 12：非 Windows 平台不触碰 windll（先于任何 ctypes 调用）
+    if sys.platform != "win32":
+        return False
     import ctypes
     import sys as _sys
     if ctypes.windll.shell32.IsUserAnAdmin():
@@ -74,22 +80,23 @@ def _install_excepthook():
 
 def main():
     _install_excepthook()
+    # Bug 13：单实例锁必须进程级存活（局部变量会被回收→锁失效）
+    global SINGLE_INSTANCE
     # Bug 150：单实例保护（QSharedMemory——自动化工具防双开冲突）
     from PySide6.QtCore import QSharedMemory
-    single = QSharedMemory("WorldExecutorStudio_SingleInstance")
-    if not single.create(1):
+    SINGLE_INSTANCE = QSharedMemory("WorldExecutorStudio_SingleInstance")
+    if not SINGLE_INSTANCE.create(1):
         from PySide6.QtWidgets import QMessageBox
         app_tmp = QApplication(sys.argv)
         QMessageBox.information(None, "WorldExecutor Studio",
                                 "程序已在运行（单实例）")
         return
-    import ctypes
-    if sys.platform == "win32":  # AI 审计 B2：非 Windows 不调 windll
-        ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
     app = QApplication(sys.argv)
     # DPI 修复：游戏启动切分辨率时防 Qt 缩放舍入放大（125% 不四舍五入成 150%）
+    # Bug 14：不再手动 SetProcessDPIAware——Qt6 创建 QApplication 时统一接管
+    #（进程级 DPI awareness 由 Qt 设置，mss/win32 截图运行时自动沿用）
     from PySide6.QtCore import Qt as _Qt
     app.setHighDpiScaleFactorRoundingPolicy(
         _Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)

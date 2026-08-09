@@ -16,7 +16,6 @@ import json
 import re
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,8 +62,7 @@ def resolve_map_area(video_name):
     # 2) 地图级 override（跨区域视频：黑塔币等）——region 用地图 id
     for key, mdir in VIDEO_MAP_OVERRIDES.items():
         if key in stem:
-            mid = mdir.split("_", 1)[1]
-            return mdir, mid, None
+            return mdir, map_id_of(mdir), None
     # 3) 遍历所有地图的 areas，找名称匹配的区域文件 → 得地图目录
     for md in sorted(GUIDES.iterdir()):
         if not md.is_dir():
@@ -76,7 +74,9 @@ def resolve_map_area(video_name):
                 continue
             if area_id is not None and a.stem != area_id:
                 continue
-            if adoc["name"] in stem or (area_id is not None and a.stem == area_id):
+            # Bug 16：areas JSON 缺 name 字段不崩
+            name = adoc.get("name", "")
+            if name and name in stem or (area_id is not None and a.stem == area_id):
                 return md.name, a.stem, None
     if area_id is not None:
         return None, area_id, f"override 命中 {area_id} 但 guides 中无对应区域文件"
@@ -97,8 +97,10 @@ def room_to_area(mdir, room_text):
             adoc = json.loads(a.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if adoc["name"] in room_text and len(adoc["name"]) > len(best_name):
-            best_id, best_name = a.stem, adoc["name"]
+        # Bug 16：areas JSON 缺 name 字段不崩
+        name = adoc.get("name", "")
+        if name and name in room_text and len(name) > len(best_name):
+            best_id, best_name = a.stem, name
     return best_id
 
 
@@ -118,6 +120,15 @@ MAP_CN = {
 }
 
 
+def map_id_of(mdir):
+    """地图目录 → 地图 id：仅剥离 "NN_" 序号前缀，其余保持原名。
+    （"02_herta_space_station"→"herta_space_station"；"black_tower"→"black_tower"）"""
+    head, sep, tail = mdir.partition("_")
+    if not sep:
+        return mdir
+    return tail if head.isdigit() else mdir
+
+
 def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
     """VLM bbox → 攻略点位（bbox [x1,y1,x2,y2] 0-1000 → 归一化中心）。
 
@@ -129,7 +140,11 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
         return None
     cx = min(1.0, max(0.0, (x1 + x2) / 2 / 1000.0))
     cy = min(1.0, max(0.0, (y1 + y2) / 2 / 1000.0))
-    seq = uuid.uuid4().hex[:4]
+    # Bug 18：稳定 hash 去重（uuid 随机后缀 → 同一视频重归档永远新 id）
+    import hashlib
+    seq = hashlib.md5(
+        f"{map_id}:{area_id}:{frame_no:04d}:{bbox}".encode()
+    ).hexdigest()[:4]
     map_cn = MAP_CN.get(map_id, map_id)
     region_cn = REGION_CN.get(area_id, area_id)
     return {
@@ -159,7 +174,11 @@ def archive_point(mdir, point, dry_run=False):
     target = pdir / fname
     items = []
     if target.exists():
-        items = json.loads(target.read_text(encoding="utf-8"))
+        # Bug 17：半写入/损坏的 points 文件不拖垮归档——按空列表继续
+        try:
+            items = json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            items = []
     ids = {i["id"] for i in items}
     if point["id"] in ids:
         return f"重复跳过 {point['id']}"
@@ -207,7 +226,7 @@ def main():
             if point_area is None:
                 print("  f_{:04d} chest 但区域未解析（跳过，防 region=null）".format(i))
                 continue
-            pt = make_point(point_area, mdir.split("_", 1)[1], "chest",
+            pt = make_point(point_area, map_id_of(mdir), "chest",
                             data["chest"].get("bbox"), i)
             if pt:
                 msg = archive_point(mdir, pt, args.dry_run)

@@ -31,7 +31,10 @@ class MainWindow(FluentWindow):
         self.setWindowTitle(f"世界执行器 v{_ver}")
         self.setMinimumSize(1180, 720)
         # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
-        self.mission_controller = mission_controller or MissionController(api)
+        # Bug 15：知识目录显式注入——与 run.py 目标加载同源（真点位执行包，
+        # 内含 30 条真点位模板 workflow；guides/maps 是展示库，无 workflow 不能执行）
+        self.mission_controller = mission_controller or MissionController(
+            api, knowledge_dir=str(ROOT / "knowledge/source/black_tower_test"))
         # DPI 修复：窗口几何保存/恢复（游戏切分辨率时不被放大/移出屏幕）
         self._user_geometry = None
         self._screen_dpi = None
