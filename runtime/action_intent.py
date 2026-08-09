@@ -94,4 +94,10 @@ class ActionIntent:
         if self.execution_id:
             ctx["execution_id"] = self.execution_id
         ctx["source"] = self.source
+        # Bug 12：安全证据进上下文——日志/事件可回答"是否视觉确认/证据/风险"
+        ctx["vision_verified"] = self.vision_verified
+        ctx["vision_confidence"] = self.vision_confidence
+        if self.evidence_id:
+            ctx["evidence_id"] = self.evidence_id
+        ctx["risk"] = self.risk
         return ctx
