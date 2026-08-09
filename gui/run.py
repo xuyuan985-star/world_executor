@@ -98,13 +98,19 @@ def main():
 
     # 目标 = 攻略存档真实点位（非测试包假数据 chest_A/B/C/D）
     from knowledge.guides_loader import load_guide_targets, load_guide_regions
-    targets = load_guide_targets("02_herta_space_station", types=["chest"])
-    regions = {r["id"]: r["name"] for r in load_guide_regions("02_herta_space_station")}
-    # 目标附带区域中文名（指挥台展示用）+ 地图级分组
-    for t in targets:
-        t["room"] = regions.get(t["region"], t["region"])
-        t["map_name"] = "黑塔空间站"
-    if not targets:  # 攻略存档为空时回退测试包（保持可运行）
+    targets = []
+    try:  # 嫌疑 3：加载异常也走兜底（不只空列表）
+        targets = load_guide_targets("02_herta_space_station", types=["chest"])
+        regions = {r["id"]: r["name"] for r in load_guide_regions("02_herta_space_station")}
+        # 目标附带区域中文名（指挥台展示用）+ 地图级分组
+        for t in targets:
+            t["room"] = regions.get(t["region"], t["region"])
+            t["map_name"] = "黑塔空间站"
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        targets = []
+    if not targets:  # 攻略存档为空/异常时回退测试包（保持可运行）
         pkg = KnowledgePackage(ROOT / "knowledge/source/black_tower_test")
         targets = pkg.chests or []
     bus = EventBus(persist_path=str(ROOT / "ingest/raw/events/studio.jsonl"))

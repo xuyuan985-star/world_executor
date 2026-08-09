@@ -38,8 +38,14 @@ class MainWindow(FluentWindow):
         self._restore_geometry()
         self._watch_screen_changes()
 
-        self.command_deck = CommandDeck(targets)
-        # Bug 53：页面构造异常隔离——单页失败不拖垮主窗口
+        # 指挥台构造兜底（嫌疑 2）：炸则用空目标实例——窗口仍活着，不整个死亡
+        try:
+            self.command_deck = CommandDeck(targets or [])
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self.command_deck = CommandDeck([])
+        # 页面构造异常隔离——单页失败不拖垮主窗口
         self.world_graph = self._safe_page(WorldGraphPage)
         self.observation = self._safe_page(ObservationPage)
         self.knowledge = self._safe_page(KnowledgePage)
