@@ -445,7 +445,9 @@ class SettingsPage(BasePage):
         # 模型配置（可改——不再只读）
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("VLM 分析模型:"))
-        self.model_combo = ComboBox()
+        # qfluentwidgets.ComboBox 无 setEditable——用原生 QComboBox（可编辑）
+        from PySide6.QtWidgets import QComboBox
+        self.model_combo = QComboBox()
         self.model_combo.setEditable(True)
         self.model_combo.addItems([
             "qwen3-vl-plus", "qwen3-vl-flash", "qwen-vl-max",

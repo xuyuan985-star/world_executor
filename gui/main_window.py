@@ -173,6 +173,31 @@ class MainWindow(FluentWindow):
             logging.getLogger("gui.main_window").exception(
                 "IPC 唤醒处理失败")
 
+    def start_foreground_watch(self, interval_ms=3000):
+        """持续前台守护：定时检测游戏窗口是否在前台，不在则自动拉置顶。"""
+        from PySide6.QtCore import QTimer
+        if getattr(self, "_fg_watch", None) is not None:
+            return
+        self._fg_watch = QTimer(self)
+        self._fg_watch.setInterval(interval_ms)
+        self._fg_watch.timeout.connect(self._ensure_game_foreground)
+        self._fg_watch.start()
+
+    def _ensure_game_foreground(self):
+        """检测游戏前台——不在则自动激活（用户要求：开始后持续拉置顶）。"""
+        try:
+            import ctypes
+            from runtime.drivers.march7th.window import find_game_window
+            game = find_game_window()
+            if game is None:
+                return  # 游戏没开——不打扰
+            fg = ctypes.windll.user32.GetForegroundWindow()
+            if fg != game["hwnd"]:
+                from runtime.win_capture import set_foreground_with_retry
+                set_foreground_with_retry(game["hwnd"])
+        except Exception:
+            pass
+
     def _safe_page(self, page_cls, *args):
         """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。
         Bug 621：只尝试一次——失败显示错误页，不重复创建失败对象。"""
@@ -335,6 +360,8 @@ class MainWindow(FluentWindow):
                 return
         self.command_deck.reset()
         self.command_deck.set_starting()  # Bug 30：同步禁按钮（不依赖事件）
+        # 前台守护：开始任务即持续拉游戏置顶（用户要求）
+        self.start_foreground_watch()
         try:
             # 第 62 轮：业务细节封装在 controller（路径/规格不再裸露在 GUI）
             self.mission_controller.start(targets, mode=mode)
