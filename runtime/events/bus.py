@@ -50,13 +50,23 @@ class EventBus:
                 pass
 
     def publish(self, event: WorldEvent):
+        to_persist = None
         with self._lock:
             self._seq += 1
             event.sequence_id = self._seq  # #33：按发布序打全局序号
             self._events.append(event)
             if self._fh:
+                # BUG-028：write 在锁内（顺序保证），flush 移出锁——
+                # 磁盘慢不阻塞其他发布者（批量 flush 语义）
                 self._fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
-                self._fh.flush()
+                to_persist = self._fh
+        if to_persist is not None:
+            try:
+                to_persist.flush()
+            except OSError:
+                import logging
+                logging.getLogger("runtime.events").warning(
+                    "事件持久化 flush 失败", exc_info=True)
         callbacks = []
         with self._lock:
             for kind, ref in list(self._subscribers):
@@ -110,6 +120,8 @@ class EventBus:
                     bus._events.append(WorldEvent(**data))
                 except Exception:
                     continue
+        # BUG-029：恢复序号——load 后 _seq=0 会重复 sequence_id（排序/去重破坏）
+        bus._seq = max((e.sequence_id or 0 for e in bus._events), default=0)
         return bus
 
 

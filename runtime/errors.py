@@ -139,10 +139,10 @@ def classify(error):
     """#17-A：统一分类入口——优先 code 判定，回退字符串子串判定。
 
     返回 (subclass_or_None, retryable)。
+    BUG-021：未知错误 fail-closed——不重试（人工复核），不再默认 retry。
     """
     code = code_of(error)
     if code is not None and code is not ErrorCode.UNKNOWN:
         return SUBCLASS_BY_CODE.get(code), code not in PERMANENT_CODES
-    if not error:
-        return None, True
-    return None, True
+    # 未知/未归类 → 不重试（已知 transient 才允许 retry）
+    return None, False

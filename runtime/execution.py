@@ -15,7 +15,8 @@ from runtime.errors import ErrorCode
 class ExecutionResult:
     success: bool
     error: str = None
-    retryable: bool = True
+    # BUG-020：默认不重试（fail-closed）——只有明确 transient 才显式 True
+    retryable: bool = False
     category: str = "F1"
     code: ErrorCode = None  # #17-A：稳定错误码（error 字符串的规范化形式）
 

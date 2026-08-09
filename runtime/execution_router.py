@@ -35,7 +35,17 @@ class ExecutionRouter:
             from runtime.input.base import InputResult
             return InputResult(success=False, action=method, backend=backend.name,
                                error=f"unknown_method:{method}")
-        return fn(*args, **kwargs)
+        try:
+            # BUG-019：路由层是系统边界——backend 异常必须转为 InputResult
+            #（不能假设所有 backend 都自兜底）
+            return fn(*args, **kwargs)
+        except Exception as e:
+            import logging
+            logging.getLogger("runtime.router").exception(
+                "Input backend %s.%s 执行异常", backend.name, method)
+            from runtime.input.base import InputResult
+            return InputResult(success=False, action=method, backend=backend.name,
+                               error=f"{type(e).__name__}: {e}")
 
     def capability_input(self):
         """cap.input 语义：是否存在真实输入 driver 可用。"""

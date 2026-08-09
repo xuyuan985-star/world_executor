@@ -137,12 +137,17 @@ class March7thVision(VisionInterface):
             try:
                 from runtime.win_capture import capture_game_foreground
                 from runtime.drivers.march7th.window import find_game_window
+                import win32gui
                 game = find_game_window()
                 if game is None:
                     raise RuntimeError("no game window for foreground capture")
                 img = capture_game_foreground(game)
-                left, top = game["client"][0], game["client"][1]
-                out = (img, (left, top, game["client"][0], game["client"][1]), 1.0)
+                # BUG-017：game["client"] 是 (宽,高) 不是 (left,top)——必须
+                # ClientToScreen 取客户区左上角绝对屏幕坐标，否则降级路径
+                # 坐标全错（视觉正确/点击偏移——最危险故障）
+                left, top = win32gui.ClientToScreen(game["hwnd"], (0, 0))
+                w, h = game["client"]
+                out = (img, (left, top, left + w, top + h), 1.0)
                 source = "foreground_mss"
             except Exception as e:
                 chain.append(f"foreground_mss_failed:{type(e).__name__}")

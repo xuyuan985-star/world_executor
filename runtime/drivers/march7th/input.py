@@ -35,25 +35,33 @@ class March7thInputBackend(InputBackend):
     def press_key(self, key, wait_time=0.2):
         """#43/BUG-06：最低层组合 keyDown→sleep→finally keyUp——
         March7th press_key 内部 keyDown→sleep→keyUp 一体且无 finally，
-        sleep 卡死/异常时按键会卡死；此处用独立原语组合保证 finally 释放。"""
+        sleep 卡死/异常时按键会卡死；此处用独立原语组合保证 finally 释放。
+        BUG-027：keyUp 失败必须报失败（否则 W 键卡住还报成功——实体输入 P0）。
+        """
         import time
         try:
             self.auto.press_key_down(key)
         except Exception as e:
             return InputResult(success=False, action="press_key", backend=self.name,
                                error=f"keydown:{type(e).__name__}: {e}")
+        released = False
         try:
             time.sleep(wait_time)
         finally:
             try:
                 self.auto.press_key_up(key)
+                released = True
             except Exception:
                 # 最后兜底：pyautogui keyUp（March7th 依赖保证可用）
                 try:
                     import pyautogui
                     pyautogui.keyUp(key)
+                    released = True
                 except Exception:
-                    pass
+                    released = False
+        if not released:
+            return InputResult(success=False, action="press_key", backend=self.name,
+                               error="keyup_failed")
         return InputResult(success=True, action="press_key", backend=self.name,
                            method="key")
 

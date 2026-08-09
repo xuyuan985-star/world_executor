@@ -533,6 +533,7 @@ class RealExecutor:
         stuck = 0
         forward_sec = 0.0
         steer_count = 0
+        reached_center = False  # BUG-025：收敛才是成功条件（located>0 不够）
         for i in range(ticks):
             if abort_check and abort_check():
                 return ExecutionResult(success=False, error="move_aborted",
@@ -544,6 +545,7 @@ class RealExecutor:
             x, y = pos
             # 收敛：目标已在屏幕中央附近 → 停（避免撞墙/来回）
             if abs(x - 0.5) < 0.05 and abs(y - 0.5) < 0.15:
+                reached_center = True
                 break
             # #9 stuck 检测：连续多 tick 目标横向位置几乎不动（撞墙/被挡）→ 失败
             if last_x is not None and abs(x - last_x) < 0.01:
@@ -555,22 +557,38 @@ class RealExecutor:
                 stuck = 0
             last_x = x
             dur = self.naturalness.sprint_duration(step_seconds)
-            if abs(x - 0.5) < 0.1:
-                self.input.press_key("w", wait_time=dur)
+            # BUG-026：y 参与决策——目标明显在上方（远）→ 前进逼近；
+            # 否则按横向偏移转向（第三人称机制：横向 steering + 前进）
+            if abs(x - 0.5) < 0.1 and (y - 0.5) > -0.25:
+                result = self.input.press_key("w", wait_time=dur)
+                # BUG-024：输入失败必须中断移动（W 失败仍继续 = 假成功）
+                if not result.success:
+                    return ExecutionResult(
+                        success=False, error=result.error or "move_input_failed",
+                        retryable=True, category="F1_EXEC")
                 forward_sec += dur
             else:
                 side = "a" if x < 0.5 else "d"  # 目标在左 → 左转
-                self.input.press_key(side, wait_time=self.naturalness.rotate_duration())
+                result = self.input.press_key(side, wait_time=self.naturalness.rotate_duration())
+                if not result.success:  # BUG-024
+                    return ExecutionResult(
+                        success=False, error=result.error or "move_input_failed",
+                        retryable=True, category="F1_EXEC")
                 steer_count += 1
         # #17-H：move 事件聚合——长移动只发一条 summary，不刷 tick 风暴
         self._emit("move_completed",
                    detail=f"move:{target_desc}",
                    context={"ticks": ticks, "located": located,
+                            "reached_center": reached_center,
                             "forward_seconds": round(forward_sec, 2),
                             "steer_count": steer_count})
         if located == 0:
             return ExecutionResult(success=False, error="no_observation",
                                    retryable=False, category="F2_COORD")
+        if not reached_center:
+            # BUG-025：tick 用尽但未收敛 → 失败（不再 located>0 即成功）
+            return ExecutionResult(success=False, error="move_target_not_reached",
+                                   retryable=True, category="F2_COORD")
         return ExecutionResult(success=True, category="F2")
 
     def portal_transition(self, portal, wait_base, threshold=0.8, verify_timeout=10):
@@ -587,7 +605,18 @@ class RealExecutor:
         vtmpl = trigger.get("verify_template") or "loading.png"
         if self.pkg.template_exists(vtmpl):
             return self.verify_signal(vtmpl, "vanished", verify_timeout)
-        return True
+        # BUG-023：无验证模板 → 失败（fail-closed）——假成功会带状态机
+        # 进错误房间。显式声明 allow_unverified_transition=true 才放行。
+        if trigger.get("allow_unverified_transition"):
+            import logging
+            logging.getLogger("runtime.step_executor").warning(
+                "传送 %s 未验证（allow_unverified_transition=true 显式放行）", portal.get("id"))
+            return True
+        return ExecutionResult(
+            success=False,
+            error="portal_verify_template_missing",
+            retryable=False,
+            category="F2_VERIFY")
 
     def verify_signal(self, template, expected, timeout, threshold=0.8,
                       abort_check=None):
