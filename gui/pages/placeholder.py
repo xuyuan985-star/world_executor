@@ -41,12 +41,30 @@ class WorldGraphPage(BasePage):
 
 
 class ObservationPage(BasePage):
-    """观察中心：事件流统计与诊断。"""
+    """观察中心：游戏画面 + 事件流统计与诊断。"""
 
     def __init__(self, parent=None):
         super().__init__("观察中心", parent)
-        self.set_status("运行事件将显示在此")
+        self.set_status("点击[抓取画面]查看游戏实时画面")
         self._counts = {}
+
+        # 游戏画面卡片（实时监测）
+        frame_card = CardWidget()
+        card_title(frame_card, "游戏画面")
+        self.frame_label = QLabel("点击「抓取画面」获取当前帧")
+        self.frame_label.setAlignment(Qt.AlignCenter)
+        self.frame_label.setMinimumHeight(200)
+        self.frame_label.setStyleSheet(
+            "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
+            "color: #7A90B0;")
+        card_layout(frame_card).addWidget(self.frame_label)
+        cap_row = QHBoxLayout()
+        self.capture_btn = QPushButton("抓取画面")
+        self.capture_btn.clicked.connect(self._capture)
+        cap_row.addWidget(self.capture_btn)
+        cap_row.addStretch(1)
+        card_layout(frame_card).addLayout(cap_row)
+        self.content_layout.addWidget(frame_card, 1)
 
         # 统计卡片
         stats_card = CardWidget()
@@ -62,14 +80,60 @@ class ObservationPage(BasePage):
         placeholder = BodyLabel("时间线视图待接入")
         placeholder.setStyleSheet("color: #7A90B0;")
         card_layout(timeline_card).addWidget(placeholder)
-        card_layout(timeline_card).addStretch(1)
-        self.content_layout.addWidget(timeline_card, 1)
+        self.content_layout.addWidget(timeline_card)
+
+        self._worker = None
+
+    def _capture(self):
+        """后台线程抓帧 → 主线程显示（Qt 跨线程安全链）。"""
+        self.capture_btn.setEnabled(False)
+        self.capture_btn.setText("抓取中…")
+
+        class FrameWorker(QThread):
+            done = Signal(object)   # QPixmap or None
+            err = Signal(str)
+
+            def run(self):
+                try:
+                    from runtime.drivers.march7th.vision import March7thVision
+                    vision = March7thVision()
+                    shot = vision.take_screenshot()
+                    if shot is None:
+                        self.done.emit(None)
+                        return
+                    img = shot[0]
+                    from PySide6.QtGui import QPixmap
+                    from PIL.ImageQt import ImageQt
+                    pix = QPixmap.fromImage(ImageQt(img))
+                    self.done.emit(pix)
+                except Exception as e:
+                    self.err.emit(f"{type(e).__name__}: {e}")
+
+        self._worker = FrameWorker(self)
+        self._worker.done.connect(self._on_frame)
+        self._worker.err.connect(self._on_frame_err)
+        self._worker.start()
+
+    def _on_frame(self, pix):
+        self.capture_btn.setEnabled(True)
+        self.capture_btn.setText("抓取画面")
+        if pix is None:
+            self.frame_label.setText("未获取到画面（游戏未启动或截图失败）")
+        else:
+            self.frame_label.setPixmap(pix.scaled(
+                self.frame_label.width(), self.frame_label.height(),
+                Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def _on_frame_err(self, msg):
+        self.capture_btn.setEnabled(True)
+        self.capture_btn.setText("抓取画面")
+        self.frame_label.setText(f"截图失败: {msg}")
 
     def on_event(self, event):
         self._counts[event.type] = self._counts.get(event.type, 0) + 1
         total = sum(self._counts.values())
         top = "、".join(f"{k}×{v}" for k, v in
-                       sorted(self._counts.items(), key=lambda x: -x[1])[:5])
+                        sorted(self._counts.items(), key=lambda x: -x[1])[:5])
         self._stats.setText(f"已接收 {total} 事件 | {top}")
 
 

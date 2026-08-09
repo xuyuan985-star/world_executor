@@ -1,5 +1,7 @@
 {
   "api_state": "stopped",
-  "threads": [],
-  "execution_id": null
+  "threads": [
+    "Dummy-1"
+  ],
+  "execution_id": "runea16"
 }

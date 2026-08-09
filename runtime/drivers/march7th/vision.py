@@ -28,10 +28,12 @@ class March7thVision:
             self._validator = FrameValidator()
         return self._validator
 
-    def take_screenshot(self):
+    def take_screenshot(self, crop=None):
         """#39 截图降级链：PrintWindow 后台 → 前台 mss（失败不裸崩）。
 
         返回 (PIL.Image, screenshot_pos, scale_factor)。
+        crop：截图内归一化裁剪（0-1 四元组），仅 PrintWindow 路径支持；
+        前台 mss 降级时忽略 crop（整帧）。
         #17-G：返回前做结构质量校验（全黑/全白/黑边），记入 self.last_quality——
         不抛异常（截图本身成功），由调用方在进 OCR/VLM 前决策。
         BUG-26：降级原因记录进 last_quality.meta.fallback_chain——排查
@@ -40,7 +42,10 @@ class March7thVision:
         source = "print_window"
         chain = []
         try:
-            out = self.auto.take_screenshot()
+            if crop is None:
+                out = self.auto.take_screenshot()
+            else:
+                out = self.auto.take_screenshot(crop=crop)
         except Exception as e:
             chain.append(f"print_window_failed:{type(e).__name__}")
             out = None
@@ -78,6 +83,7 @@ class March7thVision:
     def ocr_lines(self, crop=(0, 0, 1, 1)):
         """OCR 返回 [(text, box), ...]，box 为四点 [(x,y),...] 截图内坐标。"""
         import numpy as np
+        # crop 仅对 March7th 后台截图有效（前台 mss 降级路径不支持裁剪）
         img, _, _ = self.take_screenshot(crop=crop)
         out = []
         for t in self.ocr.run(np.asarray(img)) or []:

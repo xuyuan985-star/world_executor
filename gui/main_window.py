@@ -132,7 +132,16 @@ class MainWindow(FluentWindow):
             self.command_deck.set_health_status("环境检测失败: " + error[:120], busy=False)
         else:
             self.command_deck.set_health(health)
-            self.command_deck.set_health_status("环境就绪", busy=False)
+            # 健康提示：关键项失败给可行动原因（非管理员/前台）
+            hints = []
+            if health.get("admin") is False:
+                hints.append("输入被拦（非管理员）→ 请以管理员运行")
+            if health.get("foreground") is False and health.get("window"):
+                hints.append("游戏窗口不在前台 → 切回游戏窗口")
+            if hints:
+                self.command_deck.set_health_status("；".join(hints), busy=False)
+            else:
+                self.command_deck.set_health_status("环境就绪", busy=False)
             self._sync_runtime_state()
 
     def _sync_runtime_state(self):
