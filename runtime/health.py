@@ -95,8 +95,12 @@ def check_health(verbose=False, game_required=True):
         from ctypes import wintypes
 
         class MOUSEINPUT(ctypes.Structure):
+            # dwExtraInfo 必须 ULONG_PTR（64 位下 c_size_t）——c_ulong 会致
+            # 结构大小错误 SendInput 拒收（与 win32_backend 同款 64 位 bug，
+            # 之前就是它导致真机点击 L1 误报 uipi_block）
             _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_ulong),
-                        ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_ulong)]
+                        ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong),
+                        ("dwExtraInfo", ctypes.c_size_t)]
 
         class INPUT(ctypes.Structure):
             _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
@@ -173,6 +177,8 @@ def check_health(verbose=False, game_required=True):
         result["ffmpeg"] = False
         errors["ffmpeg"] = f"{type(e).__name__}: {e}"
     try:
+        import shutil
+        from pathlib import Path
         usage = shutil.disk_usage(Path(__file__).resolve().parent.parent)
         free_mb = usage.free / (1024 * 1024)
         result["disk"] = free_mb > 500
