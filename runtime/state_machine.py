@@ -78,6 +78,9 @@ TRANSITIONS = {
     State.RECOVERING: {
         Event.RECOVER_OK: (State.NAVIGATING, "resume_navigation"),
         Event.RECOVER_FAILED: (State.ABORT, "abort"),
+        # 审查 P1-4：RECOVERING 缺 ABORT_REQUEST 边——当前无发布点（不可达），
+        # 但任何中止路径在恢复态触发即 ValueError 崩溃（fail-closed 补边）
+        Event.ABORT_REQUEST: (State.ABORT, "abort"),
     },
 }
 

@@ -371,6 +371,13 @@ class WorkflowOrchestrator:
             self._machine.on(Event.RECOVER_OK, "retry")
 
     def _run_step(self, step, idx, wf):
+        # 审查 P1-3：步骤非 dict（畸形知识数据）→ 显式失败而非 AttributeError 崩溃
+        if not isinstance(step, dict):
+            self._emit("fail_recorded", detail=f"F3:bad_step:{idx}",
+                       context={"category": "F3", "target": wf.get("target_id"),
+                                "error": f"bad_step:{type(step).__name__}"})
+            return ExecutionResult(success=False, error=f"bad_step:{type(step).__name__}",
+                                   retryable=False, category="F3")
         step_type = step.get("type")
         if step_type not in STEP_TYPES:  # #44：白名单，拒绝未知步骤类型
             self._emit("fail_recorded", detail=f"F3:unknown_step:{step_type}",
@@ -528,7 +535,11 @@ class WorkflowOrchestrator:
                                        code=ErrorCode.VISION_UNTRUSTED)
             vision_ok = True
             vision_conf = gate["confidence"]
-            evidence_id = f"evid_{abs(hash((observation.frame_id, time.time()))) & 0xFFFFFF:06x}"
+            # 审查 P1-8：内置 hash 跨进程不稳定（同帧两进程 id 不同——
+            # 证据关联/replay 追踪失效）。用 sha256 稳定派生。
+            import hashlib as _hl
+            _seed = f"{observation.frame_id}:{time.time()}".encode()
+            evidence_id = f"evid_{_hl.sha256(_seed).hexdigest()[:6]}"
         intent = self.planner.decide(observation, target)
         if intent.action == ActionType.WAIT.value:
             self._emit("observation",
