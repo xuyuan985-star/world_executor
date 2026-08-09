@@ -20,6 +20,7 @@ class TemplateMatcher:
     def __init__(self, threshold=0.60, backend=None):
         self.threshold = threshold
         self.backend = backend or Win32Backend()
+        self.last_match_ms = None  # Bug 157：最近一次匹配耗时（ms）
 
     def _screenshot(self):
         import mss
@@ -30,7 +31,12 @@ class TemplateMatcher:
             shot.height, shot.width, 3)[:, :, ::-1]
 
     def locate(self, template_path):
-        """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。"""
+        """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
+
+        Bug 156：多尺度结果即隐式 NMS——只取全局最高分单点（同一目标不重复框）。
+        """
+        import time
+        t0 = time.time()
         t = cv2.imread(template_path)
         if t is None:
             return None
@@ -50,6 +56,8 @@ class TemplateMatcher:
         if val < self.threshold:
             return None
         t_h, t_w = t.shape[:2]
+        # Bug 157：匹配耗时记录（定位哪一步慢）
+        self.last_match_ms = round((time.time() - t0) * 1000, 1)
         return val, x + int(t_w * 0.55 / 2), y + int(t_h * 0.55 / 2)
 
     def click_template(self, path, threshold=None, max_retries=3,

@@ -174,6 +174,12 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
         "y": round(cy, 3),
         # Bug 137：坐标来源分辨率（归一化坐标脱离分辨率无法换算）
         "resolution": [1280, 720],
+        # Bug 166：坐标类型声明（归一化 0-1）
+        "coordinate_type": "normalized",
+        # Bug 167：VLM 自动归档需人工复核（不入正式执行）
+        "status": "pending_review",
+        # Bug 168：识别置信度（VLM 未输出时 null）
+        "confidence": None,
         "rarity": None,
         "tier": "T1",
         "note": "VLM 自动识别（2遍一致），待人工复核",

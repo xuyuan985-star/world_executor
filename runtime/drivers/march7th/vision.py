@@ -11,8 +11,34 @@ from runtime.drivers.march7th.window import ensure_march7th_env
 
 # Bug 5：March7th 构造需要 cwd=M7_ROOT（读 ./config.yaml），但 os.chdir 是
 # 进程级——多线程（GUI HealthWorker/FrameWorker）会互相污染 cwd。
-# 锁内构造 + 构造完立即恢复：cwd 只在国际窗口内短暂处于 M7。
+# 锁内构造 + 构造完立即恢复：cwd 只在瞬态窗口内处于 M7。
 _M7_INIT_LOCK = threading.Lock()
+
+# Bug 155：OCR 文本清洗（形近字归一：宝箱O→宝箱0，全角→半角）
+_OCR_TRANSLATE = str.maketrans({
+    "O": "0", "o": "0", "l": "1", "I": "1",
+    "S": "5", "s": "5", "B": "8", "b": "8",
+    "G": "6", "g": "6", "Z": "2", "z": "2",
+})
+
+
+def normalize_ocr(text):
+    """OCR 文本清洗——全角→半角 + ASCII 形近字归一（防 宝箱O/宝箱0 匹配失败）。"""
+    if not text:
+        return text
+    out = []
+    for ch in text:
+        code = ord(ch)
+        if 0xFF10 <= code <= 0xFF19:  # 全角数字 ０-９
+            out.append(chr(code - 0xFEE0))
+            continue
+        if 0xFF21 <= code <= 0xFF3A or 0xFF41 <= code <= 0xFF5A:  # 全角字母
+            out.append(chr(code - 0xFEE0))
+            continue
+        out.append(ch)
+    s = "".join(out)
+    # 形近字映射仅在纯 ASCII 文本做（防中文/多字节字符误伤）
+    return s.translate(_OCR_TRANSLATE) if s.isascii() else s
 
 
 class March7thVision:
@@ -93,14 +119,17 @@ class March7thVision:
         return p
 
     def ocr_lines(self, crop=(0, 0, 1, 1)):
-        """OCR 返回 [(text, box), ...]，box 为四点 [(x,y),...] 截图内坐标。"""
+        """OCR 返回 [(text, box), ...]，box 为四点 [(x,y),...] 截图内坐标。
+
+        Bug 155：文本经 normalize_ocr 清洗（全角/形近字归一）。
+        """
         import numpy as np
         # crop 仅对 March7th 后台截图有效（前台 mss 降级路径不支持裁剪）
         img, _, _ = self.take_screenshot(crop=crop)
         out = []
         for t in self.ocr.run(np.asarray(img)) or []:
             if isinstance(t, dict) and t.get("txt"):
-                out.append((t["txt"], t["box"]))
+                out.append((normalize_ocr(t["txt"]), t["box"]))
         return out
 
     def find_text(self, text, include=True, max_retries=1, crop=None):
@@ -113,8 +142,14 @@ class March7thVision:
         return self.auto.find_element(path, "image", threshold, max_retries=max_retries)
 
     def to_absolute(self, norm_x, norm_y):
-        """归一化坐标(0-1) → 绝对屏幕坐标（vlm 定位结果消费，执行细节）。"""
+        """归一化坐标(0-1) → 绝对屏幕坐标（vlm 定位结果消费，执行细节）。
+
+        Bug 71：归一化边界 clamp；Bug 163：round 而非截断。
+        """
         img, screenshot_pos, scale = self.take_screenshot()
         left, top, w, h = screenshot_pos
         img_w, img_h = img.size
-        return left + int(norm_x * img_w / (scale or 1)), top + int(norm_y * img_h / (scale or 1))
+        norm_x = max(0.0, min(1.0, float(norm_x)))
+        norm_y = max(0.0, min(1.0, float(norm_y)))
+        return (left + round(norm_x * img_w / (scale or 1)),
+                top + round(norm_y * img_h / (scale or 1)))

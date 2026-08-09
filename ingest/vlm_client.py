@@ -30,8 +30,21 @@ class VLMProvider:
 
 
 def _encode_image(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    # Bug 162：上传前压缩（长边 1280 + JPEG 质量 80）——高分辨率帧 10MB+ 会失败
+    from PIL import Image
+    img = Image.open(path)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    max_side = 1280
+    w, h = img.size
+    if max(w, h) > max_side:
+        ratio = max_side / max(w, h)
+        img = img.resize((round(w * ratio), round(h * ratio)),
+                         Image.LANCZOS)
+    import io
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 class QwenVLProvider(VLMProvider):

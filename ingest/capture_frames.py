@@ -49,8 +49,26 @@ PROMPT = (
 )
 
 
-def ask_frame(provider, frame, index):
+# Bug 158：VLM 响应缓存（同帧 hash → 同结果，重跑不重复扣费）
+_VLM_CACHE = {}
+_VLM_CACHE_MAX = 256
+
+
+def _frame_hash(frame_path):
+    import hashlib
+    h = hashlib.md5()
+    with open(frame_path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
+
+
+def ask_frame(provider, frame, index, use_cache=True):
     try:
+        key = None
+        if use_cache and provider is not None and frame is not None:
+            key = _frame_hash(frame)
+            if key in _VLM_CACHE:
+                return _VLM_CACHE[key]
         n = provider.analyze_frames([str(frame)], "", PROMPT)
         text = n.description.strip()
         data = None
@@ -62,11 +80,23 @@ def ask_frame(provider, frame, index):
             except Exception:
                 data = None
         if isinstance(data, dict):
+            # Bug 161：模型响应字段兼容（bbox/box 双别名）
+            for holder in (data.get("chest"), data.get("door"),
+                           data.get("landmark")):
+                if isinstance(holder, dict) and holder.get("bbox") is None \
+                        and holder.get("box") is not None:
+                    holder["bbox"] = holder["box"]
             data.setdefault("observation_only", True)
-            return data
-        # Bug 50：JSON 解析失败保存原始响应（VLM 格式问题可追查）
-        return {"error": "json_parse_failed", "raw": text[:2000],
-                "index": index}
+            result = data
+        else:
+            # Bug 50：JSON 解析失败保存原始响应（VLM 格式问题可追查）
+            result = {"error": "json_parse_failed", "raw": text[:2000],
+                      "index": index}
+        if key is not None:
+            _VLM_CACHE[key] = result
+            if len(_VLM_CACHE) > _VLM_CACHE_MAX:
+                _VLM_CACHE.clear()
+        return result
     except Exception as e:
         return {"error": str(e), "index": index}
 
