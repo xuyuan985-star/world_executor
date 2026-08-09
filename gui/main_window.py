@@ -116,6 +116,16 @@ class MainWindow(FluentWindow):
         else:
             self.command_deck.set_health(health)
             self.command_deck.set_health_status("环境就绪", busy=False)
+            self._sync_runtime_state()
+
+    def _sync_runtime_state(self):
+        """Bug 102：状态恢复——GUI 启动/重开时主动同步 runtime（不只等事件）。"""
+        st = getattr(self.mission_controller, "state", None)
+        if st == "running":
+            self.command_deck.led.setText("● 运行中（恢复同步）")
+            self.command_deck.led.setStyleSheet("color: #4FD1C5; font-size: 12px;")
+            self.command_deck.start_btn.setEnabled(False)
+            self.command_deck.stop_btn.setEnabled(True)
 
     def shutdown(self):
         """第 62 轮：统一关闭（controller/worker/订阅）。"""

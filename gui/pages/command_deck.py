@@ -351,6 +351,11 @@ class CommandDeck(QWidget):
 
     def _on_start(self):
         sel = self.target_combo.currentText()
+        if sel != "全部目标" and sel not in self.rows:
+            # Bug 100：未知目标（配置删除/残留）——不启动，明确提示
+            self.led.setText("● 目标不存在: " + sel)
+            self.led.setStyleSheet("color: #E64545; font-size: 12px;")
+            return
         targets = [] if sel == "全部目标" else [sel]
         self.run_requested.emit(targets)
 
