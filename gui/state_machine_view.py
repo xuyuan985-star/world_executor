@@ -33,10 +33,14 @@ class _Canvas(QWidget):
 
     def paintEvent(self, event):
         # Bug 85：QPainter 异常保护——_render 抛错也保证 end()（防资源泄漏）
+        # Bug 107：绘制异常捕获 + 日志（Qt 绘制异常不崩但不静默）
         painter = QPainter(self)
         try:
             painter.setRenderHint(QPainter.Antialiasing)
             self._view._render(painter)
+        except Exception:
+            import logging
+            logging.getLogger("gui.state_view").exception("paint failed")
         finally:
             painter.end()
 
