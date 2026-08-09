@@ -20,7 +20,22 @@ class EventBus:
         self._fh = None
         if persist_path:
             Path(persist_path).parent.mkdir(parents=True, exist_ok=True)
+            # 隐藏 Bug 审查：持久化文件无轮转——24h 高频事件（action/observation）
+            # 无限增长。超过 20MB 轮转（.1 保留一份）。
+            self._rotate_if_large(persist_path)
             self._fh = open(persist_path, "a", encoding="utf-8")
+
+    @staticmethod
+    def _rotate_if_large(path, max_bytes=20 * 1024 * 1024):
+        import os
+        try:
+            if os.path.getsize(path) > max_bytes:
+                backup = f"{path}.1"
+                if os.path.exists(backup):
+                    os.remove(backup)
+                os.rename(path, backup)
+        except OSError:
+            pass
 
     def subscribe(self, callback, weak=False):
         # BUG-28：订阅者列表并发修改（GUI 线程注册 / runner 线程 publish 快照）

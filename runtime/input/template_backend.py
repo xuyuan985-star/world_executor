@@ -15,7 +15,9 @@ from runtime.input.win32_backend import Win32Backend
 class TemplateMatcher:
     """截图 + 多尺度模板匹配（全屏坐标体系，1:1 映射屏幕坐标）。"""
 
-    SCALES = np.linspace(0.4, 2.5, 43)
+    # 隐藏 Bug 审查：43 级 → 21 级（步长 0.1）——1440p 降采样后约 1s，
+    # 43 级对 0.05 步长收益极低（相邻尺度匹配结果几乎相同）
+    SCALES = np.round(np.arange(0.4, 2.6, 0.1), 2)
 
     def __init__(self, threshold=0.60, backend=None):
         self.threshold = threshold
@@ -72,22 +74,31 @@ class TemplateMatcher:
         """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
 
         Bug 156：多尺度结果即隐式 NMS——只取全局最高分单点（同一目标不重复框）。
-        审查 P0：中心偏移必须用【命中尺度的缩放尺寸】算——原硬编码 0.55
-        与命中尺度无关，260px 模板 scale=1.0 时偏左 59px、scale=2.0 偏 189px。
+        审查 P0：中心偏移用【命中尺度的缩放尺寸】算。
+        隐藏 Bug 审查：1440p 全屏 × 43 级多尺度实测 15.7s——每点击前卡 16 秒。
+        降采样到 1280 宽工作空间匹配（坐标换算回全屏）——耗时 <1.5s。
         """
         import time
         t0 = time.time()
         t = self._load_template(template_path)
         screen = self._screenshot()
         sh, sw = screen.shape[:2]
+        # 降采样：工作空间固定 1280 宽（模板源自 1280 帧——1:1 尺度空间）
+        work_scale = 1280.0 / sw if sw > 1280 else 1.0
+        if work_scale < 1.0:
+            work = cv2.resize(screen, (1280, int(sh * work_scale)),
+                              interpolation=cv2.INTER_AREA)
+        else:
+            work = screen
+        wh, ww = work.shape[:2]
         best = (0.0, 0, 0, 0.0)  # (val, x, y, scale)
         try:
             for scale in self.SCALES:
                 th = cv2.resize(t, None, fx=scale, fy=scale,
                                 interpolation=cv2.INTER_AREA)
-                if th.shape[0] >= sh or th.shape[1] >= sw:
+                if th.shape[0] >= wh or th.shape[1] >= ww:
                     continue
-                res = cv2.matchTemplate(screen, th, cv2.TM_CCOEFF_NORMED)
+                res = cv2.matchTemplate(work, th, cv2.TM_CCOEFF_NORMED)
                 _, mv, _, ml = cv2.minMaxLoc(res)
                 if mv > best[0]:
                     best = (mv, ml[0], ml[1], scale)
@@ -97,9 +108,13 @@ class TemplateMatcher:
         val, x, y, best_scale = best
         if val < self.threshold:
             return None
-        # 审查 P0：用命中尺度的缩放模板尺寸算中心（原 0.55 硬编码修正）
-        th_w = int(t.shape[1] * best_scale)
-        th_h = int(t.shape[0] * best_scale)
+        # 工作空间坐标 → 全屏坐标（点击用绝对屏幕坐标）
+        if work_scale < 1.0:
+            x = int(x / work_scale)
+            y = int(y / work_scale)
+        # 用命中尺度的缩放模板尺寸算中心
+        th_w = int(t.shape[1] * best_scale / work_scale)
+        th_h = int(t.shape[0] * best_scale / work_scale)
         # Bug 157：匹配耗时记录（定位哪一步慢）
         self.last_match_ms = round((time.time() - t0) * 1000, 1)
         return val, x + th_w // 2, y + th_h // 2

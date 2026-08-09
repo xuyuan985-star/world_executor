@@ -499,10 +499,19 @@ class RealExecutor:
                "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         # BUG-031：截图失败不静默——保留错误证据（不阻断主流程）
+        # 隐藏 Bug 审查：失败帧目录无限累积（24h 挂机磁盘增长）——保留最近 200 张
         try:
             if self.driver.vision is not None:
                 frame = self.driver.vision.screenshot_path(str(ROOT / "failure_reports/frames"))
                 ctx["frame"] = str(frame)
+                try:
+                    from pathlib import Path
+                    fdir = Path(frame).parent
+                    shots = sorted(fdir.glob("shot_*.jpg"))
+                    for old in shots[:-200]:
+                        old.unlink(missing_ok=True)
+                except Exception:
+                    pass
         except Exception as e:
             import logging
             logging.getLogger("runtime.step_executor").warning(

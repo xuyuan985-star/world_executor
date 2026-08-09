@@ -7,7 +7,9 @@
 """
 
 
-def check_health(verbose=False, game_required=True):
+def check_health(verbose=False, game_required=True, input_probe=False):
+    """隐藏 Bug 审查：input_probe 控制 L2 按键注入探测（默认关——
+    会向游戏按 ESC，GUI 启动检测时不能打扰用户）。"""
     result = {
         "window": False,
         "capture": False,
@@ -138,10 +140,11 @@ def check_health(verbose=False, game_required=True):
 
         # L2: 游戏响应探测（InputProbe，仅游戏窗口存在时）
         # 判据：以"画面变化显著"为主，OCR 命中菜单词为辅。
-        # 不绑定 ESC 的行为语义：ESC 可能被剧情/战斗/UI 状态吃掉——
-        # 关键判据是"按任意输入后游戏画面是否响应"，词表可配置。
+        # 隐藏 Bug：L2 会向游戏注入 ESC 键——GUI 启动的 HealthWorker 也会跑
+        # check_health，用户正在游戏时会被按 ESC 打断（菜单/剧情/战斗）。
+        # 按键注入探测默认关闭（input_probe=False），仅真机 gate 时开启。
         result["input_l2"] = None  # 未测
-        if result["window"] and result["capture"]:
+        if input_probe and result["window"] and result["capture"]:
             try:
                 from runtime.drivers.march7th.vision import March7thVision
                 vision = March7thVision()

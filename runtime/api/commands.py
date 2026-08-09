@@ -155,7 +155,8 @@ class RuntimeAPI:
         """
         from runtime.health import check_health
         from runtime.capability import detect_capability
-        h = check_health()
+        # input_probe=True：真机 gate 才做 L2 按键注入探测（会向游戏按 ESC）
+        h = check_health(input_probe=True)
         cap = h["capability"]
         critical = ["window", "capture", "ocr", "vlm", "foreground", "admin"]
         fails = [k for k in critical if not cap.get(k)] + [k for k in ("input_l0", "input_l1")
