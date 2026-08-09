@@ -188,18 +188,17 @@ class MainWindow(FluentWindow):
     _F10_ID = 0xF10
 
     def _start_hud(self):
-        """F10 全局热键 + 游戏窗口 HUD 日志层。"""
+        """F10 全局热键 + 游戏窗口 HUD 日志层（对齐 M7）。"""
         try:
-            import ctypes
             from runtime.drivers.march7th.window import find_game_window
             game = find_game_window()
             if game is None:
                 return
-            # 注册 F10 全局热键（WM_HOTKEY，nativeEvent 接收）
-            MOD_NOREPEAT = 0x4000
-            if ctypes.windll.user32.RegisterHotKey(
-                    int(self.winId()), self._F10_ID, MOD_NOREPEAT, 0x79):  # VK_F10
-                self._f10_registered = True
+            # F10 全局热键：keyboard 库（M7 同款——RegisterHotKey 在此环境不可靠）
+            from gui.hotkey import GlobalHotkey
+            self._hotkeys = GlobalHotkey(self)
+            self._hotkeys.pressed.connect(self._on_hotkey)
+            self._hotkeys.register("f10", None)
             # HUD
             from gui.overlay import GameHudController
             self._hud = GameHudController(self.event_bus, game["hwnd"])
@@ -208,17 +207,10 @@ class MainWindow(FluentWindow):
             import logging
             logging.getLogger("gui.main_window").exception("HUD/热键启动失败")
 
-    def nativeEvent(self, eventType, message):
-        # F10 全局热键：WM_HOTKEY → 紧急停止
-        try:
-            if eventType == b"windows_generic_MSG":
-                msg = message[0]
-                if msg.message == 0x0312 and msg.wParam == self._F10_ID:
-                    self._emergency_hotkey()
-                    return True, 0
-        except Exception:
-            pass
-        return super().nativeEvent(eventType, message)
+    def _on_hotkey(self, key):
+        # keyboard 回调线程 → 信号 → 主线程
+        if key == "f10":
+            self._emergency_hotkey()
 
     def _emergency_hotkey(self):
         """F10：紧急停止——释放全部按键 + 停止任务 + HUD 提示。"""
@@ -226,8 +218,6 @@ class MainWindow(FluentWindow):
         logging.getLogger("gui.main_window").warning("F10 紧急停止触发")
         try:
             # 释放可能卡住的按键
-            from runtime.drivers.march7th.input import March7thInputBackend
-            # executor 的 backend 释放
             mc = self.mission_controller
             if mc is not None:
                 mc.stop()
@@ -470,3 +460,10 @@ class MainWindow(FluentWindow):
             # 观察中心同步接收事件统计
             if hasattr(self.observation, "on_event"):
                 self.observation.on_event(event)
+            # 任务结束/报错 → HUD 收起（不再卡在游戏窗口）
+            if event.type in ("run_finished", "pause_requested") \
+                    and getattr(self, "_hud", None) is not None:
+                try:
+                    self._hud.hide()
+                except Exception:
+                    pass

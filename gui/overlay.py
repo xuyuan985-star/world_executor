@@ -12,9 +12,12 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
 class GameHudOverlay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # 对齐 M7 overlay：topmost + 点击穿透（不挡游戏操作）+ 不抢焦点
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint
-                            | Qt.WindowStaysOnTopHint)
+                            | Qt.WindowStaysOnTopHint
+                            | Qt.WindowTransparentForInput)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setFixedSize(420, 200)
 
         lay = QVBoxLayout(self)
