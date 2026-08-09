@@ -63,6 +63,9 @@ def resolve_map_area(video_name):
     for key, mdir in VIDEO_MAP_OVERRIDES.items():
         if key in stem:
             return mdir, map_id_of(mdir), None
+    # Bug 23：攻略库不存在（新装/未导入）→ 明确错误而非 FileNotFoundError
+    if not GUIDES.exists():
+        return None, None, "攻略库不存在（knowledge/guides/maps）"
     # 3) 遍历所有地图的 areas，找名称匹配的区域文件 → 得地图目录
     for md in sorted(GUIDES.iterdir()):
         if not md.is_dir():
@@ -91,8 +94,12 @@ def room_to_area(mdir, room_text):
     """
     if not room_text:
         return None
+    # Bug 28：mdir 可能含路径分隔——只取目录名拼接到 GUIDES 下
+    area_root = GUIDES / Path(mdir).name / "areas"
+    if not area_root.exists():
+        return None
     best_id, best_name = None, ""
-    for a in (GUIDES / mdir / "areas").glob("*.json"):
+    for a in area_root.glob("*.json"):
         try:
             adoc = json.loads(a.read_text(encoding="utf-8"))
         except Exception:
@@ -174,12 +181,14 @@ def archive_point(mdir, point, dry_run=False):
     target = pdir / fname
     items = []
     if target.exists():
-        # Bug 17：半写入/损坏的 points 文件不拖垮归档——按空列表继续
+        # Bug 17/24：半写入/损坏/非列表（如 {}）的 points 文件按空列表继续
         try:
-            items = json.loads(target.read_text(encoding="utf-8"))
+            data = json.loads(target.read_text(encoding="utf-8"))
+            items = data if isinstance(data, list) else []
         except Exception:
             items = []
-    ids = {i["id"] for i in items}
+    # Bug 25：旧版本点位可能缺 id 字段——只按有 id 的条目去重
+    ids = {i["id"] for i in items if isinstance(i, dict) and "id" in i}
     if point["id"] in ids:
         return f"重复跳过 {point['id']}"
     items.append(point)
@@ -222,17 +231,22 @@ def main():
             mapped = room_to_area(mdir, str(data["room"]))
             if mapped:
                 point_area = mapped
-        if data.get("chest", {}).get("found"):
+        # Bug 26：VLM 格式不稳定——chest 可能是 dict / True / str，逐一防护
+        chest = data.get("chest")
+        if isinstance(chest, dict) and chest.get("found"):
             if point_area is None:
                 print("  f_{:04d} chest 但区域未解析（跳过，防 region=null）".format(i))
                 continue
             pt = make_point(point_area, map_id_of(mdir), "chest",
-                            data["chest"].get("bbox"), i)
-            if pt:
-                msg = archive_point(mdir, pt, args.dry_run)
-                if "归档" in msg:
-                    archived += 1
-                print(f"  f_{i:04d} chest[{point_area}] -> {msg}")
+                            chest.get("bbox"), i)
+            if not pt:
+                # Bug 27：bbox 缺失/非法静默跳过 → 显式日志（用户可查为何少点位）
+                print(f"  f_{i:04d} chest bbox 无效或缺失（跳过）")
+                continue
+            msg = archive_point(mdir, pt, args.dry_run)
+            if "归档" in msg:
+                archived += 1
+            print(f"  f_{i:04d} chest[{point_area}] -> {msg}")
         if data.get("room"):
             print(f"  f_{i:04d} room={data['room']}")
 

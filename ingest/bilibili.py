@@ -12,7 +12,8 @@ from config import settings
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 REFERER = "https://www.bilibili.com/"
-OUT_DIR = Path("ingest/raw/videos")
+# Bug 20：输出目录基于仓库根绝对定位（任意 cwd 启动不写错位置）
+OUT_DIR = Path(__file__).resolve().parent.parent / "ingest" / "raw" / "videos"
 
 
 class BiliError(Exception):
@@ -20,7 +21,8 @@ class BiliError(Exception):
 
 
 def get_cookie():
-    return settings.get("BILIBILI_COOKIE", "")
+    # Bug 21：settings 可能无 get()（配置对象结构变化不崩）
+    return getattr(settings, "BILIBILI_COOKIE", "")
 
 
 def http_get(url, cookie=None):
@@ -90,25 +92,39 @@ def download(bvid, out_name=None, qn=80, p_index=0, cookie=None):
         if f.exists():
             continue
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": REFERER, "Cookie": cookie})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(f, "wb") as fh:
-            total = int(resp.headers.get("Content-Length", 0))
-            done = 0
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                fh.write(chunk)
-                done += len(chunk)
-                if total:
-                    pct = done * 100 // total
-                    print(f"    {f.name} {pct}%", end="\r")
-            print(f"    {f.name} {total // 1024 // 1024}MB 完成")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp, open(f, "wb") as fh:
+                total = int(resp.headers.get("Content-Length", 0))
+                done = 0
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        pct = done * 100 // total
+                        print(f"    {f.name} {pct}%", end="\r")
+        except Exception as e:
+            # Bug 22：下载中断不留残缺 m4s（下次重试从零开始）
+            f.unlink(missing_ok=True)
+            raise BiliError(f"下载失败 {f.name}: {type(e).__name__}: {e}")
+        print(f"    {f.name} {total // 1024 // 1024}MB 完成")
 
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", str(vfile), "-i", str(afile),
-        "-c", "copy", str(final),
-    ], check=True)
+    # Bug 22：合并先写临时文件，成功才原子改名——坏 mp4 不冒充成品
+    final_tmp = final.with_name(final.name + ".tmp")
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(vfile), "-i", str(afile),
+            "-c", "copy", str(final_tmp),
+        ], check=True)
+    except Exception as e:
+        final_tmp.unlink(missing_ok=True)
+        vfile.unlink(missing_ok=True)
+        afile.unlink(missing_ok=True)
+        raise BiliError(f"ffmpeg 合并失败: {type(e).__name__}: {e}")
+    final_tmp.rename(final)
     vfile.unlink()
     afile.unlink()
     print(f"合成完成: {final} ({final.stat().st_size // 1024 // 1024}MB)")

@@ -41,8 +41,13 @@ def _elevate_if_needed():
     box.setDefaultButton(QMessageBox.Yes)
     if box.exec_() != QMessageBox.Yes:
         return False
-    ctypes.windll.shell32.ShellExecuteW(
+    # Bug 30：提权启动失败（UAC 拒绝/系统错误）→ 明确提示，不静默退出
+    result = ctypes.windll.shell32.ShellExecuteW(
         None, "runas", _sys.executable, " ".join(_sys.argv), None, 1)
+    if result <= 32:
+        QMessageBox.warning(None, "WorldExecutor Studio",
+                            f"提权启动失败（错误码 {result}）。\n"
+                            "可手动右键「以管理员身份运行」")
     return True
 
 
@@ -117,9 +122,10 @@ def main():
         import traceback
         traceback.print_exc()
         targets = []
-    if not targets:  # 攻略存档为空/异常时回退测试包（保持可运行）
-        pkg = KnowledgePackage(ROOT / "knowledge/source/black_tower_test")
-        targets = pkg.chests or []
+    # Bug 29：禁止 fallback 测试库——真机误执行不存在目标比"空列表"危险
+    # （执行知识包独立注入于 MissionController；目标列表空时 GUI 提示而非假数据）
+    if not targets:
+        print("[warn] 攻略库无目标（02_herta_space_station）——指挥台将无目标可选")
     bus = EventBus(persist_path=str(ROOT / "ingest/raw/events/studio.jsonl"))
     api = RuntimeAPI(bus)
     window = MainWindow(targets, bus, api)
