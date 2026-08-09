@@ -159,10 +159,77 @@ class StudioPage(QWidget):
 
 
 class SettingsPage(QWidget):
+    """设置页：可交互配置（默认执行模式保存到 QSettings）。"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._p = placeholder_page(
-            "设置 Settings",
-            "GUI-M0.4: 引擎路径 / VLM 模型 / 界面")
+        from PySide6.QtCore import QSettings
+        from qfluentwidgets import PrimaryPushButton as _PB
         layout = QVBoxLayout(self)
-        layout.addWidget(self._p)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        title = StrongBodyLabel("设置")
+        layout.addWidget(title)
+
+        card = CardWidget()
+        card_layout(card)
+        cl = card_layout(card)
+
+        # 默认执行模式
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("默认执行模式:"))
+        self.mode_combo = ComboBox()
+        self.mode_combo.addItems(["模拟执行", "真机执行"])
+        row1.addWidget(self.mode_combo)
+        row1.addStretch(1)
+        cl.addLayout(row1)
+
+        # 环境信息（只读）
+        info = QLabel(self._env_info())
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #7A90B0;")
+        cl.addWidget(info)
+
+        layout.addWidget(card)
+        layout.addStretch(1)
+
+        # 保存
+        save_btn = _PB("保存设置")
+        save_btn.clicked.connect(self._save)
+        layout.addWidget(save_btn)
+
+        self._load()
+
+    @staticmethod
+    def _env_info():
+        import sys
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent.parent
+        m7 = root.parent / "March7thAssistant"
+        try:
+            from config import settings
+            model = settings.qwen_vlm_analyze_model() or "未配置"
+        except Exception:
+            model = "未配置"
+        return (f"引擎路径: {m7}\n"
+                f"VLM 模型: {model}\n"
+                f"Python: {sys.version.split()[0]}")
+
+    def _load(self):
+        from PySide6.QtCore import QSettings
+        s = QSettings("WorldExecutor", "Studio")
+        mode = s.value("default_mode", "dry")
+        self.mode_combo.setCurrentIndex(1 if mode == "real" else 0)
+
+    def _save(self):
+        from PySide6.QtCore import QSettings
+        s = QSettings("WorldExecutor", "Studio")
+        s.setValue("default_mode", "real" if self.mode_combo.currentIndex() == 1 else "dry")
+        self.led = self.findChild(QLabel, "save_hint") if False else None
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "设置", "已保存（默认执行模式）")
+
+    def default_mode(self):
+        from PySide6.QtCore import QSettings
+        s = QSettings("WorldExecutor", "Studio")
+        return s.value("default_mode", "dry")

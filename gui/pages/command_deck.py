@@ -310,7 +310,13 @@ class CommandDeck(QWidget):
         from qfluentwidgets import ComboBox as _Combo
         self.mode_combo = _Combo()
         self.mode_combo.addItems(["模拟执行", "真机执行"])
-        self.mode_combo.setCurrentIndex(0)  # 默认 dry（安全，Bug 6 显式化）
+        # 默认模式跟随设置页（QSettings）
+        try:
+            from PySide6.QtCore import QSettings
+            if QSettings("WorldExecutor", "Studio").value("default_mode") == "real":
+                self.mode_combo.setCurrentIndex(1)
+        except Exception:
+            pass
         self.start_btn.setFixedWidth(130)
         self.stop_btn = PushButton("停止")
         self.stop_btn.setEnabled(False)
