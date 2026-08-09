@@ -84,7 +84,18 @@ class TargetRow(QFrame):
         lay.addWidget(self.status_label)
         self.set_status("pending")
 
+    # Bug 34：目标状态迁移保护（防事件乱序回退——completed 后不接受 running）
+    VALID_TRANSITIONS = {
+        "pending": {"running"},
+        "running": {"succeeded", "failed", "interrupted"},
+        "interrupted": {"running", "succeeded"},
+    }
+
     def set_status(self, status):
+        cur = getattr(self, "_status", "pending")
+        allowed = self.VALID_TRANSITIONS.get(cur, set())
+        if cur != "pending" and status not in allowed:
+            return  # 非法回退忽略（UI 保持已达成状态）
         self._status = status
         color = STATUS_COLOR.get(status, "#7A90B0")
         self.status_label.setText(STATUS_TEXT.get(status, status))
@@ -108,6 +119,10 @@ class ObservationSnapshot(CardWidget):
         if room:
             parts.append(f"room={room}")
         self._body.setText("  ·  ".join(parts))
+
+    def text(self):
+        """Bug 33：公开读取（不暴露私有 _body）。"""
+        return self._body.text()
 
 
 HEALTH_LABELS = {
@@ -135,6 +150,19 @@ class RuntimeHealthBar(QWidget):
             lay.addWidget(box)
             self._items[key] = box
         lay.addStretch(1)
+
+    def set_starting(self):
+        # Bug 30：启动瞬间双按钮禁用 + 初始化提示（不依赖事件到达）
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
+        self.led.setText("● 初始化")
+        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+
+    def set_stopping(self):
+        # Bug 31：停止反馈（不等 run_finished 才知道生效）
+        self.stop_btn.setEnabled(False)
+        self.led.setText("● 停止中")
+        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
 
     def set_health_status(self, text, busy=False):
         """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
@@ -264,6 +292,19 @@ class CommandDeck(QWidget):
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self.stop_requested)
 
+    def set_starting(self):
+        # Bug 30：启动瞬间双按钮禁用 + 初始化提示（不依赖事件到达）
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
+        self.led.setText("● 初始化")
+        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+
+    def set_stopping(self):
+        # Bug 31：停止反馈（不等 run_finished 才知道生效）
+        self.stop_btn.setEnabled(False)
+        self.led.setText("● 停止中")
+        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+
     def set_health_status(self, text, busy=False):
         """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
         self.led.setText("● " + text)
@@ -311,7 +352,7 @@ class CommandDeck(QWidget):
             if status == "failed":
                 self.inspector.on_failure(
                     run_no=self._run_no, state=self._last_state,
-                    observation=self.snapshot._body.text(),
+                    observation=self.snapshot.text(),
                     action="—", input_info="—",
                     reason=ctx.get("reason") or "目标失败",
                     category=category_text(ctx.get("category")))
@@ -328,7 +369,7 @@ class CommandDeck(QWidget):
                              else "检查游戏窗口是否在前台")
                 self.inspector.on_failure(
                     run_no=self._run_no, state=self._last_state,
-                    observation=self.snapshot._body.text(),
+                    observation=self.snapshot.text(),
                     action=event.detail, input_info=f"{ctx.get('backend')} ✗",
                     reason=f"{reason} → 建议: {suggested}",
                     category="F1 输入失败")
@@ -343,14 +384,19 @@ class CommandDeck(QWidget):
             self.sm_view.add_overlay("HUMAN_INTERVENTION", ctx.get("reason") or "")
             self.inspector.on_failure(
                 run_no=self._run_no, state=self._last_state,
-                observation=self.snapshot._body.text(),
+                observation=self.snapshot.text(),
                 action="—", input_info="—",
                 reason=f"人工介入: {ctx.get('reason')} {ctx.get('detail', '')}",
                 category="EMERGENCY")
 
     def reset(self):
+        # Bug 36：完整重置（LED/按钮/状态）
         self.sm_view.reset()
         for row in self.rows.values():
             row.set_status("pending")
+        self.led.setText("● 空闲")
+        self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         self.snapshot.update_snapshot("—", "—", None, "")
         self.inspector.reset()

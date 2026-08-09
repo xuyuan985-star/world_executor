@@ -27,6 +27,14 @@ class EventBus:
         with self._lock:
             self._subscribers.append(callback)
 
+    def unsubscribe(self, callback):
+        """#57：取消订阅——GUI 窗口销毁时必调（防已删 Qt 信号被 publish 调用）。"""
+        with self._lock:
+            try:
+                self._subscribers.remove(callback)
+            except ValueError:
+                pass
+
     def publish(self, event: WorldEvent):
         with self._lock:
             self._seq += 1

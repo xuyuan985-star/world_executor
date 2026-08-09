@@ -103,6 +103,9 @@ class MainWindow(FluentWindow):
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(1000)
+        # #57：窗口销毁时取消事件订阅（防已删 Qt 信号被后续 publish 调用）
+        if getattr(self, "event_bus", None) is not None:
+            self.event_bus.unsubscribe(self._on_runtime_event)
         event.accept()
 
     def _start_run(self, targets, mode="dry"):
@@ -115,9 +118,17 @@ class MainWindow(FluentWindow):
                            target_ids=targets or None,
                            mode=mode)
         self.command_deck.reset()
-        self.api.start_mission(spec)
+        self.command_deck.set_starting()  # Bug 30：同步禁按钮（不依赖事件）
+        try:
+            self.api.start_mission(spec)
+        except Exception as e:
+            # Bug 30：同步异常直接反馈（按钮不永久卡死）
+            self.command_deck.led.setText("● 启动失败: " + str(e)[:100])
+            self.command_deck.start_btn.setEnabled(True)
+            self.command_deck.stop_btn.setEnabled(False)
 
     def _stop_run(self):
+        self.command_deck.set_stopping()  # Bug 31：停止反馈先于结果
         self.api.stop()
 
     def _on_runtime_event(self, event):
