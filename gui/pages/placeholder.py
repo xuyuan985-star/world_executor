@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import (QHBoxLayout, QListWidget, QListWidgetItem,
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
 from qfluentwidgets import BodyLabel, CardWidget, StrongBodyLabel
