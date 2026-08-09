@@ -1,58 +1,78 @@
 # WorldExecutor — 崩坏：星穹铁道 全宝箱收集助手
 
-基于 [March7thAssistant](https://github.com/moesnow/March7thAssistant) 插件方式扩展的半自治宝箱收集系统。
+基于 [March7thAssistant](https://github.com/moesnow/March7thAssistant) 扩展的半自治宝箱收集系统。
+半自动化：模板匹配 → 定位宝箱 → 模拟点击开箱；攻略视频 → VLM 识别 → 点位入库。
 
-## 架构（v0.8.1 冻结）
+## 新电脑启动（5 分钟）
 
-三层分离：
+要求：**Windows 10/11 + Python 3.11+**（项目依赖 Windows API：窗口/输入/截图）。
 
-- **知识包**（`knowledge/`）：纯文件，Git 友好。房间图、传送门、地标、宝箱、workflow 步骤序列，协议 v1.3。
-- **运行时引擎**（`runtime/`）：March7thAssistant 插件。状态机驱动（Room State Graph + Portal System），运行时零 VLM。
-- **预处理管线**（`ingest/`）：离线。攻略视频 → VLM 事件描述 → 知识包（validator 先行，compiler 延至 M0）。
+```bash
+# 1. 克隆仓库
+git clone https://github.com/xuyuan985-star/world_executor.git
+cd world_executor
 
-设计铁律：
+# 2. 创建虚拟环境并装依赖
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+pip install -r requirements.txt
 
-- VLM 只产事件描述，不产步骤；运行时完全不调用 VLM。
-- 知识（文件）与状态（runtime.db）分离，DB 只存执行状态、观测、统计。
-- 状态门控：观测 = value + observer + confidence + time。
-- Portal fail policy: retry_interact → adjust_position → reacquire_heading → abort。
+# 3. 配置环境变量（无 key 也能启动，VLM 功能会降级）
+copy .env.example .env        # Windows
+# 然后编辑 .env 填入 QWEN_API_KEY（可跳过，模板匹配路径不需要）
+
+# 4. 启动 GUI
+python -m app
+# 或双击根目录的 启动世界执行器.bat
+```
+
+> **必须使用 `.venv` 的 Python**（`python` 可能指向系统解释器而缺 PySide6）。
+> 真机执行（点击游戏窗口）需要**管理员权限**——启动时按提示确认提权。
+
+## 环境自检 / 门禁
+
+```bash
+python -m app --selftest      # 启动自检报告（Config/Knowledge/Runtime/Vision）
+python tools\run_gate.py      # 全部门禁（lint/单测/视觉门/冒烟/端到端）
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+## 功能一览
+
+| 入口 | 说明 |
+|------|------|
+| `python -m app` | GUI（指挥台/攻略体系/观察中心/视频归档/设置） |
+| `python -m app --selftest` | 启动自检报告 |
+| `python -m app --gate` | 运行门禁 |
+| `python tools\run_gate.py` | 全量门禁 |
+| `python tools\stress_test.py --rounds 50` | 压力测试 |
+| `python tools\full_pipeline_test.py` | 端到端验收（数据→知识包→GUI 冒烟） |
+| `python tools\validate_all.py` | 全库完整性扫描 |
 
 ## 目录
 
 ```
-config/           环境配置（.env 不入库，key 见本地 .env）
-ingest/           离线管线：VLM 客户端、视频抽帧、模板裁剪、知识包校验/编译
-runtime/          状态机、步骤执行器、dry_run、DB（runtime.db 不入库）
-modules/          三月七插件集成层（M0）
-knowledge/        知识包（black_tower_test 为 Sprint 0 测试包）
-smoke_test.py     March7thAssistant 能力冒烟
-docs/             企划书（v0.4 ~ v0.8.1）
+app/             统一入口（python -m app）
+config/          环境配置（.env 不入库，模板见 .env.example）
+gui/             PySide6 界面（指挥台/攻略/观察中心/工作室/设置）
+runtime/         状态机、步骤执行器、orchestrator、输入后端、dry_run
+ingest/          离线管线：VLM 客户端、视频抽帧、模板裁剪、知识归档
+knowledge/       攻略库（guides/maps 展示 + source 执行包）
+tools/           门禁/自检/迁移/清理/压力等工具
+tests/           分层单测（config/knowledge/planner/replay/vision）
+docs/            企划书与设计文档
 ```
 
-## 快速开始
+## 开发铁律
 
-```bash
-# 1. 配置 .env（复制 .env.example 填 key）
-# 2. 校验知识包
-python -m ingest.compiler.validate_graph knowledge/black_tower_test
-# 3. 干跑（不依赖游戏）
-python runtime/dry_run.py knowledge/black_tower_test
-# 4. 上游能力冒烟（需游戏可截图）
-python smoke_test.py
-```
-
-## Sprint 0 四黄金测试
-
-| 用例 | 场景 |
-|------|------|
-| A | 普通宝箱，同房间直达 |
-| B | 跨 Portal（加载过渡）宝箱 |
-| C | 状态门控目标（先触发状态再交互） |
-| D | 异常恢复（模板丢失 → 恢复 → 重试） |
+- VLM 只产事件描述/点位，运行时执行链零 VLM（模板匹配驱动）。
+- 知识（文件）与状态（runtime.db，SQLite）分离。
+- 状态门控：观测 = value + observer + confidence + time。
+- 输入点击（SendInput）需要管理员；操作前强制前台锁定。
 
 ## 里程碑
 
-- Sprint 0（当前）：最小运行时 + 四黄金测试 + VLM 离线分析可用
-- M0：知识编译器（事件 → 知识包）跑通 9P 测试视频
-- M1：真机验证黑塔空间站收容舱段
-- M2：通用化与新地图扩展
+- Sprint 0（完成）：最小运行时 + 四黄金测试 + VLM 离线分析
+- M0（完成）：视频 → VLM → 点位自动归档（pending_review 复核链）
+- M1-A（完成）：真机闭环——截图→模板匹配→点击→验证（黑塔空间站 30 点位）
+- M1-B（进行中）：GUI 完整接入真机执行 + 多地图扩展
