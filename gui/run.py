@@ -231,7 +231,8 @@ def _start():
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
     # Bug 32：复用提权检查阶段创建的 QApplication（Qt 只允许一个实例）
-    from PySide6.QtWidgets import QApplication
+    # 注意：QApplication 用模块级导入（函数内 import 会使其成局部变量，
+    # 单实例分支第 227 行提前引用 → UnboundLocalError）
     app = QApplication.instance() or QApplication(sys.argv)
     # DPI：RoundPreferFloor 已在模块导入时设置（早于任何 QApplication 创建——
     # 此处不再重复调用，Qt 警告消除）
