@@ -182,6 +182,68 @@ class MainWindow(FluentWindow):
         self._fg_watch.setInterval(interval_ms)
         self._fg_watch.timeout.connect(self._ensure_game_foreground)
         self._fg_watch.start()
+        # 同时开启 HUD（对齐 M7：游戏窗口左下角日志层）
+        self._start_hud()
+
+    _F10_ID = 0xF10
+
+    def _start_hud(self):
+        """F10 全局热键 + 游戏窗口 HUD 日志层。"""
+        try:
+            import ctypes
+            from runtime.drivers.march7th.window import find_game_window
+            game = find_game_window()
+            if game is None:
+                return
+            # 注册 F10 全局热键（WM_HOTKEY，nativeEvent 接收）
+            MOD_NOREPEAT = 0x4000
+            if ctypes.windll.user32.RegisterHotKey(
+                    int(self.winId()), self._F10_ID, MOD_NOREPEAT, 0x79):  # VK_F10
+                self._f10_registered = True
+            # HUD
+            from gui.overlay import GameHudController
+            self._hud = GameHudController(self.event_bus, game["hwnd"])
+            self._hud.show()
+        except Exception:
+            import logging
+            logging.getLogger("gui.main_window").exception("HUD/热键启动失败")
+
+    def nativeEvent(self, eventType, message):
+        # F10 全局热键：WM_HOTKEY → 紧急停止
+        try:
+            if eventType == b"windows_generic_MSG":
+                msg = message[0]
+                if msg.message == 0x0312 and msg.wParam == self._F10_ID:
+                    self._emergency_hotkey()
+                    return True, 0
+        except Exception:
+            pass
+        return super().nativeEvent(eventType, message)
+
+    def _emergency_hotkey(self):
+        """F10：紧急停止——释放全部按键 + 停止任务 + HUD 提示。"""
+        import logging
+        logging.getLogger("gui.main_window").warning("F10 紧急停止触发")
+        try:
+            # 释放可能卡住的按键
+            from runtime.drivers.march7th.input import March7thInputBackend
+            # executor 的 backend 释放
+            mc = self.mission_controller
+            if mc is not None:
+                mc.stop()
+        except Exception:
+            pass
+        try:
+            import ctypes
+            # 兜底：释放 W/A/S/D/Esc/空格 的 keyup
+            for vk in (0x57, 0x41, 0x53, 0x44, 0x1B, 0x20):
+                ctypes.windll.user32.keybd_event(vk, 0, 0x0002, 0)
+        except Exception:
+            pass
+        if getattr(self, "_hud", None) is not None:
+            self._hud.overlay.set_emergency()
+        self.command_deck.led.setText("⚠ F10 紧急停止（按键已释放）")
+        self.command_deck.led.setStyleSheet("color: #E64545; font-size: 12px;")
 
     def _ensure_game_foreground(self):
         """检测游戏前台——不在则自动激活（用户要求：开始后持续拉置顶）。"""
@@ -195,6 +257,10 @@ class MainWindow(FluentWindow):
             if fg != game["hwnd"]:
                 from runtime.win_capture import set_foreground_with_retry
                 set_foreground_with_retry(game["hwnd"])
+            # HUD 跟随窗口位置
+            hud = getattr(self, "_hud", None)
+            if hud is not None and hud.overlay.isVisible():
+                hud.reposition()
         except Exception:
             pass
 
