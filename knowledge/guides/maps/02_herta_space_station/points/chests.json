@@ -273,5 +273,60 @@
     "rarity": null,
     "tier": "T1",
     "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0021_ae26",
+    "name": "detention_zone·帧0021 识别点位（5遍×2/5）",
+    "type": "chest",
+    "region": "detention_zone",
+    "x": 0.275,
+    "y": 0.512,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0038_2554",
+    "name": "detention_zone·帧0038 识别点位（5遍×2/5）",
+    "type": "chest",
+    "region": "detention_zone",
+    "x": 0.467,
+    "y": 0.605,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0039_028f",
+    "name": "detention_zone·帧0039 识别点位（5遍×2/5）",
+    "type": "chest",
+    "region": "detention_zone",
+    "x": 0.506,
+    "y": 0.579,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0047_6938",
+    "name": "detention_zone·帧0047 识别点位（5遍×2/5）",
+    "type": "chest",
+    "region": "detention_zone",
+    "x": 0.404,
+    "y": 0.574,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_detention_zone_0056_42fb",
+    "name": "detention_zone·帧0056 识别点位（5遍×2/5）",
+    "type": "chest",
+    "region": "detention_zone",
+    "x": 0.41,
+    "y": 0.575,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   }
 ]
