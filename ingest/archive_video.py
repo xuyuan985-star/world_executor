@@ -77,19 +77,29 @@ def resolve_map_area(video_name):
                 continue
             if area_id is not None and a.stem != area_id:
                 continue
-            # Bug 16：areas JSON 缺 name 字段不崩
-            name = adoc.get("name", "")
-            if name and name in stem or (area_id is not None and a.stem == area_id):
+            # Bug 16/41：name 缺失不崩；匹配 name + aliases
+            for nm in _area_names(adoc):
+                if nm and nm in stem:
+                    return md.name, a.stem, None
+            if area_id is not None and a.stem == area_id:
                 return md.name, a.stem, None
     if area_id is not None:
         return None, area_id, f"override 命中 {area_id} 但 guides 中无对应区域文件"
     return None, None, f"视频名未匹配到任何区域（{stem}）"
 
 
+def _area_names(adoc):
+    """区域可匹配名：name + aliases（Bug 41：VLM 可能返回英文/别名）。"""
+    names = [adoc.get("name", "")]
+    for a in adoc.get("aliases", []) or []:
+        names.append(str(a))
+    return [n for n in names if n]
+
+
 def room_to_area(mdir, room_text):
     """VLM room 输出 → 具体区域（标题未标注时自动识别）。
 
-    规则：areas 名称出现在 room 文本中（取最长匹配——防"收容舱段"被
+    规则：areas 名称/别名出现在 room 文本中（取最长匹配——防"收容舱段"被
     "舱段"等短名干扰）。无匹配 → None（保持地图级）。
     """
     if not room_text:
@@ -104,10 +114,10 @@ def room_to_area(mdir, room_text):
             adoc = json.loads(a.read_text(encoding="utf-8"))
         except Exception:
             continue
-        # Bug 16：areas JSON 缺 name 字段不崩
-        name = adoc.get("name", "")
-        if name and name in room_text and len(name) > len(best_name):
-            best_id, best_name = a.stem, name
+        # Bug 41：匹配 name + aliases（VLM 返回英文如 "supply zone" 也能命中）
+        for nm in _area_names(adoc):
+            if nm and nm in room_text and len(nm) > len(best_name):
+                best_id, best_name = a.stem, nm
     return best_id
 
 
@@ -193,8 +203,11 @@ def archive_point(mdir, point, dry_run=False):
         return f"重复跳过 {point['id']}"
     items.append(point)
     if not dry_run:
-        target.write_text(json.dumps(items, ensure_ascii=False, indent=2),
-                          encoding="utf-8")
+        # Bug 42：原子写——临时文件替换（防中断写坏整个 points JSON）
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        tmp.replace(target)
     return f"归档 {point['id']} -> {target.name}"
 
 

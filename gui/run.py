@@ -23,7 +23,7 @@ def _elevate_if_needed():
     真机执行会被 G3 门槛 gate_blocked——health 已检 admin，绝不中途弹窗）。
     返回 True 表示已发起提权并应退出当前进程。
     """
-    # Bug 12：非 Windows 平台不触碰 windll（先于任何 ctypes 调用）
+    # Bug 12/31：非 Windows 平台不触碰 windll（先于任何 ctypes 调用）
     if sys.platform != "win32":
         return False
     import ctypes
@@ -31,7 +31,8 @@ def _elevate_if_needed():
     if ctypes.windll.shell32.IsUserAnAdmin():
         return False
     from PySide6.QtWidgets import QApplication, QMessageBox
-    _app = QApplication.instance() or QApplication(_sys.argv)
+    # Bug 32：弹窗需要 app——此处创建，main() 通过 instance() 复用（绝不二次创建）
+    QApplication.instance() or QApplication(_sys.argv)
     box = QMessageBox()
     box.setWindowTitle("WorldExecutor Studio")
     box.setIcon(QMessageBox.Question)
@@ -98,7 +99,9 @@ def main():
         return
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
-    app = QApplication(sys.argv)
+    # Bug 32：复用提权检查阶段创建的 QApplication（Qt 只允许一个实例）
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication(sys.argv)
     # DPI 修复：游戏启动切分辨率时防 Qt 缩放舍入放大（125% 不四舍五入成 150%）
     # Bug 14：不再手动 SetProcessDPIAware——Qt6 创建 QApplication 时统一接管
     #（进程级 DPI awareness 由 Qt 设置，mss/win32 截图运行时自动沿用）
@@ -110,22 +113,28 @@ def main():
 
     # 目标 = 攻略存档真实点位（非测试包假数据 chest_A/B/C/D）
     from knowledge.guides_loader import load_guide_targets, load_guide_regions
+    # Bug 33：地图从设置读取（新增地图经设置即可接入 GUI）
+    try:
+        from config.settings import default_map
+        map_id = default_map()
+    except Exception:
+        map_id = "02_herta_space_station"
     targets = []
-    try:  # 嫌疑 3：加载异常也走兜底（不只空列表）
-        targets = load_guide_targets("02_herta_space_station", types=["chest"])
-        regions = {r["id"]: r["name"] for r in load_guide_regions("02_herta_space_station")}
+    try:
+        targets = load_guide_targets(map_id, types=["chest"])
+        regions = {r["id"]: r["name"] for r in load_guide_regions(map_id)}
         # 目标附带区域中文名（指挥台展示用）+ 地图级分组
         for t in targets:
             t["room"] = regions.get(t["region"], t["region"])
             t["map_name"] = "黑塔空间站"
+    except FileNotFoundError:
+        # Bug 34：库不存在 = 环境问题（可提示继续浏览），非代码损坏
+        print(f"[warn] 攻略库不存在（{map_id}）——指挥台将无目标可选")
     except Exception:
-        import traceback
-        traceback.print_exc()
-        targets = []
-    # Bug 29：禁止 fallback 测试库——真机误执行不存在目标比"空列表"危险
-    # （执行知识包独立注入于 MissionController；目标列表空时 GUI 提示而非假数据）
+        # Bug 34：JSON 损坏/其他异常不再伪装成正常启动——暴露真实错误
+        raise
     if not targets:
-        print("[warn] 攻略库无目标（02_herta_space_station）——指挥台将无目标可选")
+        print(f"[warn] 攻略库无目标（{map_id}）——指挥台将无目标可选")
     bus = EventBus(persist_path=str(ROOT / "ingest/raw/events/studio.jsonl"))
     api = RuntimeAPI(bus)
     window = MainWindow(targets, bus, api)

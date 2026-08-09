@@ -52,6 +52,11 @@ def qwen_text_fallback():
     return [m.strip() for m in get("QWEN_TEXT_FALLBACK", "").split(",") if m.strip()]
 
 
+def default_map():
+    """GUI 默认加载的大地图（可通过 env/GUI 设置覆盖）。"""
+    return get("DEFAULT_MAP", "02_herta_space_station")
+
+
 def knowledge_root():
     return ROOT / "knowledge"
 

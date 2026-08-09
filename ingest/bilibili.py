@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -15,14 +16,89 @@ REFERER = "https://www.bilibili.com/"
 # Bug 20：输出目录基于仓库根绝对定位（任意 cwd 启动不写错位置）
 OUT_DIR = Path(__file__).resolve().parent.parent / "ingest" / "raw" / "videos"
 
+# Bug 44：cookie 凭据目标（Windows 凭据管理器）
+CRED_TARGET = "WorldExecutor/BilibiliCookie"
+
 
 class BiliError(Exception):
     pass
 
 
+def _cred_read():
+    """Windows 凭据管理器读取（不落盘、不入日志）。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class CREDENTIAL(ctypes.Structure):
+            _fields_ = [("Flags", wintypes.DWORD), ("Type", wintypes.DWORD),
+                        ("TargetName", wintypes.LPWSTR),
+                        ("Comment", wintypes.LPWSTR),
+                        ("LastWritten", wintypes.FILETIME),
+                        ("CredentialBlobSize", wintypes.DWORD),
+                        ("CredentialBlob", wintypes.LPVOID),
+                        ("Persist", wintypes.DWORD),
+                        ("AttributeCount", wintypes.DWORD),
+                        ("Attributes", wintypes.LPVOID),
+                        ("TargetAlias", wintypes.LPWSTR),
+                        ("UserName", wintypes.LPWSTR)]
+        advapi = ctypes.windll.advapi32
+        advapi.CredReadW.argtypes = [wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD,
+                                     ctypes.POINTER(ctypes.POINTER(CREDENTIAL))]
+        cred = ctypes.POINTER(CREDENTIAL)()
+        if not advapi.CredReadW(CRED_TARGET, 1, 0, ctypes.byref(cred)):
+            return ""
+        try:
+            blob = ctypes.string_at(cred.contents.CredentialBlob,
+                                    cred.contents.CredentialBlobSize)
+            return blob.decode("utf-8", errors="ignore")
+        finally:
+            advapi.CredFree(cred)
+    except Exception:
+        return ""
+
+
+def _cred_write(cookie):
+    """写入 Windows 凭据管理器（进程内凭据，不暴露在 .env/日志）。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class CREDENTIAL(ctypes.Structure):
+            _fields_ = [("Flags", wintypes.DWORD), ("Type", wintypes.DWORD),
+                        ("TargetName", wintypes.LPWSTR),
+                        ("Comment", wintypes.LPWSTR),
+                        ("LastWritten", wintypes.FILETIME),
+                        ("CredentialBlobSize", wintypes.DWORD),
+                        ("CredentialBlob", wintypes.LPVOID),
+                        ("Persist", wintypes.DWORD),
+                        ("AttributeCount", wintypes.DWORD),
+                        ("Attributes", wintypes.LPVOID),
+                        ("TargetAlias", wintypes.LPWSTR),
+                        ("UserName", wintypes.LPWSTR)]
+        advapi = ctypes.windll.advapi32
+        blob = cookie.encode("utf-8")
+        c = CREDENTIAL()
+        c.Type = 1
+        c.TargetName = CRED_TARGET
+        c.UserName = "bilibili"
+        c.CredentialBlobSize = len(blob)
+        c.CredentialBlob = ctypes.cast(ctypes.create_string_buffer(blob),
+                                       ctypes.c_void_p)
+        c.Persist = 2  # CRED_PERSIST_LOCAL_MACHINE
+        advapi.CredWriteW(ctypes.byref(c), 0)
+    except Exception:
+        pass
+
+
 def get_cookie():
+    """cookie 优先级：凭据管理器 → settings（Bug 21/44：getattr + 不打印）。"""
+    cred = _cred_read()
+    if cred:
+        return cred
     # Bug 21：settings 可能无 get()（配置对象结构变化不崩）
-    return getattr(settings, "BILIBILI_COOKIE", "")
+    val = getattr(settings, "BILIBILI_COOKIE", "")
+    if val and getattr(settings, "BILI_STORE_CREDENTIAL", False):
+        _cred_write(val)
+    return val
 
 
 def http_get(url, cookie=None):
@@ -32,8 +108,14 @@ def http_get(url, cookie=None):
         "Origin": "https://www.bilibili.com",
         "Cookie": cookie or get_cookie(),
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    # Bug 43：网络/超时异常统一为 BiliError（调用方不必处理 urllib 细节）
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        raise BiliError(f"网络请求失败 {url[:80]}...: {e.reason or e}") from e
+    except (TimeoutError, OSError) as e:
+        raise BiliError(f"网络超时/中断 {url[:80]}...: {e}") from e
 
 
 def pages_of(bvid):

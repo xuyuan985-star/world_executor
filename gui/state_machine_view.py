@@ -56,15 +56,18 @@ class StateMachineView(QScrollArea):
         self._overlays = []
         self._transition_flash = None
         self._flash_alpha = 0.0
+        # Bug 35：布局缓存显式初始化（首次绘制前不依赖 getattr 兜底）
+        self._cached_nodes = []
         self._canvas.setFixedHeight(160)
         self._timer = self.startTimer(50)
 
     def on_state(self, prev, new, detail):
         # 11 态已在映射表全覆盖：EVENT_INTERRUPT/PORTAL_TRANSITION_FAILED/ABORT 走 overlay，
-        # 其余均在 MAIN_STATES；未知状态兜底 NAVIGATING 仅为未来新增状态的容错（企划冻结期不会触发）。
+        # 其余均在 MAIN_STATES。
         mapped = new
         if new in ("EVENT_INTERRUPT", "PORTAL_TRANSITION_FAILED", "ABORT"):
             self._overlays.append((new, detail))
+            self._overlays = self._overlays[-20:]  # Bug 36：overlay 限长
             mapped = "RECOVERING" if new != "ABORT" else "DONE"
             self._transition_flash = (prev, mapped)
             self._flash_alpha = 1.0
@@ -72,7 +75,12 @@ class StateMachineView(QScrollArea):
             self._canvas.update()
             return
         if new not in MAIN_STATES:
-            mapped = "NAVIGATING"
+            # Bug 38：未知状态不伪装 NAVIGATING——暴露并降级 RECOVERING
+            mapped = "RECOVERING"
+            import logging
+            logging.getLogger("gui.state_view").warning(
+                "未知状态 %s（应加入 MAIN_STATES）", new)
+            STATE_COLORS.setdefault(new, TEXT_MUTED)
         self._current = mapped
         self._transition_flash = (prev, mapped)
         self._flash_alpha = 1.0
@@ -82,6 +90,7 @@ class StateMachineView(QScrollArea):
     def add_overlay(self, name, detail):
         """非状态机事件（human_intervention / pause_requested）进入 overlay，避免被误读为 NAVIGATING。"""
         self._overlays.append((name, detail))
+        self._overlays = self._overlays[-20:]  # Bug 36：overlay 限长
         self.viewport().update()
         self._canvas.update()
 
@@ -97,7 +106,9 @@ class StateMachineView(QScrollArea):
             self._pulse += 0.08
         if self._flash_alpha > 0:
             self._flash_alpha = max(0.0, self._flash_alpha - 0.06)
-        self._canvas.update()
+        # Bug 39：无动画状态不 20FPS 空转重绘
+        if self._current is not None or self._flash_alpha > 0:
+            self._canvas.update()
 
     def resizeEvent(self, event):
         self._canvas.setFixedWidth(max(self.viewport().width(), len(MAIN_STATES) * 130))
@@ -178,5 +189,7 @@ class StateMachineView(QScrollArea):
             painter.setPen(QColor("#FF6B6B"))
             font = QFont("Microsoft YaHei UI", 8)
             painter.setFont(font)
-            painter.drawText(48, y, 740, 20, Qt.AlignLeft, f"{name}: {detail}")
+            # Bug 37：detail 可能几千字符（VLM 错误）——截断防绘制溢出
+            text = f"{name}: {str(detail)[:120]}"
+            painter.drawText(48, y, 740, 20, Qt.AlignLeft, text)
             y += 26
