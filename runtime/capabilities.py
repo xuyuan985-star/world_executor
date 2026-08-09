@@ -62,7 +62,9 @@ class CapabilityRegistry:
         return True
 
     def summary(self):
-        return {k: v["status"] for k, v in self.data["capabilities"].items()}
+        # 审查：与 status() 一致——条目缺 status 字段不 KeyError
+        return {k: (v.get("status", "disabled") if isinstance(v, dict) else "disabled")
+                for k, v in self.data["capabilities"].items()}
 
 
 class CapabilityError(Exception):

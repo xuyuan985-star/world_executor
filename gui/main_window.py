@@ -349,6 +349,12 @@ class MainWindow(FluentWindow):
         except Exception:
             import logging
             logging.getLogger("gui.main_window").exception("停止 MissionController 失败")
+        # 审查：事件文件句柄关闭（bus.close 原无调用方）
+        try:
+            if getattr(self, "event_bus", None) is not None:
+                self.event_bus.close()
+        except Exception:
+            pass
         self._save_diag_snapshot()
 
     def _save_diag_snapshot(self):

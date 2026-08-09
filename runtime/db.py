@@ -12,7 +12,7 @@ def conn():
     if db is None:
         path = settings.runtime_db_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(str(path))
+        db = sqlite3.connect(str(path), timeout=30)
         db.row_factory = sqlite3.Row
         _local.conn = db
         init(db)
@@ -20,6 +20,8 @@ def conn():
 
 
 SCHEMA = """
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
 CREATE TABLE IF NOT EXISTS progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL,

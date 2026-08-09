@@ -466,6 +466,21 @@ class CommandDeck(BasePage):
                 for leaf in self.rows.values():
                     leaf.setText(1, STATUS_TEXT.get("pending", "待命"))
                     leaf.setForeground(1, _status_color("pending"))
+            elif result == "stopped":
+                # 审查：被停止不能显示"完成"（误导）
+                self.led.setText("● 已停止")
+                self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
+                self.set_run_status("● 已停止")
+            elif result == "no_targets":
+                # 审查：空目标不能显示"完成"
+                self.led.setText("● 无目标可执行")
+                self.led.setStyleSheet("color: #FFB454; font-size: 12px;")
+                self.set_run_status("● 无目标")
+            elif result == "some_failed":
+                # 审查：部分失败不显示"完成"
+                self.led.setText("● 部分完成（有失败目标）")
+                self.led.setStyleSheet("color: #FFB454; font-size: 12px;")
+                self.set_run_status("● 部分完成")
             else:
                 self.led.setText("● 空闲")
                 self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
