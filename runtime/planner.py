@@ -56,7 +56,7 @@ class Planner:
 
     def plan_interact(self, target, method=None, reason="", confidence=0.0,
                       vision_verified=False, vision_confidence=0.0,
-                      evidence_id=None, risk="low"):
+                      evidence_id=None, risk="low", idempotent=True):
         return ActionIntent(
             action=ActionType.INTERACT.value,
             target=target,
@@ -65,7 +65,9 @@ class Planner:
                     "max_retries": self.max_retries},
             reason=reason or "objective_interact",
             source="planner",
-            idempotent=True,
+            # BUG-038：幂等参数化——非幂等动作（确认/购买/领取）由
+            # workflow 显式声明 idempotent:false 才禁止 retry
+            idempotent=idempotent,
             # Sprint B-2：视觉证明透传（observe_act 通道由 gate 写入）
             vision_verified=vision_verified,
             vision_confidence=vision_confidence,
@@ -84,11 +86,16 @@ class Planner:
             return {"plan": [], "status": "blocked", "reason": "no_world_state"}
         workflow = None
         if pkg is not None:
-            workflow = pkg.workflow(goal)  # 知识包按 target_id 单文件加载
+            try:
+                workflow = pkg.workflow(goal)  # 知识包按 target_id 单文件加载
+            except Exception as e:
+                # BUG-044：加载失败 ≠ 不存在——分类（JSON 损坏/IO 错误）
+                return {"plan": [], "status": "blocked",
+                        "reason": f"workflow_load_failed:{type(e).__name__}:{e}"}
         if workflow is None:
             return {"plan": [], "status": "blocked", "reason": f"goal_unknown:{goal}"}
         # BUG-035/036：workflow 结构本地防护（外部数据不可信——不依赖 validate）
-        if not isinstance(workflow.get("steps"), list):
+        if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
             return {"plan": [], "status": "blocked",
                     "reason": f"invalid_workflow_schema:{goal}"}
 
@@ -123,7 +130,9 @@ class Planner:
                 plan.append(self.plan_interact(
                     workflow.get("target_id") or step.get("target"),
                     method=ActionMethod.TEMPLATE.value,
-                    reason=f"objective_interact:{goal}"))
+                    reason=f"objective_interact:{goal}",
+                    # BUG-038：workflow 显式声明 idempotent:false → 禁止 retry
+                    idempotent=step.get("idempotent", True)))
         return {"plan": plan, "status": "planned", "reason": "ok"}
 
     def plan_wait(self, reason="wait"):

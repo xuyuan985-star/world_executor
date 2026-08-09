@@ -91,6 +91,14 @@ class ActionIntent:
     def __post_init__(self):
         if self.method not in ActionMethod._value2member_map_:
             raise ValueError(f"非法 method: {self.method}（允许: {sorted(m.value for m in ActionMethod)}）")
+        # BUG-043：schema 校验——target 非空 / 置信度范围 / risk 白名单
+        if not self.target and self.action != ActionType.WAIT.value:
+            raise ValueError(f"动作 {self.action} 缺少 target")
+        if not (0.0 <= self.vision_confidence <= 1.0):
+            raise ValueError(f"vision_confidence 超出 [0,1]: {self.vision_confidence}")
+        # risk 四级（policy.py）：low/medium/high/critical——critical 需人工确认
+        if self.risk not in ("low", "medium", "high", "critical"):
+            raise ValueError(f"非法 risk: {self.risk!r}（允许 low/medium/high/critical）")
         object.__setattr__(self, "params", _deep_freeze(self.params))
 
     def to_context(self):
