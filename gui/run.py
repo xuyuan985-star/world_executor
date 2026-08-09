@@ -69,6 +69,15 @@ def _install_excepthook():
 
 def main():
     _install_excepthook()
+    # Bug 150：单实例保护（QSharedMemory——自动化工具防双开冲突）
+    from PySide6.QtCore import QSharedMemory
+    single = QSharedMemory("WorldExecutorStudio_SingleInstance")
+    if not single.create(1):
+        from PySide6.QtWidgets import QMessageBox
+        app_tmp = QApplication(sys.argv)
+        QMessageBox.information(None, "WorldExecutor Studio",
+                                "程序已在运行（单实例）")
+        return
     import ctypes
     if sys.platform == "win32":  # AI 审计 B2：非 Windows 不调 windll
         ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
