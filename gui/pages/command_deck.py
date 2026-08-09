@@ -120,7 +120,16 @@ class TargetRow(QFrame):
 class ObservationSnapshot(CardWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        card_title(self, "当前观测")
+        card_title(self, "实时观测")
+        # 截图占位（后续接真机帧）
+        self._shot = QLabel("游戏画面（待真机接入）")
+        self._shot.setAlignment(Qt.AlignCenter)
+        self._shot.setMinimumHeight(180)
+        self._shot.setStyleSheet(
+            "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
+            "color: #7A90B0;")
+        card_layout(self).addWidget(self._shot)
+        # 主信息行：目标/识别/置信
         self._body = QLabel("—")
         self._body.setWordWrap(True)
         self._body.setStyleSheet("color: #7A90B0;")
@@ -128,14 +137,22 @@ class ObservationSnapshot(CardWidget):
         card_layout(self).addStretch(1)
         self._history = []  # Bug 42：观测历史（限 20 条）
 
+    def set_frame(self, pixmap_or_none):
+        """截图占位更新（pixmap 或 None=占位）。"""
+        if pixmap_or_none is not None:
+            self._shot.setPixmap(pixmap_or_none)
+        else:
+            self._shot.setText("游戏画面（待真机接入）")
+
     def update_snapshot(self, observer, target, confidence, room):
-        parts = [f"observer={observer}", f"target={target}"]
-        if confidence is not None:
-            parts.append(f"confidence={confidence:.2f}")
+        lines = [f"目标: {target}",
+                 f"识别: {observer}",
+                 f"置信: {confidence:.0%}" if confidence is not None else "置信: --"]
         if room:
-            parts.append(f"room={room}")
-        snapshot = "  ·  ".join(parts)
+            lines.append(f"区域: {room}")
+        snapshot = "\n".join(lines)
         self._body.setText(snapshot)
+        self._body.setStyleSheet("color: #E8F0FE; font-size: 13px;")
         self._push(snapshot)  # Bug 42
 
     def text(self):
@@ -317,24 +334,30 @@ class CommandDeck(QWidget):
                 self.mode_combo.setCurrentIndex(1)
         except Exception:
             pass
-        self.start_btn.setFixedWidth(130)
+        self.start_btn = PrimaryPushButton("开始任务")
+        self.start_btn.setFixedWidth(120)
         self.stop_btn = PushButton("停止")
         self.stop_btn.setEnabled(False)
         control_bar.addWidget(QLabel("目标:"))
         control_bar.addWidget(self.target_combo)
         control_bar.addStretch(1)
+        control_bar.addWidget(self.mode_combo)
         control_bar.addWidget(self.stop_btn)
         control_bar.addWidget(self.start_btn)
         layout.addLayout(control_bar)
 
+        # 运行状态行（当前目标/进度主视觉）
+        self.run_status = QLabel("● 空闲 — 选择目标后开始")
+        self.run_status.setStyleSheet("font-size: 15px; font-weight: 700; color: #7A90B0;")
+        layout.addWidget(self.run_status)
+
 
         bottom = QHBoxLayout()
         queue_card = CardWidget()
-        card_title(queue_card, "目标队列（地图 → 区域 → 点位）")
-        # 地图→区域→点位 树：列表可滚动，页面不被内容撑大
+        card_title(queue_card, "任务队列")
+        # 地图→区域→点位 树：占满卡片（无 stretch 空洞）
         self.target_tree = QTreeWidget()
         self.target_tree.setHeaderLabels(["目标", "状态"])
-        self.target_tree.setMaximumHeight(320)
         self.target_tree.setAlternatingRowColors(True)
         self.rows = {}
         self._map_nodes = {}
@@ -359,13 +382,21 @@ class CommandDeck(QWidget):
             leaf.setData(0, Qt.UserRole, t["id"])
         self.target_tree.expandToDepth(1)  # 展开到区域级（点位折叠）
         card_layout(queue_card).addWidget(self.target_tree)
-        bottom.addWidget(queue_card, 3)
+        bottom.addWidget(queue_card, 2)      # 队列 40%
 
         self.snapshot = ObservationSnapshot()
-        bottom.addWidget(self.snapshot, 2)
+        bottom.addWidget(self.snapshot, 3)   # 观测 60%（核心）
         layout.addLayout(bottom, 1)
 
+        # 健康栏折叠（工程信息不占主界面）
         self.health_bar = RuntimeHealthBar()
+        self.health_toggle = PushButton("系统状态 ▼")
+        self.health_toggle.setFixedWidth(110)
+        self.health_toggle.clicked.connect(self._toggle_health)
+        hrow = QHBoxLayout()
+        hrow.addWidget(self.health_toggle)
+        hrow.addStretch(1)
+        layout.addLayout(hrow)
         layout.addWidget(self.health_bar)
 
         self.inspector = FailureInspector()
@@ -395,6 +426,18 @@ class CommandDeck(QWidget):
 
     def set_health(self, health):
         self.health_bar.set_health(health)
+
+    def _toggle_health(self):
+        vis = not self.health_bar.isVisible()
+        self.health_bar.setVisible(vis)
+        self.health_toggle.setText("系统状态 ▲" if vis else "系统状态 ▼")
+
+    def set_run_status(self, text, busy=False):
+        """主视觉状态行（空闲/搜索中/完成）。"""
+        self.run_status.setText(text)
+        color = "#4FD1C5" if busy else ("#7A90B0" if "空闲" in text else "#FFB020")
+        self.run_status.setStyleSheet(
+            f"font-size: 15px; font-weight: 700; color: {color};")
 
     def mode(self):
         return "real" if self.mode_combo.currentIndex() == 1 else "dry"
@@ -429,6 +472,7 @@ class CommandDeck(QWidget):
         if event.type == "run_started":
             self._run_no += 1
             self.led.setText("● 运行中")
+            self.set_run_status("● 正在搜索宝箱", busy=True)
             self.led.setStyleSheet("color: #4FD1C5; font-size: 12px;")
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
@@ -442,6 +486,7 @@ class CommandDeck(QWidget):
             else:
                 self.led.setText("● 空闲")
                 self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
+                self.set_run_status("● 完成")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
         elif event.type == "state_changed":
