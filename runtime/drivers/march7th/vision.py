@@ -37,8 +37,34 @@ def normalize_ocr(text):
             continue
         out.append(ch)
     s = "".join(out)
-    # 形近字映射仅在纯 ASCII 文本做（防中文/多字节字符误伤）
-    return s.translate(_OCR_TRANSLATE) if s.isascii() else s
+    # 审查 P1：isascii 守卫使中文串内字母不映射、纯英文词被误伤（UID→U1D
+    # 会破坏 gate 关键词匹配）。正确语义：按"字母段"处理——段内任一字
+    # 母邻接数字（OCR 数字串误读场景）则整段映射（1OO→100），
+    # 孤立英文词（UID/CREDIT）不映射。
+    mapped = []
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if "A" <= ch <= "Z" or "a" <= ch <= "z":
+            # 收集连续字母段
+            j = i
+            while j < n and (s[j].isalpha()):
+                j += 1
+            segment = s[i:j]
+            # 段邻接数字？（段前或段后是数字）
+            near_digit = (i > 0 and s[i - 1].isdigit()) or \
+                         (j < n and s[j].isdigit())
+            if near_digit:
+                mapped.append("".join(
+                    _OCR_TRANSLATE.get(ord(c), c) for c in segment))
+            else:
+                mapped.append(segment)
+            i = j
+        else:
+            mapped.append(ch)
+            i += 1
+    return "".join(mapped)
 
 
 from abc import ABC, abstractmethod

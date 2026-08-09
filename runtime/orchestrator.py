@@ -48,8 +48,12 @@ class SessionWatchdog(threading.Thread):
         self._stop_event = threading.Event()  # 勿用 _stop：覆盖 Thread._stop 方法
         self._last_activity = time.monotonic()
         self.tripped = False
+        self._sub = None
         if bus is not None:
-            bus.subscribe(lambda e: self.touch())  # 任何事件都是活跃信号
+            # 审查 P1：订阅存句柄——stop() 必须取消订阅（否则每次 run_mission
+            # 往 bus._subscribers 追加一条永不清除的强引用，长期运行无界增长）
+            self._sub = lambda e: self.touch()
+            bus.subscribe(self._sub)
 
     def touch(self):
         self._last_activity = time.monotonic()
@@ -69,6 +73,11 @@ class SessionWatchdog(threading.Thread):
 
     def stop(self):
         self._stop_event.set()
+        if self.bus is not None and self._sub is not None:
+            try:
+                self.bus.unsubscribe(self._sub)  # 审查 P1：取消订阅防泄漏
+            except Exception:
+                pass
         # #7：确保 watchdog 线程退出（防泄漏）——不能 join 自己（自停场景）
         import threading
         if threading.current_thread() is not self:
@@ -424,7 +433,10 @@ class WorkflowOrchestrator:
             template, expected, timeout,
             abort_check=lambda: self._emergency_paused() or self._stall_detected())
         if ok:
-            self._machine.on(Event.INTERACT_OK, "verify passed")
+            # 审查 P0：只有 INTERACTING 态才有 INTERACT_OK 迁移——NAVIGATING 等
+            # 状态下 verify 通过不应推进状态机（否则 ValueError 非法迁移崩溃）
+            if self._machine.state == State.INTERACTING:
+                self._machine.on(Event.INTERACT_OK, "verify passed")
         return ExecutionResult(
             success=ok, error=None if ok else "verify_timeout",
             retryable=not ok, category="F2")

@@ -119,9 +119,12 @@ def _run():
     if shot2:
         img2 = shot2[0]
         frame2 = cv2.cvtColor(np.asarray(img2), cv2.COLOR_RGB2GRAY)
-        res2 = cv2.matchTemplate(frame2,
-                                 cv2.imread(str(templates[0]), cv2.IMREAD_GRAYSCALE),
-                                 cv2.TM_CCOEFF_NORMED)
+        # 审查 P1：必须用实际点击的那个模板（best[1]）验证——
+        # 原用 templates[0]（排序第一个）验证的是另一个模板，结果无意义
+        t2 = cv2.imread(str(ROOT / "knowledge" / "guides" / "maps" /
+                           "02_herta_space_station" / "templates" / name),
+                        cv2.IMREAD_GRAYSCALE)
+        res2 = cv2.matchTemplate(frame2, t2, cv2.TM_CCOEFF_NORMED)
         _, maxv2, _, _ = cv2.minMaxLoc(res2)
         _log(f"[verify] 点击后模板置信 {maxv2:.2f}")
     _log("CLICK TEST DONE")

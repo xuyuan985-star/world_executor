@@ -84,8 +84,9 @@ class RuntimeAPI:
 
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             self._set_state("running")
-            input_mode = getattr(orch.executor.input, "name", "real") \
-                if spec.mode == "real" and "orch" in dir() else "dry"
+            # 审查 P1：`"orch" in dir()` 恒 False（orch 首次定义在 line 98）——
+            # input_mode 恒为 "dry"。改为按 mode 判定 + 运行后补正
+            input_mode = "real" if spec.mode == "real" else "dry"
             bus.publish(make_event("run_started", execution_id,
                                    context={"knowledge": knowledge_dir,
                                             "targets": targets, "mode": spec.mode,
@@ -166,7 +167,9 @@ class RuntimeAPI:
                 fails.append(req)
         if fails:
             # 目标 4：能力报告——区分 OBSERVE_ONLY（可观测但输入被拦）与 BLOCKED（观测不可用）
-            cap_report = detect_capability(h)
+            # 审查 P1：detect_capability 期望扁平键（window/capture/...）——
+            # 传嵌套 dict 会全取 False。解包 capability 层
+            cap_report = detect_capability(h.get("capability") or {})
             bus.publish(make_event("run_finished", execution_id,
                                    context={"result": "gate_blocked",
                                             "fails": fails,

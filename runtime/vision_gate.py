@@ -120,7 +120,8 @@ class VisionGate:
                     "signals": ["ocr_forbidden"],
                 }
             target_hits = [k for k in (target_keywords.get("must") or []) if k in joined]
-            ocr_score = min(1.0, len(target_hits))
+            ocr_hits = len(target_hits)  # 审查 P1：dict 分支漏赋值 ocr_hits → 后续 UnboundLocalError
+            ocr_score = min(1.0, ocr_hits)
             if target_hits:
                 signals.append("ocr_target_keyword")
             elif evidence.ocr.texts:

@@ -69,11 +69,29 @@ def main():
                     tok = ctypes.wintypes.HANDLE()
                     if ctypes.windll.advapi32.OpenProcessToken(
                             handle, 0x0008, ctypes.byref(tok)):  # TOKEN_QUERY
-                        il = ctypes.wintypes.DWORD()
+                        # 审查 P1：TokenIntegrityLevel 返回 TOKEN_MANDATORY_LABEL
+                        #（含 PSID 指针，≥8 字节）——4 字节缓冲必 INSUFFICIENT_BUFFER
+                        # 且 il.value 恒 0 → 完整性恒判 LOW。用足够缓冲 + 解析 SID 子权威
+                        import ctypes
+                        class _SID_AND_ATTRIBUTES(ctypes.Structure):
+                            _fields_ = [("Sid", ctypes.c_void_p),
+                                        ("Attributes", ctypes.c_ulong)]
+                        class _TOKEN_MANDATORY_LABEL(ctypes.Structure):
+                            _fields_ = [("Label", _SID_AND_ATTRIBUTES)]
+                        label = _TOKEN_MANDATORY_LABEL()
                         sz = ctypes.wintypes.DWORD()
                         ctypes.windll.advapi32.GetTokenInformation(
-                            tok, 25, ctypes.byref(il), 4, ctypes.byref(sz))  # TokenIntegrityLevel
-                        game_integrity = il.value >= 0x3000  # HIGH integrity
+                            tok, 25, ctypes.byref(label),
+                            ctypes.sizeof(label), ctypes.byref(sz))
+                        # 解析完整性 SID 子权威（0x1000=Low, 0x2000=Medium, 0x3000=High）
+                        # SID 布局：Revision(1)+Count(1)+Authority(6)+SubAuthorities[]——偏移 8 起
+                        sid = label.Label.Sid
+                        if sid:
+                            sub_auth = ctypes.cast(
+                                ctypes.c_void_p(sid + 8),
+                                ctypes.POINTER(ctypes.c_ulong))
+                            il = sub_auth[0]
+                            game_integrity = il >= 0x3000
                         ctypes.windll.kernel32.CloseHandle(tok)
                 finally:
                     ctypes.windll.kernel32.CloseHandle(handle)

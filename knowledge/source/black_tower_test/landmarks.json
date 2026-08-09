@@ -1,5 +1,14 @@
 [
-  {"id": "lm_hall_center", "room": "room_A", "template": "lm_hall_center.png", "description": "大厅中央雕塑"},
-  {"id": "lm_left_wing", "room": "room_B", "template": "lm_left_wing.png", "description": "左翼走廊入口"},
-  {"id": "lm_left_wing_end", "room": "room_B", "template": "lm_left_wing_end.png", "description": "左翼走廊尽头"}
+  {
+    "id": "lm_hall_center",
+    "room": "room_A",
+    "template": "lm_hall_center.png",
+    "description": "大厅中央雕塑"
+  },
+  {
+    "id": "lm_left_wing",
+    "room": "room_B",
+    "template": "lm_left_wing.png",
+    "description": "左翼走廊入口"
+  }
 ]

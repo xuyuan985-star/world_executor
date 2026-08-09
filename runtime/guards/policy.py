@@ -34,9 +34,12 @@ def is_critical(risk_level):
 
 
 def allowed(action, risk):
+    # 审查 P1：click/click_text 是旧/文本点击名——映射到点击风险上限；
+    # interact 是模板路径主动作（点击前瞬间截图匹配=已视觉确认），
+    # 若按 30 上限会被未验证风险(+50)全部拦截——保持安全上限
     if action in ("purchase", "delete", "confirm", "exit", "use_resource"):
         return risk < MAX_DANGEROUS_RISK
-    if action == "click":
+    if action in ("click", "click_text"):
         return risk < MAX_CLICK_RISK
     return risk < MAX_SAFE_RISK
 
@@ -44,6 +47,6 @@ def allowed(action, risk):
 def risk_limit(action):
     if action in ("purchase", "delete", "confirm", "exit", "use_resource"):
         return MAX_DANGEROUS_RISK
-    if action == "click":
+    if action in ("click", "click_text"):
         return MAX_CLICK_RISK
     return MAX_SAFE_RISK

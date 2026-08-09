@@ -4,7 +4,7 @@
 - 顶部固定提示"F10 = 紧急停止"
 - 内容 = EventBus 事件流（滚动日志）
 """
-from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QVBoxLayout, QWidget)
 
@@ -51,23 +51,37 @@ class GameHudOverlay(QWidget):
         self.show()
 
 
-class GameHudController:
-    """HUD 生命周期：跟随游戏窗口（位置/可见性），绑定事件流。"""
+class GameHudController(QObject):
+    """HUD 生命周期：跟随游戏窗口（位置/可见性），绑定事件流。
 
-    def __init__(self, bus, game_hwnd, log_lines=100):
+    审查 P0-7：EventBus.publish 在发布线程同步调订阅者——回调里绝不能
+    直接操作 Qt 控件。改用 Qt 信号（QueuedConnection）桥到主线程。
+    """
+
+    log_line = Signal(str)
+
+    def __init__(self, bus, game_hwnd, log_lines=100, parent=None):
+        super().__init__(parent)
         self.bus = bus
         self.game_hwnd = game_hwnd
         self.log_lines = log_lines
         self.overlay = GameHudOverlay()
         self._lines = []
+        # 信号 → 主线程（overlay 在 GUI 线程创建，跨线程安全）
+        self.log_line.connect(self._append_line)
         self.bus.subscribe(self._on_event)
 
     def _on_event(self, event):
+        # 发布线程（Runner）回调——只入队 + emit 信号，不碰 Qt 控件
         line = f"[{event.type}] {event.detail or ''}".strip()
         if len(line) > 90:
             line = line[:90] + "…"
         self._lines.append(line)
         self._lines = self._lines[-self.log_lines:]
+        self.log_line.emit(line)
+
+    def _append_line(self, line):
+        # 主线程：Qt 控件操作
         if self.overlay.isVisible():
             self.overlay.append(line)
 

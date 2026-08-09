@@ -6,7 +6,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from runtime.knowledge_loader import KnowledgePackage
 
-ALLOWED_STEP_TYPES = {"move", "visual_guided_move", "interact", "portal", "verify", "wait", "state_check"}
+# 审查 P1：白名单与执行器 STEP_TYPES（orchestrator.py）对齐——
+# portal/wait/state_check 执行器不支持，保留在白名单会放行必然失败的 workflow
+ALLOWED_STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
 
 
 def validate(pkg: KnowledgePackage, verbose=True):

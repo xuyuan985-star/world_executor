@@ -24,8 +24,10 @@ def validate_point(p, area_ids):
     if not pid:
         return "缺 id"
     for f in ("x", "y"):
+        # 审查 P1：坐标缺失必须淘汰（docstring 规则 2：超出 [0,1] 或缺失）——
+        # 原 continue 跳过使规则永不生效
         if f not in p or p[f] is None:
-            continue
+            return f"缺 {f} 坐标"
         try:
             v = float(p[f])
             if not (0.0 <= v <= 1.0):

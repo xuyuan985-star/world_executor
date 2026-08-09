@@ -72,13 +72,15 @@ class TemplateMatcher:
         """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
 
         Bug 156：多尺度结果即隐式 NMS——只取全局最高分单点（同一目标不重复框）。
+        审查 P0：中心偏移必须用【命中尺度的缩放尺寸】算——原硬编码 0.55
+        与命中尺度无关，260px 模板 scale=1.0 时偏左 59px、scale=2.0 偏 189px。
         """
         import time
         t0 = time.time()
         t = self._load_template(template_path)
         screen = self._screenshot()
         sh, sw = screen.shape[:2]
-        best = (0.0, 0, 0)
+        best = (0.0, 0, 0, 0.0)  # (val, x, y, scale)
         try:
             for scale in self.SCALES:
                 th = cv2.resize(t, None, fx=scale, fy=scale,
@@ -88,17 +90,19 @@ class TemplateMatcher:
                 res = cv2.matchTemplate(screen, th, cv2.TM_CCOEFF_NORMED)
                 _, mv, _, ml = cv2.minMaxLoc(res)
                 if mv > best[0]:
-                    best = (mv, ml[0], ml[1])
+                    best = (mv, ml[0], ml[1], scale)
         except cv2.error as e:
             # Bug 337：OpenCV 失败显式处理（不静默吞/不裸崩）
             raise RuntimeError(f"模板匹配 OpenCV 错误: {e}") from e
-        val, x, y = best
+        val, x, y, best_scale = best
         if val < self.threshold:
             return None
-        t_h, t_w = t.shape[:2]
+        # 审查 P0：用命中尺度的缩放模板尺寸算中心（原 0.55 硬编码修正）
+        th_w = int(t.shape[1] * best_scale)
+        th_h = int(t.shape[0] * best_scale)
         # Bug 157：匹配耗时记录（定位哪一步慢）
         self.last_match_ms = round((time.time() - t0) * 1000, 1)
-        return val, x + int(t_w * 0.55 / 2), y + int(t_h * 0.55 / 2)
+        return val, x + th_w // 2, y + th_h // 2
 
     def click_template(self, path, threshold=None, max_retries=3,
                        scale_range=None):

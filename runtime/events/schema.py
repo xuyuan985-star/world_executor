@@ -22,6 +22,8 @@ EVENT_TYPES = {
     "resume_checked",
     "human_intervention",
     "deadlock_detected",  # S10：watchdog 发现执行卡死
+    "mission_summary",   # 审查 P0：real 任务结束发 mission_summary——未注册导致
+    # make_event 抛 ValueError → 每次 real 任务都被误判 crashed
 }
 
 STATE_TYPES = {

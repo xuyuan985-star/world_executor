@@ -27,17 +27,22 @@ def crop(frames, results, out_prefix, kind_name):
     out = []
     for r in results:
         data = r.get("data", {})
+        # 审查 P1：PROMPT v3 输出键为 chest/door/landmark（对象含 found/bbox）
         boxes = data.get(kind_name)
         if not boxes or boxes == "none":
             continue
         if isinstance(boxes, dict):
-            boxes = [boxes]
+            # v3 结构：{"found": bool, "bbox": [x1,y1,x2,y2]}
+            if boxes.get("found") is False:
+                continue
+            boxes = [boxes.get("bbox") or boxes]
         if isinstance(boxes, list):
             for b in boxes:
                 if isinstance(b, str):
                     continue
                 if isinstance(b, dict):
-                    box = b.get("bbox_2d")
+                    # 兼容旧 bbox_2d/label 结构与 v3 bbox 直给
+                    box = b.get("bbox_2d") or b.get("bbox") or b.get("box")
                     label = b.get("label") or b.get("name") or "unknown"
                 else:
                     box = b
@@ -75,9 +80,9 @@ def main():
     results = json.loads((CAPTURE_DIR / "results.json").read_text(encoding="utf-8"))
     frames = results
     kinds = {
-        "1": ("chest", "宝箱"),
-        "2": ("door", "门"),
-        "3": ("landmark", "地标"),
+        "chest": ("chest", "宝箱"),
+        "door": ("door", "门"),
+        "landmark": ("landmark", "地标"),
     }
     manifest = {}
     for key, (prefix, label) in kinds.items():

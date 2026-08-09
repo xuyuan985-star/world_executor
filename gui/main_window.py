@@ -398,7 +398,11 @@ class MainWindow(FluentWindow):
     @gui_safe
     def _start_run(self, targets, mode="dry"):
         # Bug 21：防重复启动（连点/事件未达窗口期）
-        if self.mission_controller.state not in ("idle", "done", "crashed", "invalid"):
+        # 审查 P0-6：stopped（手动停止）/gate_blocked（G3 拦截）也可重启——
+        # 原集合缺这两态导致停止后按钮恢复但点击永久静默
+        if self.mission_controller.state not in (
+                "idle", "done", "crashed", "invalid",
+                "stopped", "gate_blocked"):
             return
         # 真机模式前置校验（G3 会拦，但提前告知更好）
         if mode == "real" and getattr(self, "_health", None):

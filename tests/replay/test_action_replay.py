@@ -33,7 +33,11 @@ def load_events(path=None):
 
 
 def replay(events):
-    """事件流 → 状态机行为断言（确定性回归）。"""
+    """事件流 → 状态机行为断言（确定性回归）。
+
+    审查 P1：events 参数此前完全未参与行为（假阳性）——现在观测文本
+    由 events 提供，不同输入产生不同观测，驱动真实行为路径。
+    """
     from runtime.events.bus import EventBus
     from runtime.knowledge_loader import KnowledgePackage
     from runtime.orchestrator import WorkflowOrchestrator
@@ -46,7 +50,10 @@ def replay(events):
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="replay-test", use_vlm=True)
     orch.foreground_check = False  # mock 跳过前台判定
-    orch.observer = FakeObserver(text=["chest_A"])
+    # events 驱动观测：observation 事件携带的文本作为 OCR 观测
+    obs_texts = [e.get("text") for e in events
+                 if e.get("event") == "observation" and e.get("text")]
+    orch.observer = FakeObserver(text=obs_texts or ["chest_A"])
 
     def driver_factory():
         return FakeDriver([True] * 10)

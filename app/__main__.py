@@ -1,6 +1,7 @@
 """P0-002：启动入口拆分——__main__ 只做参数路由。
 
 职责分离：cli（参数）→ launcher（环境/生命周期）→ 具体命令。
+审查 P0-4：SystemExit 是正常退出（sys.exit(0)），不能被当崩溃捕获。
 """
 import os
 import sys
@@ -17,23 +18,15 @@ def main():
     if sys.stderr is None:
         import io
         sys.stderr = io.StringIO()
-    # 提权链路探针
-    try:
-        import ctypes as _c
-        with open(ROOT / "logs" / "elevate_trace.log", "a", encoding="utf-8") as f:
-            import time as _t
-            f.write(f"{_t.strftime('%H:%M:%S')} ENTRY pid={os.getpid()} "
-                    f"admin={bool(_c.windll.shell32.IsUserAnAdmin())} "
-                    f"argv={sys.argv}\n")
-    except Exception:
-        pass
     try:
         from app.launcher import run
-        sys.exit(run(sys.argv[1:]))
-    except BaseException:
+        code = run(sys.argv[1:])
+        sys.exit(code)
+    except SystemExit:
+        raise  # 正常退出——不捕获
+    except Exception:
         # pythonw 下启动异常静默死——落盘可查
         import traceback
-        from pathlib import Path
         try:
             err = ROOT / "logs" / "startup_error.log"
             err.parent.mkdir(parents=True, exist_ok=True)

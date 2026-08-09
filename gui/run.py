@@ -44,9 +44,12 @@ def _elevate_if_needed():
         return False
     # 自动提权：lpDirectory 必须传当前工作目录（否则新进程 cwd=System32，
     # `python -m app` No module named 闪退——此前已修）
+    # 审查 P0-5：argv 拼接必须引号（argv[0] 是含空格路径——不引号会被
+    # ShellExecuteW 按空格截断成无效命令，elevate_trace 实证 result=42 但进程未启动）
     import os
+    quoted = " ".join(f'"{a}"' if " " in a else a for a in _sys.argv)
     result = ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", _sys.executable, " ".join(_sys.argv),
+        None, "runas", _sys.executable, quoted,
         os.getcwd(), 1)
     try:  # 提权链路探针（排查"新进程没起来"）
         with open(ROOT / "logs" / "elevate_trace.log", "a", encoding="utf-8") as f:

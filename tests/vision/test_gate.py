@@ -123,9 +123,11 @@ def main():
     vo = VisionObserver(ocr=None, vlm=VLMDead(), capture_fn=lambda: "x.png")
     obs = vo.observe()
     assert obs.confidence == 0.0 and obs.source == "none", obs  # VLM 异常被隔离
+    # 审查 P1：原 vo2 从未调用（假阳性）——真正验证 OCR 通道 + VLM 异常共存不崩
     vo2 = VisionObserver(ocr=OCRAdapter.__new__(OCRAdapter), vlm=VLMDead(),
                          capture_fn=lambda: "x.png")
-    # OCRAdapter 需真实引擎；此处验证 VLM 异常不炸 VisionObserver 主流程
+    obs2 = vo2.observe()  # OCRAdapter 无引擎 → 内部异常被隔离
+    assert obs2 is not None and isinstance(obs2.source, str), obs2
     assert obs.source == "none"
 
     print("[gate] 6 cases + 静态/尺寸 + observe/vlm_only 三元语义 + VLM 边界矩阵 + VLM异常隔离 全部 PASS")

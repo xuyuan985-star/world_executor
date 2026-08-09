@@ -26,11 +26,11 @@ def main():
             import pyuac
             pyuac.runAsAdmin()
             sys.exit(0)
-        _run()
+        return _run()  # 审查 P1：透传 _run 退出码（失败=1）
     except Exception:
         import traceback
         _log("EXC: " + traceback.format_exc())
-    return 0
+        return 1  # 审查 P1：异常路径也要非零退出码
 
 
 def _restore_game_window():
@@ -72,9 +72,10 @@ def _run():
             _log(f"  {t}: {ctx}")
     if completed == [POINT]:
         _log("[PASS] M1-A 单点闭环成功（点击+验证通过）")
-    else:
-        _log("[FAIL] 未完成——看上方事件")
-    return 0
+        return 0
+    # 审查 P1：失败必须非零退出码（脚本恒 0 无信号价值）
+    _log("[FAIL] 未完成——看上方事件")
+    return 1
 
 
 if __name__ == "__main__":

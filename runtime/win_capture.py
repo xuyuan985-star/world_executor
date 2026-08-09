@@ -51,8 +51,20 @@ def find_game_window(title=GAME_TITLE):
         if win32gui.GetWindowText(hwnd) != title:
             return
         try:
+            # 审查 P1：win32gui 无 GetWindowProcess——GetModuleFileNameEx 需要
+            # 进程句柄（OpenProcess）或直接用 GetWindowThreadProcessId 的 pid
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            proc = win32process.GetModuleFileNameEx(win32gui.GetWindowProcess(hwnd))
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                try:
+                    proc = win32process.GetModuleFileNameEx(handle)
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(handle)
+            else:
+                proc = ""
         except Exception:
             proc = ""
         if proc and GAME_PROCESS.lower() not in proc.lower():

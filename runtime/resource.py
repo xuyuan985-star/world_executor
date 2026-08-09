@@ -74,6 +74,7 @@ class ResourceMonitor(threading.Thread):
 
     def _sample(self):
         import os
+        import time
         cpu = mem = None
         try:
             import psutil
