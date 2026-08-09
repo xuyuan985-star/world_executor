@@ -1,4 +1,4 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-start "" .venv\Scripts\pythonw.exe -m app
+powershell -NoProfile -Command "Start-Process -FilePath '.\\.venv\\Scripts\\pythonw.exe' -ArgumentList '-m','app','--no-elevate' -WorkingDirectory '%~dp0' -Verb RunAs"

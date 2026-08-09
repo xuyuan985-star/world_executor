@@ -2,6 +2,7 @@
 
 职责分离：cli（参数）→ launcher（环境/生命周期）→ 具体命令。
 """
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,16 @@ def main():
     if sys.stderr is None:
         import io
         sys.stderr = io.StringIO()
+    # 提权链路探针
+    try:
+        import ctypes as _c
+        with open(ROOT / "logs" / "elevate_trace.log", "a", encoding="utf-8") as f:
+            import time as _t
+            f.write(f"{_t.strftime('%H:%M:%S')} ENTRY pid={os.getpid()} "
+                    f"admin={bool(_c.windll.shell32.IsUserAnAdmin())} "
+                    f"argv={sys.argv}\n")
+    except Exception:
+        pass
     try:
         from app.launcher import run
         sys.exit(run(sys.argv[1:]))

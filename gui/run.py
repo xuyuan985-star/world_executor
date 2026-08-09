@@ -25,43 +25,44 @@ SINGLE_INSTANCE = None
 
 
 def _elevate_if_needed():
-    """BLOCKER-1：权限前置——启动即确认，不在运行途中临时弹 UAC。
+    """提权前置——自动无感提权（不再弹询问框）。
 
-    非管理员启动 GUI：询问一次（是 → runas 提权重启；否 → 低权限浏览模式，
-    真机执行会被 G3 门槛 gate_blocked——health 已检 admin，绝不中途弹窗）。
+    非管理员 → runas 自动提权重启（UAC 直接提升，本机无确认框）；
+    提权失败（UAC 拒绝等）→ 以普通浏览模式继续（不阻断启动）。
     返回 True 表示已发起提权并应退出当前进程。
     """
     # Bug 12/31：非 Windows 平台不触碰 windll（先于任何 ctypes 调用）
     if sys.platform != "win32":
         return False
+    # --no-elevate：显式浏览模式（跳过自动提权）
+    if "--no-elevate" in sys.argv:
+        return False
     import ctypes
+    import os
     import sys as _sys
     if ctypes.windll.shell32.IsUserAnAdmin():
         return False
-    from PySide6.QtWidgets import QApplication, QMessageBox
-    # Bug 32：弹窗需要 app——此处创建，main() 通过 instance() 复用（绝不二次创建）
-    QApplication.instance() or QApplication(_sys.argv)
-    box = QMessageBox()
-    box.setWindowTitle("WorldExecutor Studio")
-    box.setIcon(QMessageBox.Question)
-    box.setText("当前不是管理员权限。\n真机执行（点击游戏窗口）需要管理员权限。")
-    box.setInformativeText("选择「是」将重启并请求管理员权限；\n选择「否」以只读模式打开（可浏览，真机执行将被阻止）。")
-    box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-    box.setDefaultButton(QMessageBox.Yes)
-    if box.exec_() != QMessageBox.Yes:
-        return False
-    # Bug 30：提权启动失败（UAC 拒绝/系统错误）→ 明确提示，不静默退出
-    # 闪退根因修复：ShellExecuteW lpDirectory 必须传当前工作目录——
-    # runas 新进程默认 cwd=System32，`python -m app` 会 No module named 直接闪退
+    # 自动提权：lpDirectory 必须传当前工作目录（否则新进程 cwd=System32，
+    # `python -m app` No module named 闪退——此前已修）
     import os
     result = ctypes.windll.shell32.ShellExecuteW(
         None, "runas", _sys.executable, " ".join(_sys.argv),
         os.getcwd(), 1)
-    if result <= 32:
-        QMessageBox.warning(None, "WorldExecutor Studio",
-                            f"提权启动失败（错误码 {result}）。\n"
-                            "可手动右键「以管理员身份运行」")
-    return True
+    try:  # 提权链路探针（排查"新进程没起来"）
+        with open(ROOT / "logs" / "elevate_trace.log", "a", encoding="utf-8") as f:
+            import time as _t
+            f.write(f"{_t.strftime('%H:%M:%S')} pid={os.getpid()} "
+                    f"exe={_sys.executable} args={_sys.argv} "
+                    f"cwd={os.getcwd()} result={result}\n")
+    except Exception:
+        pass
+    if result > 32:
+        return True  # 提权启动成功 → 本进程退出，新进程接管
+    # 提权失败（UAC 拒绝/错误）→ 普通模式继续（浏览可用，真机被 G3 拦）
+    import logging
+    logging.getLogger("gui.run").warning(
+        "自动提权失败（错误码 %s）——以浏览模式启动", result)
+    return False
 
 
 def _install_excepthook():
