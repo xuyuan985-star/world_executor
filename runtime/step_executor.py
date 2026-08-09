@@ -357,16 +357,24 @@ class RealExecutor:
         delay = (self.naturalness.click_delay() if self.natural_mode else 0.0) \
             if intent.action in INPUT_ACTIONS else 0.0
         time.sleep(delay)
+        monitor = getattr(self, "monitor", None)
+        if monitor is not None and intent.action in INPUT_ACTIONS:
+            # 自伤防护：机器人自身的光标移动不能被 EmergencyMonitor 判为"用户介入"
+            monitor.suspend_mouse()
         try:
-            # #1：method 分派查表（registry）——新增定位方式不改 execute 本体
-            handler = self._method_handlers.get(intent.method)
-            if handler is not None:
-                result = handler(intent)
-            else:
-                result = backend.execute(intent)
-        except Exception as e:
-            result = InputResult(success=False, action=intent.action, backend="march7th",
-                                 error=f"executor_exception:{type(e).__name__}:{e}")
+            try:
+                # #1：method 分派查表（registry）——新增定位方式不改 execute 本体
+                handler = self._method_handlers.get(intent.method)
+                if handler is not None:
+                    result = handler(intent)
+                else:
+                    result = backend.execute(intent)
+            except Exception as e:
+                result = InputResult(success=False, action=intent.action, backend="march7th",
+                                     error=f"executor_exception:{type(e).__name__}:{e}")
+        finally:
+            if monitor is not None and intent.action in INPUT_ACTIONS:
+                monitor.resume_mouse()
         self._emit("action_executed", detail=f"{intent.action}:{intent.target}",
                    context={"naturalized": self.natural_mode,
                             "delay_ms": int(delay * 1000),
@@ -403,7 +411,8 @@ class RealExecutor:
         params = intent.params
         # #5：模板路径/阈值进 result detail——复盘时知道点了哪个模板什么阈值
         result = self.input.click_template(
-            path, params.get("threshold", 0.85), params.get("max_retries", 3))
+            path, params.get("threshold", 0.85), params.get("max_retries", 3),
+            scale_range=params.get("scale_range"))
         result.detail.update({"template": str(path),
                               "threshold": params.get("threshold", 0.85)})
         return result

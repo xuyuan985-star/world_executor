@@ -73,7 +73,8 @@ class March7thInputBackend(InputBackend):
         p = intent.params
         if intent.method == "template":
             return self.click_template(intent.target, p.get("threshold", 0.85),
-                                       p.get("max_retries", 3))
+                                       p.get("max_retries", 3),
+                                       scale_range=p.get("scale_range"))
         if intent.method == "text":
             return self.click_text(intent.target, p.get("include", True),
                                    p.get("max_retries", 3), p.get("crop"))
@@ -82,10 +83,21 @@ class March7thInputBackend(InputBackend):
         return InputResult(success=False, action=intent.action, backend=self.name,
                            error=f"unknown_method:{intent.method}")
 
-    def click_template(self, path, threshold, max_retries):
-        ok = bool(self.auto.click_element(path, "image", threshold, max_retries=max_retries))
-        return InputResult(success=ok, action="click_template", backend=self.name,
-                           error=None if ok else "click_element_failed")
+    def click_template(self, path, threshold, max_retries, scale_range=None):
+        # 模板点击走自研 cv2 多尺度匹配（March7th 匹配在部分环境导入链
+        # 被 security stub 污染且分数偏低）——见 runtime/input/template_backend.py
+        from runtime.input.template_backend import TemplateMatcher
+        try:
+            result = TemplateMatcher(threshold=threshold).click_template(
+                path, threshold=threshold, max_retries=max_retries)
+        except Exception as e:
+            return InputResult(success=False, action="click_template", backend=self.name,
+                               error=f"template_backend:{type(e).__name__}: {e}")
+        if result is None:
+            return InputResult(success=False, action="click_template", backend=self.name,
+                               error="click_element_failed")
+        result.detail["backend"] = self.name + "+win32"
+        return result
 
     def click_text(self, text, include, max_retries, crop):
         ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,

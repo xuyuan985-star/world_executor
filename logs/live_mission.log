@@ -1,0 +1,9 @@
+=== M1-A 真机单点闭环 ===
+[ok] 游戏窗口已恢复（最小化）
+[ok] orchestrator 就绪，目标 herta_space_station_base_zone_0006_87d3
+[RESULT] results={'herta_space_station_base_zone_0006_87d3': True} completed=['herta_space_station_base_zone_0006_87d3']
+[RESULT] state=DONE
+  target_progress: {'target': 'herta_space_station_base_zone_0006_87d3', 'status': 'running', 'step': 1, 'total': 2}
+  target_progress: {'target': 'herta_space_station_base_zone_0006_87d3', 'status': 'running', 'step': 2, 'total': 2}
+  target_progress: {'target': 'herta_space_station_base_zone_0006_87d3', 'status': 'done'}
+[PASS] M1-A 单点闭环成功（点击+验证通过）

@@ -30,7 +30,7 @@ class ObserveOnlyInput:
     def release_key(self, key) -> InputResult:
         return self._blocked("release_key")
 
-    def click_template(self, path, threshold, max_retries) -> InputResult:
+    def click_template(self, path, threshold, max_retries, scale_range=None) -> InputResult:
         return self._blocked("click_template")
 
     def click_text(self, text, include, max_retries, crop) -> InputResult:

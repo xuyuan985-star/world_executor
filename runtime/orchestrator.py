@@ -150,6 +150,8 @@ class WorkflowOrchestrator:
                 return
             self._monitor = EmergencyMonitor(self.bus, self.execution_id, game["hwnd"])
             self._monitor.start()
+            # 自伤防护：executor 点击前挂起 monitor 光标检测
+            self.executor.monitor = self._monitor
         except Exception:
             self._monitor = None
 

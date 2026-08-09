@@ -43,7 +43,7 @@ class ReplayInput:
     def release_key(self, key) -> InputResult:
         return self._next("release_key")
 
-    def click_template(self, path, threshold, max_retries) -> InputResult:
+    def click_template(self, path, threshold, max_retries, scale_range=None) -> InputResult:
         # 与真实后端同语义错误码（失败分类可复现）
         return self._next("click_template", error="click_element_failed")
 

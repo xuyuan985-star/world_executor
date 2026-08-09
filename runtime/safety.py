@@ -23,6 +23,7 @@ class EmergencyMonitor(threading.Thread):
         self._stop = threading.Event()
         self._last_cursor = None
         self._paused = False
+        self._mouse_check_enabled = True
         self.user32 = ctypes.windll.user32
 
     def _get_cursor(self):
@@ -44,12 +45,21 @@ class EmergencyMonitor(threading.Thread):
                 continue
             cx, cy = self._get_cursor()
             lx, ly = self._last_cursor
-            if abs(cx - lx) > self.cursor_radius or abs(cy - ly) > self.cursor_radius:
+            if self._mouse_check_enabled and (abs(cx - lx) > self.cursor_radius or abs(cy - ly) > self.cursor_radius):
                 self._trigger("cursor_moved", f"光标移动 ({lx},{ly})→({cx},{cy})")
                 continue
             fg = self.user32.GetForegroundWindow()
             if self.game_hwnd and fg != self.game_hwnd:
                 self._trigger("window_switch", f"前台窗口已切换 (0x{fg:x} != 0x{self.game_hwnd:x})")
+
+    def suspend_mouse(self):
+        """机器人自身点击（SetCursorPos/SendInput）期间挂起光标检测——防自伤。"""
+        self._mouse_check_enabled = False
+
+    def resume_mouse(self):
+        """操作结束：恢复检测并以当前光标为新基准（点击后光标停在目标处）。"""
+        self._mouse_check_enabled = True
+        self._last_cursor = self._get_cursor()
 
     def _trigger(self, reason, detail):
         self._paused = True

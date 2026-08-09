@@ -6,10 +6,10 @@
     {
       "type": "interact",
       "template": "herta_space_station_base_zone_0037_93ec.png",
-      "threshold": 0.8,
+      "threshold": 0.6,
       "scale_range": [
-        0.9,
-        1.1
+        0.5,
+        2.0
       ],
       "retry": 2,
       "verify": {

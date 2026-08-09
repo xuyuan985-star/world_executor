@@ -65,7 +65,7 @@ class FakeInput:
         self.clicks.append((x, y))
         return InputResult(success=self.click_result, action="click", backend="fake")
 
-    def click_template(self, path, threshold, max_retries) -> InputResult:
+    def click_template(self, path, threshold, max_retries, scale_range=None) -> InputResult:
         f = self._maybe_fail("click_template")
         if f:
             return f

@@ -45,6 +45,9 @@ def find_game_window(title=GAME_TITLE):
     def collect(hwnd, _):
         if not ctypes.windll.user32.IsWindowVisible(hwnd):
             return
+        # 最小化窗口不可操作（截图/点击都失效）——不能算"游戏窗口"
+        if ctypes.windll.user32.IsIconic(hwnd):
+            return
         if win32gui.GetWindowText(hwnd) != title:
             return
         try:
@@ -161,14 +164,21 @@ def set_foreground_with_retry(hwnd):
     if user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, SW_RESTORE)
         time.sleep(0.1)
-    if user32.SetForegroundWindow(hwnd):
-        return True
+    # 验证循环：SetForeground 返回非 0 不保证前台生效
+    # （UAC 提权瞬间前台被系统清空 → GetForegroundWindow 可为 0）
+    for _ in range(5):
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.1)
+        if user32.GetForegroundWindow() == hwnd:
+            return True
     try:
         user32.BringWindowToTop(hwnd)
         user32.ShowWindow(hwnd, SW_RESTORE)
         time.sleep(0.05)
         if user32.SetForegroundWindow(hwnd):
-            return True
+            time.sleep(0.1)
+            if user32.GetForegroundWindow() == hwnd:
+                return True
     except Exception:
         pass
     fg = user32.GetForegroundWindow()
