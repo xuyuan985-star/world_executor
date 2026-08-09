@@ -91,7 +91,11 @@ class TargetRow(QFrame):
         "interrupted": {"running", "succeeded"},
     }
 
+    ALL_STATUS = {"pending", "running", "succeeded", "failed", "interrupted"}
+
     def set_status(self, status):
+        if status not in self.ALL_STATUS:
+            return  # Bug 40：非法值忽略（防拼写错误进 UI）
         cur = getattr(self, "_status", "pending")
         allowed = self.VALID_TRANSITIONS.get(cur, set())
         if cur != "pending" and status not in allowed:
@@ -111,6 +115,7 @@ class ObservationSnapshot(CardWidget):
         self._body.setStyleSheet("color: #7A90B0;")
         card_layout(self).addWidget(self._body)
         card_layout(self).addStretch(1)
+        self._history = []  # Bug 42：观测历史（限 20 条）
 
     def update_snapshot(self, observer, target, confidence, room):
         parts = [f"observer={observer}", f"target={target}"]
@@ -118,11 +123,21 @@ class ObservationSnapshot(CardWidget):
             parts.append(f"confidence={confidence:.2f}")
         if room:
             parts.append(f"room={room}")
-        self._body.setText("  ·  ".join(parts))
+        snapshot = "  ·  ".join(parts)
+        self._body.setText(snapshot)
+        self._push(snapshot)  # Bug 42
 
     def text(self):
         """Bug 33：公开读取（不暴露私有 _body）。"""
         return self._body.text()
+
+    def history_text(self, last=5):
+        """Bug 42：最近观测历史（诊断用，限 last 条）。"""
+        return "\n".join(self._history[-last:])
+
+    def _push(self, text):
+        self._history.append(text)
+        self._history = self._history[-20:]
 
 
 HEALTH_LABELS = {
@@ -203,6 +218,16 @@ class FailureInspector(CardWidget):
         card_layout(self).addWidget(self._body)
         card_layout(self).addStretch(1)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        card_title(self, "失败检查器 Failure Inspector")
+        self._body = QLabel("尚无失败记录 —")
+        self._body.setWordWrap(True)
+        self._body.setStyleSheet("color: #7A90B0;")
+        card_layout(self).addWidget(self._body)
+        card_layout(self).addStretch(1)
+        self.history = []  # Bug 41：失败历史（不覆盖，限 20 条）
+
     def on_failure(self, run_no, state, observation, action, input_info, reason, category=None):
         cat_text = f"[{category}] " if category else ""
         lines = [
@@ -213,7 +238,14 @@ class FailureInspector(CardWidget):
             f"Input: {input_info or '—'}",
             f"Reason: {reason or '—'}",
         ]
-        self._body.setText("\n".join(lines))
+        self.history.append((run_no, state, reason, category))
+        self.history = self.history[-20:]  # 限 20 条
+        # Bug 41：显示最近 5 条（历史可见，不再只留最后一次）
+        recent = [
+            f"#{r} [{cat or '-'}] {st or '-'} → {rr or '-'}"
+            for r, st, rr, cat in self.history[-5:]
+        ]
+        self._body.setText("\n".join(lines + [""] + recent))
         self._body.setStyleSheet("color: #FF6B6B;")
 
     def reset(self):
@@ -388,6 +420,11 @@ class CommandDeck(QWidget):
                 action="—", input_info="—",
                 reason=f"人工介入: {ctx.get('reason')} {ctx.get('detail', '')}",
                 category="EMERGENCY")
+        else:
+            # Bug 39：未知事件至少日志可追踪（不静默忽略）
+            import logging
+            logging.getLogger("gui.command_deck").warning(
+                "未处理事件: %s", event.type)
 
     def reset(self):
         # Bug 36：完整重置（LED/按钮/状态）
