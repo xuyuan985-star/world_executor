@@ -198,6 +198,10 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1,
         # Bug 173：来源追溯（哪个视频/哪一帧）
         "source_video": source_video,
         "source_frame": source_frame if source_frame is not None else frame_no,
+        # Bug 422：来源类型（video/manual/model——人工 vs 自动可区分）
+        "source_type": "video" if source_video else "model",
+        # Bug 432：点击容差半径（px，视觉目标允许的点击偏移）
+        "click_radius": 20,
         "rarity": None,
         "tier": "T1",
         "note": "VLM 自动识别（2遍一致），待人工复核",

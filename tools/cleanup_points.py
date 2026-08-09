@@ -46,6 +46,7 @@ def validate_point(p, area_ids):
 
 def main():
     dry = "--dry-run" in sys.argv
+    soft = "--soft" in sys.argv  # Bug 427：软删除（标记 deleted 而非移除）
     removed = 0
     for md in sorted(GUIDES.iterdir()):
         if not md.is_dir():
@@ -67,7 +68,13 @@ def main():
                 reason = validate_point(p, area_ids)
                 if reason:
                     removed += 1
-                    print(f"[drop] {md.name}/{f.name} {p.get('id')}: {reason}")
+                    if soft and isinstance(p, dict):
+                        # Bug 427：软删除——保留数据，标记状态（可恢复/审计）
+                        p["deleted"] = True
+                        p["delete_reason"] = reason
+                        keep.append(p)
+                    else:
+                        print(f"[drop] {md.name}/{f.name} {p.get('id')}: {reason}")
                 else:
                     keep.append(p)
             if len(keep) != len(items) and not dry:
@@ -75,7 +82,8 @@ def main():
                 tmp.write_text(json.dumps(keep, ensure_ascii=False, indent=2),
                                encoding="utf-8")
                 tmp.replace(f)
-    print(f"CLEANUP {'DRY-RUN ' if dry else ''}DONE（移除 {removed} 条）")
+    print(f"CLEANUP {'DRY-RUN ' if dry else ''}DONE"
+          f"（{'软删除' if soft else '移除'} {removed} 条）")
     return 0
 
 

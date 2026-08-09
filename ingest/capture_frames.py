@@ -84,7 +84,11 @@ def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
     return frames
 
 
+PROMPT_VERSION = "v3"  # Bug 449：prompt 版本——改动需 bump（结果可复现/对比）
+
+
 PROMPT = (
+    f"[prompt v{PROMPT_VERSION}] "
     "这是一段崩坏星穹铁道攻略视频的单帧。逐项回答，没有就写none：\n"
     "1. 画面中央区域是否有可互动的普通宝箱（金色/蓝绿色箱体）？若有给出bbox [x1,y1,x2,y2]（0-1000像素坐标系）。\n"
     "2. 画面是否有门（通往其他房间的入口/门框/自动门）？若有给出bbox。\n"
