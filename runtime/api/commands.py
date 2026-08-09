@@ -44,6 +44,9 @@ class RuntimeAPI:
             if errors:
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "invalid", "errors": len(errors)}))
+                self._state = "idle"  # Bug 5：清理状态，下次点击不受污染
+                self._runner = None
+                self._thread = None
                 return "invalid"
 
             if spec.mode == "real":
@@ -53,9 +56,12 @@ class RuntimeAPI:
 
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             self._state = "running"
+            input_mode = getattr(orch.executor.input, "name", "real") \
+                if spec.mode == "real" and "orch" in dir() else "dry"
             bus.publish(make_event("run_started", execution_id,
                                    context={"knowledge": knowledge_dir,
                                             "targets": targets, "mode": spec.mode,
+                                            "input_mode": input_mode,  # Bug 8：observe_only 可见
                                             "knowledge_hash": pkg.package_hash()}))
             try:
                 if self._stop_event.is_set():

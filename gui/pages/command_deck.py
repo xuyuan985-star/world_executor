@@ -213,6 +213,10 @@ class CommandDeck(QWidget):
         self.target_combo = ComboBox()
         self.target_combo.addItems(["全部目标"] + [t["id"] for t in targets])
         self.start_btn = PrimaryPushButton("开始收集")
+        from qfluentwidgets import ComboBox as _Combo
+        self.mode_combo = _Combo()
+        self.mode_combo.addItems(["dry 模拟", "real 真机"])
+        self.mode_combo.setCurrentIndex(0)  # 默认 dry（安全，Bug 6 显式化）
         self.start_btn.setFixedWidth(130)
         self.stop_btn = PushButton("停止")
         self.stop_btn.setEnabled(False)
@@ -256,6 +260,9 @@ class CommandDeck(QWidget):
 
     def set_health(self, health):
         self.health_bar.set_health(health)
+
+    def mode(self):
+        return "real" if self.mode_combo.currentIndex() == 1 else "dry"
 
     def _on_start(self):
         sel = self.target_combo.currentText()

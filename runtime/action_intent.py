@@ -85,7 +85,9 @@ class ActionIntent:
         object.__setattr__(self, "params", _deep_freeze(self.params))
 
     def to_context(self):
-        ctx = {"action": self.action, "target": self.target, "method": self.method,
+        method = self.method.value if isinstance(self.method, ActionMethod) \
+            else self.method  # Bug 7：枚举归一化为字符串（防 JSON 序列化崩）
+        ctx = {"action": self.action, "target": self.target, "method": method,
                "intent_id": self.id}
         if self.reason:
             ctx["reason"] = self.reason

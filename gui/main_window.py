@@ -61,7 +61,8 @@ class MainWindow(FluentWindow):
         self.event_bus = event_bus
         self.api = api
         self.event_bus.subscribe(self._on_runtime_event)
-        self.command_deck.run_requested.connect(self._start_run)
+        self.command_deck.run_requested.connect(
+            lambda targets: self._start_run(targets, self.command_deck.mode()))
         self.command_deck.stop_requested.connect(self._stop_run)
 
         from PySide6.QtCore import QThread, Signal
@@ -95,10 +96,12 @@ class MainWindow(FluentWindow):
             self._health_worker.wait(1000)
         event.accept()
 
-    def _start_run(self, targets):
+    def _start_run(self, targets, mode="dry"):
         from runtime.api.commands import MissionSpec
+        # Bug 6：模式显式化——dry 模拟 / real 真机（GUI 下拉选择）
         spec = MissionSpec(knowledge_dir=str(ROOT / "knowledge/source/black_tower_test"),
-                           target_ids=targets or None)
+                           target_ids=targets or None,
+                           mode=mode)
         self.command_deck.reset()
         self.api.start_mission(spec)
 
