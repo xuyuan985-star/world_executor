@@ -46,8 +46,13 @@ def _install_excepthook():
     from pathlib import Path
     log_path = Path(__file__).resolve().parent.parent / "logs" / "gui_error.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(filename=str(log_path), level=logging.ERROR,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    # Bug 294：日志轮转（10MB × 5 备份，防长期运行日志爆盘）
+    from logging.handlers import RotatingFileHandler
+    _h = RotatingFileHandler(str(log_path), maxBytes=10 * 1024 * 1024,
+                             backupCount=5, encoding="utf-8")
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(_h)
+    logging.getLogger().setLevel(logging.ERROR)
     _orig = sys.excepthook
 
     def hook(t, v, tb):
