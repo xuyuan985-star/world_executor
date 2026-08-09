@@ -25,6 +25,8 @@ class EmergencyMonitor(threading.Thread):
         self._paused = False
         self._mouse_check_enabled = True
         self.user32 = ctypes.windll.user32
+        self._last_esc = False  # Bug 140：Esc 安全停止热键（防抖动）
+        self._esc_pressed_at = 0.0
 
     def _get_cursor(self):
         pt = wintypes.POINT()
@@ -43,6 +45,15 @@ class EmergencyMonitor(threading.Thread):
             time.sleep(self.poll_interval)
             if self._paused:
                 continue
+            # Bug 140：Esc 安全停止热键（轮询——游戏卡死时仍可停止）
+            VK_ESCAPE = 0x1B
+            down = bool(self.user32.GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+            now = time.time()
+            if down and not self._last_esc and now - self._esc_pressed_at > 2.0:
+                self._esc_pressed_at = now
+                self._trigger("esc_hotkey", "Esc 安全停止（手动热键）")
+                continue
+            self._last_esc = down
             cx, cy = self._get_cursor()
             lx, ly = self._last_cursor
             if self._mouse_check_enabled and (abs(cx - lx) > self.cursor_radius or abs(cy - ly) > self.cursor_radius):

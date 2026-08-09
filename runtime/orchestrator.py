@@ -259,7 +259,9 @@ class WorkflowOrchestrator:
                 if result.retryable:
                     for attempt in range(retry):
                         # Bug 106：指数退避（1s→2s→4s）——失败重试不高频占资源
-                        time.sleep(2 ** attempt)
+                        # Bug 144：退避可中断（stop/abort 期间不再空等）
+                        if not self._interruptible_wait(2 ** attempt):
+                            break
                         self._retry_transition()
                         result = self._run_step(step, idx, wf)
                         if result.success:
@@ -286,6 +288,18 @@ class WorkflowOrchestrator:
 
         record.status = "succeeded"
         self._emit("target_progress", context={"target": target_id, "status": "done"})
+        return True
+
+    def _interruptible_wait(self, seconds):
+        """Bug 144：分段可中断等待——stop/abort 期间立即返回 False（不空等）。"""
+        import time
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if self._stop_check is not None and self._stop_check():
+                return False
+            if self._emergency_paused() or self._stall_detected():
+                return False
+            time.sleep(0.1)
         return True
 
     def _retry_transition(self):

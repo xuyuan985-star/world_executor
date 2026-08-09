@@ -172,6 +172,8 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
         "region": area_id,
         "x": round(cx, 3),
         "y": round(cy, 3),
+        # Bug 137：坐标来源分辨率（归一化坐标脱离分辨率无法换算）
+        "resolution": [1280, 720],
         "rarity": None,
         "tier": "T1",
         "note": "VLM 自动识别（2遍一致），待人工复核",

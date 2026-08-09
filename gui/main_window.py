@@ -272,12 +272,28 @@ class MainWindow(FluentWindow):
     def _on_runtime_event(self, event):
         # Bug 59：runner 线程可能调用本方法——只 emit 信号（Qt 队列投递，
         # 跨线程安全），绝不在此直调 Qt 控件
+        # Bug 129：节流——事件入队，50ms 合并刷新（防 runtime 高频 emit 卡 GUI）
         self.event_received.emit(event)
 
     @gui_safe
     def _on_event_delivered(self, event):
+        # Bug 129：合并处理——高频事件（observation/state_changed 流）批量刷新
+        if not hasattr(self, "_pending_events"):
+            self._pending_events = []
+            from PySide6.QtCore import QTimer
+            self._flush_timer = QTimer(self)
+            self._flush_timer.setInterval(50)
+            self._flush_timer.setSingleShot(True)
+            self._flush_timer.timeout.connect(self._flush_events)
+        self._pending_events.append(event)
+        self._flush_timer.start()
+
+    def _flush_events(self):
         # GUI 线程内执行（信号队列投递后）——所有 Qt 控件操作都在这里
-        self.command_deck.on_event(event)
-        # 观察中心同步接收事件统计
-        if hasattr(self.observation, "on_event"):
-            self.observation.on_event(event)
+        pending = getattr(self, "_pending_events", [])
+        self._pending_events = []
+        for event in pending:
+            self.command_deck.on_event(event)
+            # 观察中心同步接收事件统计
+            if hasattr(self.observation, "on_event"):
+                self.observation.on_event(event)

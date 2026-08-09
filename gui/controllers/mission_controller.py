@@ -4,15 +4,21 @@ MainWindow 不再知道 MissionSpec/知识路径——只调 controller.start/st
 """
 from PySide6.QtCore import QObject
 from pathlib import Path
+import threading
 
 from config.settings import ROOT
 from runtime.api.commands import MissionSpec
 
 
 class MissionController(QObject):
-    """Bug 107：已完成目标持久化（QSettings）——重启不再从零开始。"""
+    """Bug 107：已完成目标持久化（QSettings）——重启不再从零开始。
+    Bug 134：状态读写加锁（worker/GUI 并发安全）。
+    Bug 136：持久化带 schema 版本（旧格式可识别）。"""
 
     COMPLETED_KEY = "completed_targets"
+    STATE_VERSION = 2
+    VERSION_KEY = "completed_targets_version"
+    _persist_lock = threading.Lock()
 
     def __init__(self, runtime, knowledge_dir=None, parent=None):
         super().__init__(parent)
@@ -23,16 +29,19 @@ class MissionController(QObject):
 
     def completed_targets(self):
         from PySide6.QtCore import QSettings
-        s = QSettings("WorldExecutor", "Studio")
-        val = s.value(self.COMPLETED_KEY, [])
-        return list(val) if isinstance(val, (list, tuple)) else []
+        with self._persist_lock:
+            s = QSettings("WorldExecutor", "Studio")
+            val = s.value(self.COMPLETED_KEY, [])
+            return list(val) if isinstance(val, (list, tuple)) else []
 
     def record_completed(self, target_ids):
         from PySide6.QtCore import QSettings
-        s = QSettings("WorldExecutor", "Studio")
-        done = set(self.completed_targets())
-        done.update(target_ids)
-        s.setValue(self.COMPLETED_KEY, sorted(done))
+        with self._persist_lock:
+            s = QSettings("WorldExecutor", "Studio")
+            done = set(self.completed_targets())
+            done.update(target_ids)
+            s.setValue(self.COMPLETED_KEY, sorted(done))
+            s.setValue(self.VERSION_KEY, self.STATE_VERSION)  # Bug 136
 
     def pending_targets(self, all_targets):
         done = set(self.completed_targets())

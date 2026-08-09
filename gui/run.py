@@ -70,6 +70,21 @@ def _install_excepthook():
     def hook(t, v, tb):
         import traceback
         traceback.print_exception(t, v, tb)
+        # Bug 128：异常日志带运行上下文（当前任务/状态——崩溃可复盘）
+        try:
+            from gui.main_window import MainWindow
+            ctx = ""
+            for w in QApplication.instance().topLevelWidgets():
+                if isinstance(w, MainWindow):
+                    mc = getattr(w, "mission_controller", None)
+                    if mc is not None:
+                        ctx = (f"state={getattr(mc, 'state', '?')} "
+                               f"knowledge={getattr(mc, 'knowledge_dir', '?')}")
+                    break
+            if ctx:
+                logging.getLogger().error("runtime_context: %s", ctx)
+        except Exception:
+            pass
         logging.error("uncaught", exc_info=(t, v, tb))
         try:
             from PySide6.QtWidgets import QMessageBox
