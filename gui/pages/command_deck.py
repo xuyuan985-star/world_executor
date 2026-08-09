@@ -136,6 +136,12 @@ class RuntimeHealthBar(QWidget):
             self._items[key] = box
         lay.addStretch(1)
 
+    def set_health_status(self, text, busy=False):
+        """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
+        self.led.setText("● " + text)
+        self.led.setStyleSheet("color: #FFB020;" if busy else "color: #7A90B0;")
+        self.start_btn.setEnabled(not busy)
+
     def set_health(self, health):
         for key, ok in health.items():
             box = self._items.get(key)
@@ -258,6 +264,12 @@ class CommandDeck(QWidget):
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self.stop_requested)
 
+    def set_health_status(self, text, busy=False):
+        """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
+        self.led.setText("● " + text)
+        self.led.setStyleSheet("color: #FFB020;" if busy else "color: #7A90B0;")
+        self.start_btn.setEnabled(not busy)
+
     def set_health(self, health):
         self.health_bar.set_health(health)
 
@@ -277,8 +289,15 @@ class CommandDeck(QWidget):
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
         elif event.type == "run_finished":
-            self.led.setText("● 空闲")
-            self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
+            result = event.context.get("result", "")
+            # Bug 28：启动/执行失败有明确反馈（invalid/crashed/gate_blocked）
+            if result in ("invalid", "crashed", "gate_blocked"):
+                err = event.context.get("error") or event.context.get("fails")
+                self.led.setText("● 失败: " + result + (f" ({err})" if err else ""))
+                self.led.setStyleSheet("color: #E64545; font-size: 12px;")
+            else:
+                self.led.setText("● 空闲")
+                self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
         elif event.type == "state_changed":

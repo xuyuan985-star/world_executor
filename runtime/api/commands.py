@@ -168,6 +168,11 @@ class RuntimeAPI:
         self._state = "running"
         return self._state
 
+    @property
+    def state(self):
+        """公开状态（Bug 24：GUI 不直接读私有 _state）。"""
+        return self._state
+
     def stop(self):
         # #6：真停止——置信号；orchestrator 每 step 检查 stop_check 即中断
         self._stop_event.set()

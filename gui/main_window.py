@@ -68,18 +68,18 @@ class MainWindow(FluentWindow):
         from PySide6.QtCore import QThread, Signal
 
         class HealthWorker(QThread):
-            done = Signal(dict)
+            done = Signal(dict, str)  # Bug 23：capability + 错误信息（不再吞异常）
 
             def run(self):
                 # GUI-1：March7th 探测会 os.chdir(M7)（硬约束）——线程共享进程 cwd，
                 # 不恢复会让后续相对路径解析错（validate 报缺 rooms.json → 点开始无反应）
                 import os
                 saved = os.getcwd()
-                from runtime.health import check_health
                 try:
-                    self.done.emit(check_health().get("capability", {}))
-                except Exception:
-                    self.done.emit({})
+                    from runtime.health import check_health
+                    self.done.emit(check_health().get("capability", {}), "")
+                except Exception as e:
+                    self.done.emit({}, str(e))  # Bug 23：错误透传 GUI 显示
                 finally:
                     try:
                         os.chdir(saved)
@@ -87,8 +87,17 @@ class MainWindow(FluentWindow):
                         pass
 
         self._health_worker = HealthWorker(self)
-        self._health_worker.done.connect(self.command_deck.set_health)
+        self.command_deck.set_health_status("正在检测环境...", busy=True)
+        self._health_worker.done.connect(self._on_health_done)
         self._health_worker.start()
+
+    def _on_health_done(self, health, error):
+        # Bug 22/23：检测完成状态反馈（失败显示原因，不再静默）
+        if error:
+            self.command_deck.set_health_status("环境检测失败: " + error[:120], busy=False)
+        else:
+            self.command_deck.set_health(health)
+            self.command_deck.set_health_status("环境就绪", busy=False)
 
     def closeEvent(self, event):
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
@@ -97,6 +106,9 @@ class MainWindow(FluentWindow):
         event.accept()
 
     def _start_run(self, targets, mode="dry"):
+        # Bug 21：防重复启动（连点/事件未达窗口期）
+        if self.api.state not in ("idle", "done", "crashed", "invalid"):
+            return
         from runtime.api.commands import MissionSpec
         # Bug 6：模式显式化——dry 模拟 / real 真机（GUI 下拉选择）
         spec = MissionSpec(knowledge_dir=str(ROOT / "knowledge/source/black_tower_test"),
