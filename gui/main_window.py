@@ -62,6 +62,8 @@ class MainWindow(FluentWindow):
         self.event_bus = event_bus
         self.api = api
         self.event_bus.subscribe(self._on_runtime_event)
+        # Bug 59：信号→GUI 线程槽（跨线程安全链）
+        self.event_received.connect(self._on_event_delivered)
         self.command_deck.run_requested.connect(
             lambda targets: self._start_run(targets, self.command_deck.mode()))
         self.command_deck.stop_requested.connect(self._stop_run)
@@ -149,5 +151,10 @@ class MainWindow(FluentWindow):
         self.api.stop()
 
     def _on_runtime_event(self, event):
+        # Bug 59：runner 线程可能调用本方法——只 emit 信号（Qt 队列投递，
+        # 跨线程安全），绝不在此直调 Qt 控件
         self.event_received.emit(event)
+
+    def _on_event_delivered(self, event):
+        # GUI 线程内执行（信号队列投递后）——所有 Qt 控件操作都在这里
         self.command_deck.on_event(event)

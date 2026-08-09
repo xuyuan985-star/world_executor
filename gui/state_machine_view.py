@@ -94,23 +94,29 @@ class StateMachineView(QScrollArea):
 
     def resizeEvent(self, event):
         self._canvas.setFixedWidth(max(self.viewport().width(), len(MAIN_STATES) * 130))
+        self._rebuild_layout()  # Bug 57：resize 重算布局（paint 不再每次算）
         super().resizeEvent(event)
 
-    def _render(self, painter):
+    def _rebuild_layout(self):
+        """Bug 57：节点布局缓存——paintEvent 只绘制，不在绘制内重算。"""
         w = self._canvas.width()
-        h = self._canvas.height()
         n = len(MAIN_STATES)
         margin = 40
-        # AI 审计 B3：画布过小（w < margin*2）→ 负跨度，退化为均匀 0~w 布局
         span = (w - margin * 2) / (n - 1) if w > margin * 2 and n > 1 \
             else (w / max(n, 1))
         centers = []
         for i, name in enumerate(MAIN_STATES):
             cx = (margin + i * span) if w > margin * 2 else (i * span)
-            cy = 60
-            centers.append((cx, cy, name))
+            centers.append((cx, 60, name))
+        self._cached_nodes = centers
+
+    def _render(self, painter):
+        if not getattr(self, "_cached_nodes", None):
+            self._rebuild_layout()
+        centers = self._cached_nodes
+        for cx, cy, name in centers:
             self._draw_node(painter, cx, cy, name)
-        for i in range(n - 1):
+        for i in range(len(centers) - 1):
             self._draw_edge(painter, centers[i], centers[i + 1])
         if self._current:
             # AI 审计 B3：_current 不在 MAIN_STATES 时用 next(default) 防 StopIteration
