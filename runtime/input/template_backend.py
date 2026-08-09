@@ -31,14 +31,42 @@ class TemplateMatcher:
             shot.height, shot.width, 3)[:, :, ::-1]
 
     def _load_template(self, template_path):
-        """Bug 336：模板加载校验（空图/损坏 → 明确错误，不崩 matcher）。"""
+        """Bug 336：模板加载校验（空图/损坏 → 明确错误，不崩 matcher）。
+
+        BUG-077：语义完整性——若知识包带 templates_manifest.json（sha256 清单），
+        校验模板未被替换/篡改（文件被换内容但保留文件名 → false positive 源）。
+        """
         t = cv2.imread(template_path)
         if t is None:
             raise ValueError(f"模板读取失败: {template_path}")
         h, w = t.shape[:2]
         if h < 10 or w < 10:
             raise ValueError(f"模板尺寸过小 {w}x{h}: {template_path}")
+        self._verify_manifest_hash(template_path)
         return t
+
+    def _verify_manifest_hash(self, template_path):
+        """BUG-077：对照 templates_manifest.json 校验 sha256（manifest 存在时）。"""
+        import hashlib
+        from pathlib import Path
+        try:
+            tpl = Path(template_path)
+            manifest = tpl.parent / "templates_manifest.json"
+            if not manifest.exists():
+                return  # 无清单 = 未启用完整性校验（兼容旧知识包）
+            import json
+            hashes = json.loads(manifest.read_text(encoding="utf-8")).get("hashes", {})
+            expected = hashes.get(tpl.name)
+            if expected is None:
+                return  # 该模板未登记（新模板，未重新生成清单）
+            actual = hashlib.sha256(tpl.read_bytes()).hexdigest()
+            if actual != expected:
+                raise ValueError(
+                    f"模板哈希不匹配（文件被替换?）: {tpl.name}")
+        except ValueError:
+            raise
+        except Exception:
+            pass  # 清单损坏/不可读——不阻断匹配（降级为无校验）
 
     def locate(self, template_path):
         """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
