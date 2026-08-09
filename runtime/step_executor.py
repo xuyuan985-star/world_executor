@@ -440,18 +440,12 @@ class RealExecutor:
 
     def _execute_vlm_bbox(self, intent):
         from runtime.input.base import InputResult
-        obs = self.obs_store.get(intent.target)
+        # BUG-070：统一有效观测入口（时效+置信内置——业务层不再裸 get）
+        obs = self.obs_store.get_valid(intent.target, max_age=OBS_MAX_AGE,
+                                       min_confidence=OBS_MIN_CONFIDENCE)
         if obs is None:
             return InputResult(success=False, action=intent.action, backend="march7th",
-                               error=f"no_observation:{intent.target}")
-        # #39：过期观测拒绝（角色可能已移动，旧坐标不可信）
-        if obs.is_stale(max_age=OBS_MAX_AGE):
-            return InputResult(success=False, action=intent.action, backend="march7th",
-                               error=f"stale_observation:{intent.target}")
-        # #40：低置信观测拒绝（VLM 猜测不构成执行依据）
-        if obs.confidence is not None and obs.confidence < OBS_MIN_CONFIDENCE:
-            return InputResult(success=False, action=intent.action, backend="march7th",
-                               error=f"low_confidence:{obs.confidence:.2f}")
+                               error=f"no_valid_observation:{intent.target}")
         bbox = obs.bbox
         if len(bbox) == 2:
             nx, ny = bbox

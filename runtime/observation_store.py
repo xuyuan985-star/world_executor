@@ -20,15 +20,36 @@ class ObservationRecord:
 
 
 class ObservationStore:
-    def __init__(self, max_entries=64):
+    def __init__(self, max_entries=64, protected_ids=None):
         self._data = {}
         self._max = max_entries
+        # BUG-073：受保护目标（任务关键）不参与容量淘汰
+        self._protected = set(protected_ids or [])
 
     def set(self, entity_id, bbox, confidence=None, frame_id=None):
-        self._data[entity_id] = ObservationRecord(bbox, confidence=confidence, frame_id=frame_id)
+        # BUG-072：bbox 结构校验（2 中心点 / 4 角点；越界拒绝——clamp 到
+        # 边缘会点击错误对象，必须显式报错）
+        if not isinstance(bbox, (tuple, list)) or len(bbox) not in (2, 4):
+            raise ValueError(f"非法 bbox 结构: {bbox!r}（需要 2 点或 4 点）")
+        try:
+            nums = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            raise ValueError(f"bbox 含非数值: {bbox!r}")
+        if any(v < 0.0 or v > 1.0 for v in nums):
+            raise ValueError(f"bbox 越界 [0,1]: {nums}")
+        self._data[entity_id] = ObservationRecord(
+            tuple(nums), confidence=confidence, frame_id=frame_id)
         if len(self._data) > self._max:
-            for k in list(self._data)[: len(self._data) - self._max]:
+            for k in list(self._data):
+                if k in self._protected:
+                    continue
                 del self._data[k]
+                if len(self._data) <= self._max:
+                    break
+
+    def protect(self, entity_id):
+        """BUG-073：标记关键目标——不参与容量淘汰。"""
+        self._protected.add(entity_id)
 
     def get(self, entity_id):
         """#38：返回不可变快照（拷贝），observer/executor 各持一份——
@@ -43,11 +64,29 @@ class ObservationStore:
             frame_id=rec.frame_id,
         )
 
+    def get_valid(self, entity_id, max_age=1.5, min_confidence=None):
+        """BUG-070：统一有效观测入口——时效/置信度校验内置，
+        业务层禁止绕过（get() 仅诊断用）。"""
+        obs = self.get(entity_id)
+        if obs is None:
+            return None
+        if obs.is_stale(max_age):
+            return None
+        if min_confidence is not None and obs.confidence is not None \
+                and obs.confidence < min_confidence:
+            return None
+        return obs
+
+    def invalidate(self, entity_id):
+        """BUG-074：观测失效（VLM 异常/帧变化时旧证据不得继续驱动动作）。"""
+        self._data.pop(entity_id, None)
+
     def snapshot(self, entity_id):
         return self.get(entity_id)
 
     def clear(self):
         self._data.clear()
 
-    def snapshot(self):
+    def snapshot_all(self):
+        """全量快照（bbox 视图）——诊断/展示用。"""
         return {k: v.bbox for k, v in self._data.items()}
