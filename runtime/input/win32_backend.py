@@ -13,6 +13,19 @@ class Win32Backend(InputBackend):
     def __init__(self):
         self.user32 = ctypes.windll.user32
         self.user32.SetProcessDPIAware()
+        # Bug 386：输入状态快照——当前按住的键（异常/停止时可全量释放）
+        self.pressed_keys = set()
+
+    def release_all(self):
+        """Bug 415：释放全部按住键（紧急停止/异常退出兜底）。"""
+        import ctypes
+        KEYEVENTF_KEYUP = 0x0002
+        for key in list(self.pressed_keys):
+            try:
+                self.user32.keybd_event(key, 0, KEYEVENTF_KEYUP, 0)
+            except Exception:
+                pass
+        self.pressed_keys.clear()
 
     @staticmethod
     def _send_input(inputs):
@@ -62,8 +75,12 @@ class Win32Backend(InputBackend):
         vk = VK.get(str(key).lower(), ord(str(key).upper()[0]))
         KEYEVENTF_KEYUP = 0x0002
         self.user32.keybd_event(vk, 0, 0, 0)
-        time.sleep(wait_time)
-        self.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+        self.pressed_keys.add(vk)  # Bug 386：按下状态登记
+        try:
+            time.sleep(wait_time)
+        finally:
+            self.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+            self.pressed_keys.discard(vk)  # Bug 385：异常也释放
         return InputResult(success=True, action="press_key", backend=self.name)
 
     def release_key(self, key):
@@ -72,4 +89,5 @@ class Win32Backend(InputBackend):
               "m": 0x4D, "space": 0x20, "enter": 0x0D, "tab": 0x09}
         vk = VK.get(str(key).lower(), ord(str(key).upper()[0]))
         self.user32.keybd_event(vk, 0, 0x0002, 0)
+        self.pressed_keys.discard(vk)
         return InputResult(success=True, action="release_key", backend=self.name)

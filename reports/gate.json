@@ -52,5 +52,5 @@
       "detail": "                    NAVIGATING → EVENT_INTERRUPT            move fail\n               EVENT_INTERRUPT → NAVIGATING                 retry after recovery\n                    NAVIGATING → VERIFYING                  simulated target visible\n                     VERIFYING → INTERACTING                simulated verified\n                   INTERACTING → DONE                       simulated interaction ok\n"
     }
   ],
-  "generated_at": "2026-08-09T11:53:49Z"
+  "generated_at": "2026-08-09T11:57:02Z"
 }
