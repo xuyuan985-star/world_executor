@@ -18,7 +18,8 @@ class MissionController(QObject):
     COMPLETED_KEY = "completed_targets"
     STATE_VERSION = 2
     VERSION_KEY = "completed_targets_version"
-    _persist_lock = threading.Lock()
+    # P1-006：必须 RLock——record_completed 内再调 completed_targets() 会二次获取
+    _persist_lock = threading.RLock()
 
     def __init__(self, runtime, knowledge_dir=None, parent=None):
         super().__init__(parent)

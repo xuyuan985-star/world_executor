@@ -18,9 +18,16 @@ class MissionSpec:
 
 class RuntimeAPI:
     # Bug 79：合法状态集——非法字符串进不来（UI/执行不进入未知状态）
+    # P1-008：与 MissionState 枚举对齐（runtime/state.py 统一状态体系）
     VALID_STATES = {"idle", "running", "done", "crashed", "stopped",
                     "gate_blocked", "paused", "paused_for_human",
                     "resume_check", "invalid"}
+
+    @property
+    def mission_state(self):
+        """P1-008：统一枚举状态（UI/外部消费用，替代裸字符串）。"""
+        from runtime.state import normalize_state
+        return normalize_state(self._state)
 
     def __init__(self, event_bus: EventBus, execution_id=None):
         self.bus = event_bus

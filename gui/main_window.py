@@ -140,6 +140,10 @@ class MainWindow(FluentWindow):
                 server.newConnection.connect(self._on_wake_request)
                 self._wake_server = server
         except Exception:
+            # P0-001：IPC 唤醒监听失败不静默（可选功能，但需可查）
+            import logging
+            logging.getLogger("gui.main_window").exception(
+                "IPC 唤醒监听启动失败")
             self._wake_server = None
 
     def _on_wake_request(self):
@@ -160,7 +164,10 @@ class MainWindow(FluentWindow):
             self.raise_()
             self.activateWindow()
         except Exception:
-            pass
+            # P0-001：唤醒处理异常不静默
+            import logging
+            logging.getLogger("gui.main_window").exception(
+                "IPC 唤醒处理失败")
 
     def _safe_page(self, page_cls, *args):
         """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。
@@ -208,7 +215,8 @@ class MainWindow(FluentWindow):
             s = QSettings("WorldExecutor", "Studio")
             self.resize(int(s.value("win_w", 1280)), int(s.value("win_h", 760)))
         except Exception:
-            pass
+            import logging
+            logging.getLogger("gui.main_window").warning("窗口几何恢复失败")
 
     def _save_geometry(self):
         try:
@@ -217,7 +225,8 @@ class MainWindow(FluentWindow):
             s.setValue("win_w", self.width())
             s.setValue("win_h", self.height())
         except Exception:
-            pass
+            import logging
+            logging.getLogger("gui.main_window").warning("窗口几何保存失败")
 
     def _watch_screen_changes(self):
         """DPI 修复：主屏几何/DPI 变化（游戏切分辨率）→ 恢复用户窗口大小。
@@ -245,7 +254,8 @@ class MainWindow(FluentWindow):
             screen.logicalDotsPerInchChanged.connect(_on_change)
             screen.geometryChanged.connect(_on_change)
         except Exception:
-            pass
+            import logging
+            logging.getLogger("gui.main_window").warning("屏幕变化监听注册失败")
 
     def shutdown(self):
         """第 62 轮：统一关闭（controller/worker/订阅）。"""
@@ -253,7 +263,8 @@ class MainWindow(FluentWindow):
         try:
             self.mission_controller.stop()
         except Exception:
-            pass
+            import logging
+            logging.getLogger("gui.main_window").exception("停止 MissionController 失败")
         self._save_diag_snapshot()
 
     def _save_diag_snapshot(self):
@@ -274,7 +285,8 @@ class MainWindow(FluentWindow):
             (log_dir / "gui_snapshot.json").write_text(
                 json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
-            pass
+            import logging
+            logging.getLogger("gui.main_window").warning("退出现场保存失败")
 
     def closeEvent(self, event):
         # Bug 7：关闭顺序——先停 worker/取消订阅（杜绝后台线程继续发 GUI 信号），

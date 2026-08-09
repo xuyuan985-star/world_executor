@@ -1,6 +1,10 @@
 import os
 import sys
+import threading
 from pathlib import Path
+
+# P0-004：配置读写并发安全（GUI reload 与 runtime get 可能并发）
+_config_lock = threading.RLock()
 
 # Bug 206：PyInstaller 打包环境兼容（sys._MEIPASS 指向解包临时目录）
 _MEIPASS = getattr(sys, "_MEIPASS", None)
@@ -11,8 +15,21 @@ else:
 
 
 def resource_path(rel):
-    """Bug 206：资源文件统一入口——打包/源码环境都正确。"""
+    """Bug 206：资源文件统一入口（打包/源码环境都正确）。"""
     return ROOT / rel
+
+
+def data_root():
+    """P0-003：用户数据目录（logs/db/快照）——打包环境不写入临时目录。
+
+    优先级：WORLD_EXECUTOR_DATA env > ~/.world_executor > 仓库 logs。
+    """
+    override = os.environ.get("WORLD_EXECUTOR_DATA")
+    if override:
+        return Path(override)
+    if _MEIPASS:  # 打包环境：用户目录（_MEIPASS 是临时解包目录，会消失）
+        return Path.home() / ".world_executor"
+    return ROOT / "logs"
 
 
 def _load_env():
@@ -32,9 +49,13 @@ _ENV = _load_env()
 
 
 def reload_config():
-    """Bug 97：运行中重新加载配置（.env/环境变量刷新，无需重启）。"""
+    """Bug 97：运行中重新加载配置（.env/环境变量刷新，无需重启）。
+
+    P0-004：锁保护——reload 与 get 并发不读中间状态。
+    """
     global _ENV
-    _ENV = _load_env()
+    with _config_lock:
+        _ENV = _load_env()
     return _ENV
 
 
@@ -60,7 +81,11 @@ def redact_secrets(text):
 
 
 def install_log_redaction():
-    """给 root logger 挂脱敏 Filter（全局生效，无需逐处调用）。"""
+    """给 root logger 挂脱敏 Filter（全局生效，无需逐处调用）。
+
+    P1-005：同时挂到已有 handler 上——handler 级过滤覆盖 exc_info
+    格式化输出（traceback 里的 key 也会被清洗）。
+    """
     import logging
 
     class _RedactFilter(logging.Filter):
@@ -73,15 +98,30 @@ def install_log_redaction():
                     record.args = tuple(
                         redact_secrets(str(a)) if isinstance(a, str) else a
                         for a in record.args)
+                if record.exc_info and record.exc_info[1]:
+                    try:
+                        import traceback
+                        tb_text = "".join(
+                            traceback.format_exception(*record.exc_info))
+                        cleaned = redact_secrets(tb_text)
+                        if cleaned != tb_text:
+                            record.exc_text = cleaned
+                    except Exception:
+                        pass
             except Exception:
                 pass
             return True
 
-    logging.getLogger().addFilter(_RedactFilter())
+    root = logging.getLogger()
+    root.addFilter(_RedactFilter())
+    # P1-005：handler 级也挂（traceback 走 exc_text 路径时兜底）
+    for h in list(root.handlers):
+        h.addFilter(_RedactFilter())
 
 
 def get(key, default=None):
-    return os.environ.get(key) or _ENV.get(key) or default
+    with _config_lock:
+        return os.environ.get(key) or _ENV.get(key) or default
 
 
 def qwen_api_key():
