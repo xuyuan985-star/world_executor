@@ -43,7 +43,7 @@ class SessionWatchdog(threading.Thread):
         self.bus = bus
         self.execution_id = execution_id
         self.stall_seconds = stall_seconds
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()  # 勿用 _stop：覆盖 Thread._stop 方法
         self._last_activity = time.monotonic()
         self.tripped = False
         if bus is not None:
@@ -53,7 +53,7 @@ class SessionWatchdog(threading.Thread):
         self._last_activity = time.monotonic()
 
     def run(self):
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             time.sleep(5)
             if self.tripped:
                 continue
@@ -66,7 +66,11 @@ class SessionWatchdog(threading.Thread):
                         detail=f"事件静默 {self.stall_seconds}s，判定执行卡死"))
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
+        # #7：确保 watchdog 线程退出（防泄漏）——不能 join 自己（自停场景）
+        import threading
+        if threading.current_thread() is not self:
+            self.join(timeout=2)
 
 
 class TargetRecord:
@@ -86,7 +90,8 @@ class TargetRecord:
 
 
 class WorkflowOrchestrator:
-    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True, natural_mode=True):
+    def __init__(self, pkg, bus=None, execution_id=None, use_vlm=True,
+                 natural_mode=True, stop_check=None):
         self.pkg = pkg
         self.bus = bus
         self.execution_id = execution_id
@@ -99,6 +104,7 @@ class WorkflowOrchestrator:
         self._records = {}
         self._foreground_retried = False  # BUG-24：失焦激活只尝试一次
         self.foreground_check = True      # BUG-24：前台锁定（mock 环境关闭）
+        self._stop_check = stop_check     # #6：外部停止信号（RuntimeAPI.stop）
         # #20-7：决策层——Planner 输入 Observation 输出 ActionIntent（零坐标）
         self.planner = Planner()
         self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
@@ -187,6 +193,13 @@ class WorkflowOrchestrator:
         self._machine.on(Event.ROOM_MATCH, "fixed position (M1-A)")
 
         for idx, step in enumerate(steps):
+            if self._stop_check is not None and self._stop_check():
+                record.status = "failed"
+                record.last_error = "user_stopped"
+                self._emit("target_progress",
+                           context={"target": target_id, "status": "failed",
+                                    "reason": "user stopped", "category": "F3"})
+                return False
             if self._emergency_paused():
                 self._human_interrupted(target_id)
                 return False
@@ -444,7 +457,8 @@ class WorkflowOrchestrator:
     # ---------- 会话级（多目标） ----------
 
     def run_mission(self, target_ids, emergency=True):
-        self.start_emergency()
+        if emergency:  # #10：emergency=False 不启动安全线程
+            self.start_emergency()
         self.start_watchdog()
         try:
             results = {}

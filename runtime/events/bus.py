@@ -69,8 +69,14 @@ class EventBus:
             for line in Path(path).read_text(encoding="utf-8").splitlines():
                 if not line.strip():
                     continue
-                data = json.loads(line)
-                bus._events.append(WorldEvent(**data))
+                try:  # #12：半行/损坏日志跳过（断电场景）
+                    data = json.loads(line)
+                except Exception:
+                    continue
+                try:
+                    bus._events.append(WorldEvent(**data))
+                except Exception:
+                    continue
         return bus
 
 

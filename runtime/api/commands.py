@@ -24,10 +24,12 @@ class RuntimeAPI:
         self._thread = None
         self._state = "idle"
         self._pending_requires = None
+        self._stop_event = threading.Event()  # #6：真停止信号
 
     def start_mission(self, spec: MissionSpec, runner_factory=None):
         from runtime import dry_run
         self._pending_requires = spec.requires
+        self._stop_event.clear()  # #6
 
         def runner(bus, execution_id):
             from ingest.compiler.validate_graph import validate
@@ -55,23 +57,38 @@ class RuntimeAPI:
                                    context={"knowledge": knowledge_dir,
                                             "targets": targets, "mode": spec.mode,
                                             "knowledge_hash": pkg.package_hash()}))
-            if spec.mode == "real":
-                from runtime.orchestrator import WorkflowOrchestrator
-                orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=execution_id,
-                                            use_vlm=True)
-                results, completed = orch.run_mission(targets)
-                result = "all_done" if all(results.values()) else "some_failed"
-                bus.publish(make_event("mission_summary", execution_id,
-                                       context={"results": results,
-                                                "completed_targets": completed,
-                                                "records": orch.session_summary()}))
-            else:
-                result = dry_run.dry_run(knowledge_dir, targets, bus=bus,
-                                         execution_id=execution_id)
-            self._state = "done"
-            bus.publish(make_event("run_finished", execution_id,
-                                   context={"result": result}))
-            return result
+            try:
+                if self._stop_event.is_set():
+                    return "stopped"
+                if spec.mode == "real":
+                    from runtime.orchestrator import WorkflowOrchestrator
+                    orch = WorkflowOrchestrator(pkg, bus=bus,
+                                                execution_id=execution_id,
+                                                use_vlm=True,
+                                                stop_check=self._stop_event.is_set)
+                    results, completed = orch.run_mission(targets)
+                    result = ("stopped" if self._stop_event.is_set()
+                              else ("all_done" if all(results.values())
+                                    else "some_failed"))
+                    bus.publish(make_event("mission_summary", execution_id,
+                                           context={"results": results,
+                                                    "completed_targets": completed,
+                                                    "records": orch.session_summary()}))
+                else:
+                    result = dry_run.dry_run(knowledge_dir, targets, bus=bus,
+                                             execution_id=execution_id)
+                self._state = "done"
+                bus.publish(make_event("run_finished", execution_id,
+                                       context={"result": result}))
+                return result
+            except Exception as e:  # #9：real 执行异常 → 显式 run_finished(crashed)，GUI 不永久卡运行
+                import traceback
+                traceback.print_exc()
+                self._state = "crashed"
+                bus.publish(make_event("run_finished", execution_id,
+                                       context={"result": "crashed",
+                                                "error": str(e)}))
+                return "crashed"
 
         import uuid
 
@@ -146,6 +163,8 @@ class RuntimeAPI:
         return self._state
 
     def stop(self):
+        # #6：真停止——置信号；orchestrator 每 step 检查 stop_check 即中断
+        self._stop_event.set()
         self._state = "stopped"
         return self._state
 
