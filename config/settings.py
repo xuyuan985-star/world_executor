@@ -120,6 +120,8 @@ def install_log_redaction():
 
 
 def get(key, default=None):
+    # BUG-015：优先级固定为 系统环境变量 > .env > 默认值（部署可覆盖本地配置，
+    # 属有意设计）。reload_config 只刷新 .env 层——系统环境不变是预期行为。
     with _config_lock:
         return os.environ.get(key) or _ENV.get(key) or default
 

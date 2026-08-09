@@ -131,14 +131,18 @@ class MainWindow(FluentWindow):
         self._health_worker.done.connect(self._on_health_done)
         self._health_worker.start()
         # Bug 257：监听 IPC 唤醒（第二实例激活本窗口）
+        # BUG-010：不无条件 removeServer（会删掉并发实例刚建的 server）——
+        # 仅 listen 失败（残留）时才清理重试一次
         self._wake_server = None
         try:
-            from PySide6.QtNetwork import QLocalServer, QLocalSocket
-            QLocalServer.removeServer("WorldExecutorStudio_Wake")
+            from PySide6.QtNetwork import QLocalServer
             server = QLocalServer(self)
-            if server.listen("WorldExecutorStudio_Wake"):
-                server.newConnection.connect(self._on_wake_request)
-                self._wake_server = server
+            if not server.listen("WorldExecutorStudio_Wake"):
+                QLocalServer.removeServer("WorldExecutorStudio_Wake")
+                if not server.listen("WorldExecutorStudio_Wake"):
+                    raise RuntimeError("QLocalServer listen 失败（二次）")
+            server.newConnection.connect(self._on_wake_request)
+            self._wake_server = server
         except Exception:
             # P0-001：IPC 唤醒监听失败不静默（可选功能，但需可查）
             import logging
@@ -202,7 +206,8 @@ class MainWindow(FluentWindow):
     def _sync_runtime_state(self):
         """Bug 102：状态恢复——GUI 启动/重开时主动同步 runtime（不只等事件）。"""
         st = getattr(self.mission_controller, "state", None)
-        if st == "running":
+        # BUG-012：状态可能为 str 或 Enum——统一取 value 比较（类型安全）
+        if getattr(st, "value", st) == "running":
             self.command_deck.led.setText("● 运行中（恢复同步）")
             self.command_deck.led.setStyleSheet("color: #4FD1C5; font-size: 12px;")
             self.command_deck.start_btn.setEnabled(False)
@@ -291,12 +296,21 @@ class MainWindow(FluentWindow):
     def closeEvent(self, event):
         # Bug 7：关闭顺序——先停 worker/取消订阅（杜绝后台线程继续发 GUI 信号），
         # 再停 Runtime（防后台继续点击），最后保存诊断
+        # BUG-009：wait 超时（check_health 内部阻塞）→ 明确警告而非静默残留
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
-            self._health_worker.quit()
-            self._health_worker.wait(1000)
+            self._health_worker.requestInterruption()
+            if not self._health_worker.wait(3000):
+                import logging
+                logging.getLogger("gui.main_window").warning(
+                    "HealthWorker 关闭超时（线程可能残留）")
         # #57：窗口销毁时取消事件订阅（防已删 Qt 信号被后续 publish 调用）
-        if getattr(self, "event_bus", None) is not None:
-            self.event_bus.unsubscribe(self._on_runtime_event)
+        # BUG-011：取消订阅异常不阻断关闭链（各步隔离）
+        try:
+            if getattr(self, "event_bus", None) is not None:
+                self.event_bus.unsubscribe(self._on_runtime_event)
+        except Exception:
+            import logging
+            logging.getLogger("gui.main_window").exception("取消事件订阅失败")
         self.shutdown()
         event.accept()
 

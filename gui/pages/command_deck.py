@@ -85,9 +85,12 @@ class TargetRow(QFrame):
         self.set_status("pending")
 
     VALID_TRANSITIONS = {
+        # BUG-013：补全终态（failed/succeeded 为终态不再迁移；running→pending 重跑复位）
         "pending": {"running"},
         "running": {"succeeded", "failed", "interrupted"},
-        "interrupted": {"running", "succeeded"},
+        "interrupted": {"running", "succeeded", "failed"},
+        "succeeded": {"pending"},
+        "failed": {"pending"},
     }
 
     ALL_STATUS = {"pending", "running", "succeeded", "failed", "interrupted"}
@@ -98,6 +101,10 @@ class TargetRow(QFrame):
         cur = getattr(self, "_status", "pending")
         allowed = self.VALID_TRANSITIONS.get(cur, set())
         if cur != "pending" and status not in allowed:
+            # BUG-014：非法转换不静默——日志可查（runtime 状态 vs UI 状态漂移排查）
+            import logging
+            logging.getLogger("gui.command_deck").warning(
+                "非法状态转换 %s -> %s（目标 %s）", cur, status, getattr(self, "target_id", "?"))
             return
         self._status = status
         color = STATUS_COLOR.get(status, "#7A90B0")
@@ -459,6 +466,10 @@ class CommandDeck(BasePage):
                 self.led.setText("● 失败: " + result + (f" ({err})" if err else ""))
                 self.led.setStyleSheet("color: #E64545; font-size: 12px;")
                 self.set_run_status("● 执行失败")
+                # BUG-013：crashed/invalid 时任务队列复位（防 UI 停留"运行中"）
+                for leaf in self.rows.values():
+                    leaf.setText(1, STATUS_TEXT.get("pending", "待命"))
+                    leaf.setForeground(1, _status_color("pending"))
             else:
                 self.led.setText("● 空闲")
                 self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
