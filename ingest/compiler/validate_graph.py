@@ -37,6 +37,18 @@ def validate(pkg: KnowledgePackage, verbose=True):
             if not cid:
                 errors.append("chests.json 中存在缺少 id 的宝箱")
                 continue
+            # Bug 93：点位字段 schema 校验（坐标/类型缺失提前暴露，不运行中崩）
+            # null 坐标合法（mock/逻辑测试点位）；缺失 → warning；非数值/越界 → error
+            for field in ("x", "y"):
+                if field not in c or c[field] is None:
+                    warnings.append(f"宝箱 {cid} 无 {field} 坐标（mock/逻辑测试点位）")
+                    continue
+                try:
+                    v = float(c[field])
+                    if not (0.0 <= v <= 1.0):
+                        errors.append(f"宝箱 {cid} 的 {field}={v} 超出归一化范围 [0,1]")
+                except (TypeError, ValueError):
+                    errors.append(f"宝箱 {cid} 的 {field} 非数值: {c[field]!r}")
             if c.get("room") not in room_ids:
                 errors.append(f"宝箱 {cid} 的 room '{c.get('room')}' 不存在")
             if c.get("template") and not pkg.template_exists(c["template"]):

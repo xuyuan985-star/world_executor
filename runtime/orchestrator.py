@@ -25,6 +25,8 @@ TARGET_ALIVE = ("running", "succeeded", "failed")
 # #44：workflow 步骤类型白名单——未知类型 fail-fast（F3），
 # 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，无其他执行语义
 STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
+# Bug 83：单目标恢复/重试尝试硬上限（防 recover→retry 无限循环）
+MAX_TARGET_ATTEMPTS = 3
 
 # S10：watchdog 判定"执行卡死"的事件静默上限（verify 30s + 重试余量）
 WATCHDOG_STALL_SECONDS = 120
@@ -175,6 +177,29 @@ class WorkflowOrchestrator:
         self._records[target_id] = record
         record.status = "running"
         record.attempts += 1
+        try:
+            return self._run_target_inner(target_id, record)
+        except Exception:
+            # Bug 82：未预期异常 → 显式失败（线程不裸退出），状态机走 ABORT
+            import logging
+            logging.getLogger("runtime.orchestrator").exception(
+                "run_target crashed: %s", target_id)
+            record.status = "failed"
+            record.last_error = "orchestrator_crash"
+            record.category = "F1_EXEC"
+            self._emit("fail_recorded",
+                       detail=f"F1_EXEC:crash:{target_id}",
+                       context={"category": "F1_EXEC", "target": target_id,
+                                "error": "orchestrator_crash"})
+            self._emit("target_progress",
+                       context={"target": target_id, "status": "failed",
+                                "reason": "orchestrator_crash", "category": "F1_EXEC"})
+            if self._machine is not None and self._machine.state not in (State.DONE, State.ABORT):
+                self._machine.on(Event.ABORT_REQUEST, "orchestrator crash")
+            self._interrupted(target_id)
+            return False
+
+    def _run_target_inner(self, target_id, record):
         wf = self.pkg.workflow(target_id)
         if wf is None:
             record.status = "failed"
@@ -490,6 +515,22 @@ class WorkflowOrchestrator:
             for tid in target_ids:
                 if self._aborted():
                     break
+                # Bug 83：恢复/重试循环防失控——单目标尝试次数硬上限
+                if self._records.get(tid) and self._records[tid].attempts >= MAX_TARGET_ATTEMPTS:
+                    record = self._records[tid]
+                    record.status = "failed"
+                    record.last_error = "max_attempts_exceeded"
+                    record.category = "F3"
+                    self._emit("fail_recorded",
+                               detail=f"F3:max_attempts:{tid}",
+                               context={"category": "F3", "target": tid,
+                                        "error": "max_attempts_exceeded"})
+                    self._emit("target_progress",
+                               context={"target": tid, "status": "failed",
+                                        "reason": "max_attempts_exceeded",
+                                        "category": "F3"})
+                    results[tid] = False
+                    continue
                 results[tid] = self.run_target(tid)
             # #48：completed_targets = 本会话实际跑完的目标（不含失败/未执行）
             completed = [tid for tid in target_ids

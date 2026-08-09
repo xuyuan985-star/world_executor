@@ -17,14 +17,25 @@ class MissionSpec:
 
 
 class RuntimeAPI:
+    # Bug 79：合法状态集——非法字符串进不来（UI/执行不进入未知状态）
+    VALID_STATES = {"idle", "running", "done", "crashed", "stopped",
+                    "gate_blocked", "paused", "paused_for_human",
+                    "resume_check", "invalid"}
+
     def __init__(self, event_bus: EventBus, execution_id=None):
         self.bus = event_bus
         self.execution_id = execution_id
         self._runner = None
         self._thread = None
-        self._state = "idle"
+        self._set_state("idle")
         self._pending_requires = None
         self._stop_event = threading.Event()  # #6：真停止信号
+
+    def _set_state(self, new_state):
+        """Bug 79：状态写入统一入口——非法状态抛 ValueError（防漂移）。"""
+        if new_state not in self.VALID_STATES:
+            raise ValueError(f"非法状态: {new_state!r}（合法: {sorted(self.VALID_STATES)}）")
+        self._state = new_state
 
     def start_mission(self, spec: MissionSpec, runner_factory=None):
         from runtime import dry_run
@@ -44,7 +55,7 @@ class RuntimeAPI:
             if errors:
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "invalid", "errors": len(errors)}))
-                self._state = "idle"  # Bug 5：清理状态，下次点击不受污染
+                self._set_state("idle")  # Bug 5：清理状态，下次点击不受污染
                 self._runner = None
                 self._thread = None
                 return "invalid"
@@ -55,7 +66,7 @@ class RuntimeAPI:
                     return gate
 
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
-            self._state = "running"
+            self._set_state("running")
             input_mode = getattr(orch.executor.input, "name", "real") \
                 if spec.mode == "real" and "orch" in dir() else "dry"
             bus.publish(make_event("run_started", execution_id,
@@ -83,14 +94,14 @@ class RuntimeAPI:
                 else:
                     result = dry_run.dry_run(knowledge_dir, targets, bus=bus,
                                              execution_id=execution_id)
-                self._state = "done"
+                self._set_state("done")
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": result}))
                 return result
             except Exception as e:  # #9：real 执行异常 → 显式 run_finished(crashed)，GUI 不永久卡运行
                 import traceback
                 traceback.print_exc()
-                self._state = "crashed"
+                self._set_state("crashed")
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "crashed",
                                                 "error": str(e)}))
@@ -145,28 +156,28 @@ class RuntimeAPI:
                                             "mode": cap_report.mode,
                                             "reasons": cap_report.reasons,
                                             "errors": h["errors"]}))
-            self._state = "gate_blocked"
+            self._set_state("gate_blocked")
             return "gate_blocked"
         return None
 
     def pause(self):
-        self._state = "paused"
+        self._set_state("paused")
         return self._state
 
     def request_pause_human(self, reason="unknown_state"):
-        self._state = "paused_for_human"
+        self._set_state("paused_for_human")
         self.bus.publish(make_event("pause_requested", self.execution_id,
                                     context={"reason": reason}))
         return self._state
 
     def resume_check(self, checks=None):
-        self._state = "resume_check"
+        self._set_state("resume_check")
         self.bus.publish(make_event("resume_checked", self.execution_id,
                                     context={"checks": checks or []}))
         return self._state
 
     def resume(self):
-        self._state = "running"
+        self._set_state("running")
         return self._state
 
     @property
@@ -177,7 +188,10 @@ class RuntimeAPI:
     def stop(self):
         # #6：真停止——置信号；orchestrator 每 step 检查 stop_check 即中断
         self._stop_event.set()
-        self._state = "stopped"
+        # Bug 80：停止即清理运行上下文（防下次启动残留旧任务状态）
+        self._runner = None
+        self._thread = None
+        self._set_state("stopped")
         return self._state
 
     def inspect(self):

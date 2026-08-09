@@ -3,6 +3,7 @@
 MainWindow 不再知道 MissionSpec/知识路径——只调 controller.start/stop。
 """
 from PySide6.QtCore import QObject
+from pathlib import Path
 
 from config.settings import ROOT
 from runtime.api.commands import MissionSpec
@@ -25,6 +26,13 @@ class MissionController(QObject):
 
     def stop(self):
         self.runtime.stop()
+
+    def set_map(self, knowledge_dir):
+        """Bug 94：地图切换 → 换知识目录并刷新（旧目标缓存不再残留）。"""
+        if knowledge_dir:
+            self.knowledge_dir = str(
+                ROOT / knowledge_dir if not Path(knowledge_dir).is_absolute()
+                else knowledge_dir)
 
     @property
     def state(self):

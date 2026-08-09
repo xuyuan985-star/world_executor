@@ -20,6 +20,13 @@ def _load_env():
 _ENV = _load_env()
 
 
+def reload_config():
+    """Bug 97：运行中重新加载配置（.env/环境变量刷新，无需重启）。"""
+    global _ENV
+    _ENV = _load_env()
+    return _ENV
+
+
 def get(key, default=None):
     return os.environ.get(key) or _ENV.get(key) or default
 

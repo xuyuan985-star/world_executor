@@ -86,6 +86,10 @@ def run():
     def smoke():
         return py("tools/smoke_orchestrator.py")
 
+    def pipeline():
+        # Bug 100：端到端 pipeline（数据→知识包→校验→dry_run 全链路）
+        return py("tools/full_pipeline_test.py")
+
     def dryrun():
         return py('runtime/dry_run.py "knowledge/source/black_tower_test"')
 
@@ -99,6 +103,7 @@ def run():
             ("action guard", guard_tests, False),
             ("planner", planner_tests, False),
             ("smoke", smoke, args.skip_smoke),
+            ("pipeline", pipeline, False),
             ("dry_run", dryrun, False)], start=1):
         if skip:
             print(f"[{order}/9] {name} ... SKIP")

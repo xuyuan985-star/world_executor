@@ -115,6 +115,8 @@ class ObservationPage(BasePage):
         self._worker = FrameWorker(self)
         self._worker.done.connect(self._on_frame)
         self._worker.err.connect(self._on_frame_err)
+        # Bug 95：线程完成即回收（页面销毁后 worker 不再 emit 到已删对象）
+        self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
 
     def _on_frame(self, pix):

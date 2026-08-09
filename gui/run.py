@@ -85,6 +85,24 @@ def _install_excepthook():
 
 
 def main():
+    """Bug 98：统一错误入口——任何启动异常 → 崩溃对话框（不静默/不闪退）。"""
+    try:
+        _start()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        try:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+            app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(
+                None, "WorldExecutor 启动失败",
+                f"启动过程中发生异常：\n{traceback.format_exc()[-800:]}")
+        except Exception:
+            pass
+        sys.exit(1)
+
+
+def _start():
     _install_excepthook()
     # Bug 13：单实例锁必须进程级存活（局部变量会被回收→锁失效）
     global SINGLE_INSTANCE

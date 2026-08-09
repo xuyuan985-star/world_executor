@@ -16,6 +16,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -208,6 +209,14 @@ def archive_point(mdir, point, dry_run=False):
         tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2),
                        encoding="utf-8")
         tmp.replace(target)
+        # Bug 91：点位库版本元信息（地图更新/重归档时可追溯）
+        meta = pdir / "points_meta.json"
+        meta_tmp = meta.with_name("points_meta.json.tmp")
+        meta_tmp.write_text(json.dumps(
+            {"version": "1.1", "game_patch": "latest",
+             "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        meta_tmp.replace(meta)
     return f"归档 {point['id']} -> {target.name}"
 
 
