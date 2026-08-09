@@ -6,6 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent  # world_executor 根（AI 审计 B1）
 
 from gui.pages.command_deck import CommandDeck
+from gui.controllers.mission_controller import MissionController
+from gui.safe import gui_safe
 from gui.pages.placeholder import (KnowledgePage, ObservationPage, SettingsPage,
                                    StudioPage, WorldGraphPage)
 from qfluentwidgets import (FluentIcon, FluentWindow, NavigationItemPosition)
@@ -16,11 +18,14 @@ from gui.theme import apply_theme
 class MainWindow(FluentWindow):
     event_received = Signal(object)
 
-    def __init__(self, targets, event_bus, api, parent=None):
+    def __init__(self, targets, event_bus, api, parent=None,
+                 mission_controller=None):
         super().__init__(parent)
         apply_theme(QApplication.instance())
         self.setWindowTitle("WorldExecutor Studio")
         self.setMinimumSize(1180, 720)
+        # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
+        self.mission_controller = mission_controller or MissionController(api)
 
         self.command_deck = CommandDeck(targets)
         # Bug 53：页面构造异常隔离——单页失败不拖垮主窗口
@@ -112,13 +117,16 @@ class MainWindow(FluentWindow):
             self.command_deck.set_health(health)
             self.command_deck.set_health_status("环境就绪", busy=False)
 
-    def closeEvent(self, event):
-        # Bug 55：关闭顺序——先停 Runtime（防后台继续点击），再停 HealthWorker
+    def shutdown(self):
+        """第 62 轮：统一关闭（controller/worker/订阅）。"""
         try:
-            if getattr(self, "api", None) is not None:
-                self.api.stop()
+            self.mission_controller.stop()
         except Exception:
             pass
+
+    def closeEvent(self, event):
+        # Bug 55：关闭顺序——先停 Runtime（防后台继续点击），再停 HealthWorker
+        self.shutdown()
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(1000)
@@ -127,34 +135,33 @@ class MainWindow(FluentWindow):
             self.event_bus.unsubscribe(self._on_runtime_event)
         event.accept()
 
+    @gui_safe
     def _start_run(self, targets, mode="dry"):
         # Bug 21：防重复启动（连点/事件未达窗口期）
-        if self.api.state not in ("idle", "done", "crashed", "invalid"):
+        if self.mission_controller.state not in ("idle", "done", "crashed", "invalid"):
             return
-        from runtime.api.commands import MissionSpec
-        # Bug 6：模式显式化——dry 模拟 / real 真机（GUI 下拉选择）
-        spec = MissionSpec(knowledge_dir=str(ROOT / "knowledge/source/black_tower_test"),
-                           target_ids=targets or None,
-                           mode=mode)
         self.command_deck.reset()
         self.command_deck.set_starting()  # Bug 30：同步禁按钮（不依赖事件）
         try:
-            self.api.start_mission(spec)
+            # 第 62 轮：业务细节封装在 controller（路径/规格不再裸露在 GUI）
+            self.mission_controller.start(targets, mode=mode)
         except Exception as e:
             # Bug 30：同步异常直接反馈（按钮不永久卡死）
             self.command_deck.led.setText("● 启动失败: " + str(e)[:100])
             self.command_deck.start_btn.setEnabled(True)
             self.command_deck.stop_btn.setEnabled(False)
 
+    @gui_safe
     def _stop_run(self):
         self.command_deck.set_stopping()  # Bug 31：停止反馈先于结果
-        self.api.stop()
+        self.mission_controller.stop()
 
     def _on_runtime_event(self, event):
         # Bug 59：runner 线程可能调用本方法——只 emit 信号（Qt 队列投递，
         # 跨线程安全），绝不在此直调 Qt 控件
         self.event_received.emit(event)
 
+    @gui_safe
     def _on_event_delivered(self, event):
         # GUI 线程内执行（信号队列投递后）——所有 Qt 控件操作都在这里
         self.command_deck.on_event(event)
