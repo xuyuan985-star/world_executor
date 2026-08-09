@@ -8,7 +8,15 @@
     "y": 0.562,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_base_zone_0009_1a42",
@@ -19,7 +27,15 @@
     "y": 0.378,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_base_zone_0021_0a41",
@@ -30,7 +46,15 @@
     "y": 0.447,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_base_zone_0029_eaaa",
@@ -41,7 +65,15 @@
     "y": 0.302,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_base_zone_0037_93ec",
@@ -52,7 +84,15 @@
     "y": 0.403,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_base_zone_0053_fdf5",
@@ -63,7 +103,15 @@
     "y": 0.448,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0001_6924",
@@ -74,7 +122,15 @@
     "y": 0.497,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0002_b93e",
@@ -85,7 +141,15 @@
     "y": 0.12,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0003_e78f",
@@ -96,7 +160,15 @@
     "y": 0.119,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0005_4761",
@@ -107,7 +179,15 @@
     "y": 0.336,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0009_826a",
@@ -118,7 +198,15 @@
     "y": 0.244,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0010_dc3d",
@@ -129,7 +217,15 @@
     "y": 0.254,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0012_2376",
@@ -140,7 +236,15 @@
     "y": 0.551,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0013_ae57",
@@ -151,7 +255,15 @@
     "y": 0.577,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0014_97dd",
@@ -162,7 +274,15 @@
     "y": 0.584,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0023_4af8",
@@ -173,7 +293,15 @@
     "y": 0.532,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_supply_zone_0034_cecc",
@@ -184,7 +312,15 @@
     "y": 0.618,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0021_1605",
@@ -195,7 +331,15 @@
     "y": 0.41,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0022_92f9",
@@ -206,7 +350,15 @@
     "y": 0.605,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0046_e705",
@@ -217,7 +369,15 @@
     "y": 0.35,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0049_6dfc",
@@ -228,7 +388,15 @@
     "y": 0.33,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0053_7dc7",
@@ -239,7 +407,15 @@
     "y": 0.274,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0054_b3d1",
@@ -250,7 +426,15 @@
     "y": 0.267,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0055_2a8d",
@@ -261,7 +445,15 @@
     "y": 0.303,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_storage_zone_0056_9a6f",
@@ -272,7 +464,15 @@
     "y": 0.61,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_detention_zone_0021_ae26",
@@ -283,7 +483,15 @@
     "y": 0.512,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_detention_zone_0038_2554",
@@ -294,7 +502,15 @@
     "y": 0.605,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_detention_zone_0039_028f",
@@ -305,7 +521,15 @@
     "y": 0.579,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_detention_zone_0047_6938",
@@ -316,7 +540,15 @@
     "y": 0.574,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   },
   {
     "id": "herta_space_station_detention_zone_0056_42fb",
@@ -327,6 +559,14 @@
     "y": 0.575,
     "rarity": null,
     "tier": "T1",
-    "note": "VLM 自动识别（2遍一致），待人工复核"
+    "note": "VLM 自动识别（2遍一致），待人工复核",
+    "coordinate_type": "normalized",
+    "status": "pending_review",
+    "resolution": [
+      1280,
+      720
+    ],
+    "confidence": null,
+    "source_video": null
   }
 ]

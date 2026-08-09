@@ -16,16 +16,52 @@ FPS_INTERVAL = 3
 SCALE = 1280
 
 
+def check_disk_space(min_free_mb=2000, target=None):
+    """Bug 221：抽帧/下载前磁盘空间检查（不足提前拒绝）。"""
+    import shutil
+    target = target or FRAME_DIR
+    try:
+        usage = shutil.disk_usage(target)
+        free_mb = usage.free / (1024 * 1024)
+        if free_mb < min_free_mb:
+            raise RuntimeError(
+                f"磁盘空间不足（剩余 {free_mb:.0f}MB < 需要 {min_free_mb}MB）")
+        return free_mb
+    except OSError:
+        return None
+
+
+def video_fps(video):
+    """Bug 226：ffprobe 读视频帧率（抽帧间隔按 FPS 调整）。"""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=r_frame_rate", "-of",
+             "csv=p=0", str(video)], capture_output=True, text=True, timeout=30)
+        num, _, den = r.stdout.strip().partition("/")
+        num, den = int(num or 0), int(den or 0)
+        return num / den if den else None
+    except Exception:
+        return None
+
+
 def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
     """Bug 172：2s 密集固定采样（默认）不漏短现目标；Bug 171：帧数上限。
 
     间隔与上限互斥保障：短间隔 = 不漏关键帧；上限 = 长视频不爆 VLM 请求。
+    Bug 226：高帧率视频（120fps）按比例加密采样。
     """
+    # Bug 221：抽帧前磁盘检查（防写一半爆盘）
+    check_disk_space()
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
     # Bug 47：抽帧前清空旧帧（防第二次处理混入上次视频残留）
     for f in FRAME_DIR.glob("f_*.jpg"):
         f.unlink()
     iv = min(interval or FPS_INTERVAL, 2)  # Bug 172：默认 2s 采样（不漏 1-2s 短现目标）
+    fps = video_fps(video)
+    if fps and fps > 60:  # Bug 226：120fps 视频时间密度同 30fps 的一半
+        iv = max(1, iv // 2)
     vf = f"fps=1/{iv},scale={scale}:-1"
     try:
         subprocess.run([
@@ -64,8 +100,10 @@ PROMPT = (
 
 
 # Bug 158：VLM 响应缓存（同帧 hash → 同结果，重跑不重复扣费）
+# Bug 218：TTL + 容量——帧内容缓存 24h 后失效，256 条上限
 _VLM_CACHE = {}
 _VLM_CACHE_MAX = 256
+_VLM_CACHE_TTL = 24 * 3600
 
 
 def _frame_hash(frame_path):
@@ -77,12 +115,14 @@ def _frame_hash(frame_path):
 
 
 def ask_frame(provider, frame, index, use_cache=True):
+    import time as _time
     try:
         key = None
         if use_cache and provider is not None and frame is not None:
             key = _frame_hash(frame)
-            if key in _VLM_CACHE:
-                return _VLM_CACHE[key]
+            hit = _VLM_CACHE.get(key)
+            if hit and _time.time() - hit[1] < _VLM_CACHE_TTL:
+                return hit[0]
         n = provider.analyze_frames([str(frame)], "", PROMPT)
         text = n.description.strip()
         data = None
@@ -107,7 +147,7 @@ def ask_frame(provider, frame, index, use_cache=True):
             result = {"error": "json_parse_failed", "raw": text[:2000],
                       "index": index}
         if key is not None:
-            _VLM_CACHE[key] = result
+            _VLM_CACHE[key] = (result, _time.time())
             if len(_VLM_CACHE) > _VLM_CACHE_MAX:
                 _VLM_CACHE.clear()
         return result

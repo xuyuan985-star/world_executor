@@ -1,7 +1,18 @@
 import os
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Bug 206：PyInstaller 打包环境兼容（sys._MEIPASS 指向解包临时目录）
+_MEIPASS = getattr(sys, "_MEIPASS", None)
+if _MEIPASS:
+    ROOT = Path(_MEIPASS)
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+
+
+def resource_path(rel):
+    """Bug 206：资源文件统一入口——打包/源码环境都正确。"""
+    return ROOT / rel
 
 
 def _load_env():

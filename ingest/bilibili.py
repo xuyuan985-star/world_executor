@@ -144,7 +144,42 @@ def pick_stream(streams, want):
     return max(streams, key=lambda v: v["id"])
 
 
-def download(bvid, out_name=None, qn=80, p_index=0, cookie=None):
+def _download_resumable(dest, url, cookie, rate_limit_kbps=0, timeout=60):
+    """Bug 222：断点续传（HTTP Range）；Bug 223：可选限速；Bug 224：长度校验。
+
+    中断后保留已完成部分，下次从 Range 续传；完成前校验 Content-Length。
+    """
+    import os
+    import time
+    existing = dest.stat().st_size if dest.exists() else 0
+    headers = {"User-Agent": UA, "Referer": REFERER, "Cookie": cookie,
+               "Range": f"bytes={existing}-"} if existing else \
+        {"User-Agent": UA, "Referer": REFERER, "Cookie": cookie}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        total = int(resp.headers.get("Content-Length", 0)) + existing
+        mode = "ab" if existing else "wb"
+        done = existing
+        with open(dest, mode) as fh:
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                done += len(chunk)
+                if rate_limit_kbps > 0:
+                    # Bug 223：限速（KB/s）——chunk 后按吞吐等待
+                    time.sleep(len(chunk) / 1024.0 / max(1, rate_limit_kbps) * 0.5)
+                if total:
+                    pct = done * 100 // total
+                    print(f"    {dest.name} {pct}%", end="\r")
+        if total and dest.stat().st_size < total:
+            raise RuntimeError(f"{dest.name} 长度不完整 "
+                               f"({dest.stat().st_size}/{total})")  # Bug 224
+        print(f"    {dest.name} {done // 1024 // 1024}MB 完成")
+
+
+def download(bvid, out_name=None, qn=80, p_index=0, cookie=None, rate_limit_kbps=0):
     cookie = cookie if cookie is not None else get_cookie()
     if not cookie:
         print("[warn] 无 cookie，可能只能拿到 480p 及以下")
@@ -171,27 +206,12 @@ def download(bvid, out_name=None, qn=80, p_index=0, cookie=None):
 
     print(f"[P{page}] {part} ({dur}s) quality={v['id']} 下载中 ...")
     for f, url in ((vfile, v["baseUrl"] or v["base_url"]), (afile, a["baseUrl"] or a["base_url"])):
-        if f.exists():
-            continue
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": REFERER, "Cookie": cookie})
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp, open(f, "wb") as fh:
-                total = int(resp.headers.get("Content-Length", 0))
-                done = 0
-                while True:
-                    chunk = resp.read(1 << 20)
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    done += len(chunk)
-                    if total:
-                        pct = done * 100 // total
-                        print(f"    {f.name} {pct}%", end="\r")
+            _download_resumable(f, url, cookie)
         except Exception as e:
             # Bug 22：下载中断不留残缺 m4s（下次重试从零开始）
             f.unlink(missing_ok=True)
             raise BiliError(f"下载失败 {f.name}: {type(e).__name__}: {e}")
-        print(f"    {f.name} {total // 1024 // 1024}MB 完成")
 
     # Bug 46：ffmpeg 不存在先报（FileNotFoundError 无上下文）
     import shutil

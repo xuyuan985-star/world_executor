@@ -47,6 +47,39 @@ def _encode_image(path: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+class RateLimiter:
+    """Bug 228：全局限流（令牌桶）——多线程请求共享，防 API rate limit。
+
+    rate_per_min=0 表示不限流。
+    """
+
+    def __init__(self, rate_per_min=0):
+        import threading
+        self.rate = rate_per_min
+        self._lock = threading.Lock()
+        self._tokens = float(rate_per_min)
+        self._last = time.time()
+
+    def wait(self):
+        if self.rate <= 0:
+            return
+        with self._lock:
+            now = time.time()
+            self._tokens = min(float(self.rate),
+                               self._tokens + (now - self._last) * self.rate / 60.0)
+            self._last = now
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return
+            wait_s = (1 - self._tokens) * 60.0 / self.rate
+            self._tokens = 0.0
+        time.sleep(wait_s)
+
+
+# 全局共享限流器（模块级单例）
+GLOBAL_RATE_LIMITER = RateLimiter(getattr(settings, "VLM_RATE_PER_MIN", 0) or 0)
+
+
 class QwenVLProvider(VLMProvider):
     QUOTA_ERRORS = (403, 429)
 
@@ -94,6 +127,7 @@ class QwenVLProvider(VLMProvider):
         }
         for attempt in range(self.retries + 1):
             try:
+                GLOBAL_RATE_LIMITER.wait()  # Bug 228：全局限流（多线程共享）
                 resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
                 if resp.status_code in self.QUOTA_ERRORS:
                     body = ""

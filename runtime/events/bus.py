@@ -22,16 +22,30 @@ class EventBus:
             Path(persist_path).parent.mkdir(parents=True, exist_ok=True)
             self._fh = open(persist_path, "a", encoding="utf-8")
 
-    def subscribe(self, callback):
+    def subscribe(self, callback, weak=False):
         # BUG-28：订阅者列表并发修改（GUI 线程注册 / runner 线程 publish 快照）
+        # Bug 212：weak=True 时存弱引用——对象销毁自动失效（防内存泄漏）
         with self._lock:
-            self._subscribers.append(callback)
+            if weak:
+                import weakref
+                try:
+                    ref = weakref.ref(callback)
+                except TypeError:
+                    ref = None
+                if ref is not None:
+                    self._subscribers.append(("weak", ref))
+                    return
+            self._subscribers.append(("strong", callback))
 
     def unsubscribe(self, callback):
         """#57：取消订阅——GUI 窗口销毁时必调（防已删 Qt 信号被 publish 调用）。"""
         with self._lock:
+            for kind, ref in self._subscribers:
+                if kind == "strong" and ref is callback:
+                    self._subscribers.remove((kind, ref))
+                    return
             try:
-                self._subscribers.remove(callback)
+                self._subscribers.remove(("strong", callback))
             except ValueError:
                 pass
 
@@ -43,7 +57,18 @@ class EventBus:
             if self._fh:
                 self._fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
                 self._fh.flush()
-        for cb in list(self._subscribers):
+        callbacks = []
+        with self._lock:
+            for kind, ref in list(self._subscribers):
+                if kind == "weak":
+                    cb = ref()
+                    if cb is None:
+                        self._subscribers.remove((kind, ref))  # 已亡对象自动清理
+                        continue
+                    callbacks.append(cb)
+                else:
+                    callbacks.append(ref)
+        for cb in callbacks:
             try:
                 cb(event)
             except Exception as e:
