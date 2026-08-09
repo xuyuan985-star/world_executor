@@ -278,9 +278,11 @@ class WorkflowOrchestrator:
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")
+        # BUG-15：backend 层 max_retries 固定 1（单次查找）——动作重试由
+        # orchestrator 唯一控制（双层 retry 会放大物理点击次数）
         result = self.executor.interact_template(
             tid, threshold=step.get("threshold", 0.8),
-            max_retries=step.get("retry", 1) + 1)
+            max_retries=1)
         if not result.success:
             return result
         self._machine.on(Event.TARGET_VISIBLE, "target visible")

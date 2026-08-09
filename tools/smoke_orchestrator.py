@@ -160,16 +160,23 @@ print("[contract] InputBackendProtocol 签名比对 PASS")
 
 class FakeVLM:
     """VLM 观察者替身：#42 VGM 定位路径需要真实命中才 success。
-    #14：按目标返回不同坐标——防"所有目标点击同一点"掩盖绑定 bug。"""
+    #14：按目标返回不同坐标——防"所有目标点击同一点"掩盖绑定 bug。
+    BUG-23：参数化 found/confidence——边界测试不再依赖写死高值。"""
 
     TARGET_POS = {"chest_A": (500, 500), "lm_hall_center": (800, 400),
                   "door_A": (1000, 700)}
 
+    def __init__(self, found=True, confidence=0.9):
+        self.found = found
+        self.confidence = confidence
+
     def locate_target(self, screenshot, target_desc):
+        if not self.found:
+            return {"found": False, "screen_x": None, "screen_y": None,
+                    "bbox": None, "confidence": self.confidence}
         x, y = self.TARGET_POS.get(target_desc, (500, 500))
-        # Bug15：bbox 用明显值 [x1,y1,x2,y2]（中心 (0.4+0.6)/2=0.5）——可验证格式语义
         return {"found": True, "screen_x": x, "screen_y": y,
-                "confidence": 0.9, "bbox": [0.4, 0.4, 0.6, 0.6]}
+                "confidence": self.confidence, "bbox": [0.4, 0.4, 0.6, 0.6]}
 
     def observe_room(self, screenshot, room_ids):
         return {"room": None, "confidence": 0.0, "ui_state": None}

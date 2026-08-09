@@ -262,6 +262,11 @@ class RealExecutor:
         if shot is None:
             return None  # 帧质量不合格 → 本次定位放弃（不把垃圾帧交给 VLM）
         data = self.vlm.locate_target(shot, target_desc)
+        # BUG-21：locate 输出 schema 校验（found="yes"/缺 xy 等直接拒绝）
+        from runtime.vision_observer import validate_vlm_output
+        ok, _ = validate_vlm_output(data, kind="locate")
+        if not ok:
+            return None
         found = data.get("found") is True
         x, y = data.get("screen_x"), data.get("screen_y")
         conf = data.get("confidence")

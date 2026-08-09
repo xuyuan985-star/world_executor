@@ -64,6 +64,24 @@ def main():
     r6 = gate.evaluate(obs2)
     assert r6["allowed"], r6
 
+    # BUG-22：反例——中间出现矛盾（shop→battle→shop）不得错误稳定
+    # 注意：StableState 消费 Observation（顶层 room/ui_state），非 VisionEvidence
+    from runtime.observation import Observation as _Obs
+    mem2 = StableState(required=3)
+    a = _Obs(room="base", ui_state="shop", confidence=0.9)
+    b = _Obs(room="base", ui_state="battle", confidence=0.9)
+    mem2.update(a)
+    mem2.update(a)
+    assert mem2.label == "CONFIRMING", mem2.label  # required=3 还需一次
+    mem2.update(a)
+    assert mem2.label == "STABLE", mem2.label      # 3 连 → STABLE
+    mem2.update(b)  # 矛盾帧 → 重置
+    assert mem2.label == "UNSTABLE" and mem2.hits == 1, mem2.label
+    mem2.update(b)
+    mem2.update(b)
+    assert mem2.label == "STABLE" and mem2.current == ("base", "battle"), mem2.label
+    print("[gate] StableState 反例（矛盾重置，不错误稳定）PASS")
+
     # 附加：静态帧检测（卡死/截错）与尺寸异常
     fv2 = FrameValidator()
     frames = [np.full((100, 100), 50, dtype=np.uint8) for _ in range(3)]

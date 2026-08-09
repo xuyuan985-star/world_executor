@@ -33,9 +33,11 @@ class OCRAdapter:
         return {"text": out, "boxes": boxes}
 
 
-def validate_vlm_output(data):
-    """BUG-34：VLM 输出 schema 校验（防模型自由发挥污染决策）。
+def validate_vlm_output(data, kind="room"):
+    """BUG-21：VLM 输出 schema 校验（防模型自由发挥污染决策）。
 
+    kind="room"：observe_room 输出（room/ui_state/confidence）
+    kind="locate"：locate_target 输出（found/screen_x/screen_y/confidence）
     返回 (ok, reason)。字段类型不合法/缺失关键字段 → False。
     """
     if not isinstance(data, dict):
@@ -43,6 +45,18 @@ def validate_vlm_output(data):
     conf = data.get("confidence")
     if conf is not None and not isinstance(conf, (int, float)):
         return False, f"vlm_confidence_type:{type(conf).__name__}"
+    if kind == "locate":
+        found = data.get("found")
+        if found is not None and not isinstance(found, bool):
+            return False, f"vlm_found_type:{type(found).__name__}"
+        for k in ("screen_x", "screen_y"):
+            v = data.get(k)
+            if v is not None and not isinstance(v, (int, float)):
+                return False, f"vlm_{k}_type:{type(v).__name__}"
+        if found is True and (data.get("screen_x") is None
+                              or data.get("screen_y") is None):
+            return False, "vlm_locate_missing_xy"
+        return True, "ok"
     has_room = data.get("room") is not None
     has_ui = data.get("ui_state") is not None
     if not (has_room or has_ui):
