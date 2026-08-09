@@ -65,7 +65,7 @@ def category_text(code):
 
 
 class TargetRow(QFrame):
-    def __init__(self, target_id, room, parent=None):
+    def __init__(self, target_id, room, name=None, parent=None):
         super().__init__(parent)
         self.setFixedHeight(44)
         self.setObjectName("targetRow")
@@ -73,7 +73,8 @@ class TargetRow(QFrame):
             "#targetRow { background: #16283F; border: 1px solid #24405F; border-radius: 8px; }")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 0, 14, 0)
-        self.name_label = StrongBodyLabel(target_id)
+        # 显示可读名（攻略点位名），id 作为状态键
+        self.name_label = StrongBodyLabel(name or target_id)
         self.room_label = QLabel(room)
         self.room_label.setStyleSheet("color: #7A90B0;")
         self.status_label = QLabel("待命")
@@ -304,7 +305,7 @@ class CommandDeck(QWidget):
         self.queue_layout.setSpacing(8)
         self.rows = {}
         for t in targets:
-            row = TargetRow(t["id"], t.get("room", ""))
+            row = TargetRow(t["id"], t.get("room", ""), name=t.get("name"))
             self.rows[t["id"]] = row
             self.queue_layout.addWidget(row)
         self.queue_layout.addStretch(1)
