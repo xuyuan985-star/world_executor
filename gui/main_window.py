@@ -28,7 +28,7 @@ class MainWindow(FluentWindow):
             _ver = _md.version("world-executor")
         except Exception:
             _ver = "dev"
-        self.setWindowTitle(f"WorldExecutor Studio v{_ver} (gui-20260809)")
+        self.setWindowTitle(f"世界执行器 v{_ver}")
         self.setMinimumSize(1180, 720)
         # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
         self.mission_controller = mission_controller or MissionController(api)
@@ -70,7 +70,7 @@ class MainWindow(FluentWindow):
         title_bar = self.titleBar
         brand = QLabel("WORLD EXECUTOR")
         brand.setObjectName("brandLabel")
-        sub = QLabel("SPACE STATION CHEST HUNT")
+        sub = QLabel("黑塔空间站宝箱猎人")
         sub.setObjectName("brandSubLabel")
         title_bar.hBoxLayout.insertWidget(2, brand)
         title_bar.hBoxLayout.insertWidget(3, sub)

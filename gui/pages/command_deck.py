@@ -120,7 +120,7 @@ class TargetRow(QFrame):
 class ObservationSnapshot(CardWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        card_title(self, "当前观测快照")
+        card_title(self, "当前观测")
         self._body = QLabel("—")
         self._body.setWordWrap(True)
         self._body.setStyleSheet("color: #7A90B0;")
@@ -222,7 +222,7 @@ class RuntimeHealthBar(QWidget):
 class FailureInspector(CardWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        card_title(self, "失败检查器 Failure Inspector")
+        card_title(self, "失败检查器")
         self._body = QLabel("尚无失败记录 —")
         self._body.setWordWrap(True)
         self._body.setStyleSheet("color: #7A90B0;")
@@ -231,7 +231,7 @@ class FailureInspector(CardWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        card_title(self, "失败检查器 Failure Inspector")
+        card_title(self, "失败检查器")
         self._body = QLabel("尚无失败记录 —")
         self._body.setWordWrap(True)
         self._body.setStyleSheet("color: #7A90B0;")
@@ -277,7 +277,7 @@ class CommandDeck(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = SubtitleLabel("指挥台 Command Deck")
+        title = SubtitleLabel("指挥台")
         title.setStyleSheet("font-size: 20px; font-weight: 700; letter-spacing: 1px;")
         self.led = QLabel("● 空闲")
         self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
@@ -309,7 +309,7 @@ class CommandDeck(QWidget):
         self.start_btn = PrimaryPushButton("开始收集")
         from qfluentwidgets import ComboBox as _Combo
         self.mode_combo = _Combo()
-        self.mode_combo.addItems(["dry 模拟", "real 真机"])
+        self.mode_combo.addItems(["模拟执行", "真机执行"])
         self.mode_combo.setCurrentIndex(0)  # 默认 dry（安全，Bug 6 显式化）
         self.start_btn.setFixedWidth(130)
         self.stop_btn = PushButton("停止")
@@ -321,13 +321,10 @@ class CommandDeck(QWidget):
         control_bar.addWidget(self.start_btn)
         layout.addLayout(control_bar)
 
-        self.sm_view = StateMachineView()
-        self.sm_view.setFixedHeight(190)
-        layout.addWidget(self.sm_view)
 
         bottom = QHBoxLayout()
         queue_card = CardWidget()
-        card_title(queue_card, "目标队列（地图 → 区域 → 点位，滚轮浏览）")
+        card_title(queue_card, "目标队列（地图 → 区域 → 点位）")
         # 地图→区域→点位 树：列表可滚动，页面不被内容撑大
         self.target_tree = QTreeWidget()
         self.target_tree.setHeaderLabels(["目标", "状态"])
@@ -443,7 +440,6 @@ class CommandDeck(QWidget):
             self.stop_btn.setEnabled(False)
         elif event.type == "state_changed":
             self._last_state = event.to_state
-            self.sm_view.on_state(event.from_state, event.to_state, event.detail)
         elif event.type == "target_progress":
             ctx = event.context
             status = ctx.get("status")
@@ -478,12 +474,10 @@ class CommandDeck(QWidget):
         elif event.type == "pause_requested":
             self.led.setText("⏸ 已暂停")
             self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
-            self.sm_view.add_overlay("PAUSED", event.context.get("reason", ""))
         elif event.type == "human_intervention":
             ctx = event.context
             self.led.setText("⚠ 人工介入")
             self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
-            self.sm_view.add_overlay("HUMAN_INTERVENTION", ctx.get("reason") or "")
             self.inspector.on_failure(
                 run_no=self._run_no, state=self._last_state,
                 observation=self.snapshot.text(),
@@ -498,7 +492,6 @@ class CommandDeck(QWidget):
 
     def reset(self):
         # Bug 36：完整重置（LED/按钮/状态）
-        self.sm_view.reset()
         for leaf in self.rows.values():
             leaf.setText(1, "待命")
             leaf.setForeground(1, _status_color("pending"))
