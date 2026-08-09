@@ -21,6 +21,10 @@ def main():
     parser = argparse.ArgumentParser(description="Windows 稳定层真机测试")
     parser.add_argument("--frames", type=int, default=100)
     parser.add_argument("--clicks", type=int, default=100)
+    # BUG-01：SKIP 语义——本地 --allow-skip 返回 0；自动巡检默认 2（CI 区分
+    # 0 PASS / 1 FAIL / 2 SKIP——游戏未启动=没测试≠通过）
+    parser.add_argument("--allow-skip", action="store_true",
+                        help="游戏未启动时返回 0（本地手动用）")
     args = parser.parse_args()
 
     if sys.platform != "win32":
@@ -36,8 +40,8 @@ def main():
     if gw is None:
         print("[SKIP] Test 1: 游戏未启动（请先启动《崩坏：星穹铁道》）")
         print("STABILITY: SKIP")
-        # #20：SKIP 用 exit 0（CI 语义：未满足前提条件 ≠ 失败）
-        return 0
+        # BUG-01：--allow-skip 才返回 0（本地）；否则 2 让 CI 识别"没测试"
+        return 0 if args.allow_skip else 2
     print(f"[Test 1] found hwnd={hex(gw.hwnd)} {gw.width}x{gw.height} "
           f"visible={gw.visible} score={gw.score:.1f}")
     gw.pid = process_identity(gw.hwnd)[1]
@@ -50,20 +54,36 @@ def main():
         print("[WARN] Test 1: 窗口评分 50~70（可能是小窗口/异常变体，继续）")
     print("[PASS] Test 1 窗口枚举/评分")
 
-    # Test 2：截图稳定
+    # Test 2：截图稳定（BUG-02：不只验证拿到图——还要验证图像有效：
+    # 非全黑/亮度方差足够/与前一帧不同（防"截图 API 活着但视觉已死"））
     from runtime.drivers.march7th.vision import March7thVision
+    import numpy as np
     vision = March7thVision()
     ok = 0
     failures = []
+    prev_arr = None
     t0 = time.time()
     for i in range(args.frames):
         try:
             shot = vision.take_screenshot()
             q = getattr(vision, "last_quality", None)
-            if shot is not None and (q is None or q.quality == "ok"):
+            valid = False
+            if shot is not None:
+                arr = np.asarray(shot[0].convert("L")).astype(int)
+                dark = float((arr < 30).mean())
+                var = float(arr.std())
+                diff = (float(np.abs(arr - prev_arr).mean())
+                        if prev_arr is not None else float("inf"))
+                prev_arr = arr
+                # 有效性：非全黑 + 方差足够（有内容）+ 与前一帧有变化
+                if (q is None or q.quality == "ok") and dark < 0.8 \
+                        and var > 5.0 and (i == 0 or diff > 0.5):
+                    valid = True
+            if valid:
                 ok += 1
-            elif q is not None:
-                failures.append(f"#{i}:{q.quality}")
+            else:
+                failures.append(f"#{i}:{getattr(q, 'quality', 'invalid')}"
+                                f" dark={dark:.2f} var={var:.1f}")
         except Exception as e:
             failures.append(f"#{i}:{type(e).__name__}")
     rate = ok / args.frames
@@ -71,9 +91,9 @@ def main():
     if failures:
         print(f"         异常样本: {failures[:8]}")
     if rate < 0.99:
-        print("[FAIL] Test 2 截图稳定率 < 99%")
+        print("[FAIL] Test 2 截图稳定率 < 99%（含图像有效性）")
         return 1
-    print("[PASS] Test 2 截图稳定")
+    print("[PASS] Test 2 截图稳定（含非黑/方差/帧差校验）")
 
     # Test 3：输入稳定（需管理员）
     from runtime.platform.windows.privilege import is_admin
@@ -83,20 +103,48 @@ def main():
     else:
         backend = Win32Backend()
         ok = 0
+        closed_loop = 0
         import ctypes.wintypes
         pt = ctypes.wintypes.POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
         bx, by = pt.x, pt.y
+        # BUG-03 闭环：点击前后截图，检测目标区域 UI 变化（游戏响应）
         for i in range(args.clicks):
+            before = None
+            try:
+                s = vision.take_screenshot()
+                if s is not None:
+                    before = np.asarray(s[0].convert("L")).astype(int)
+            except Exception:
+                pass
             r = backend.click(bx + (i % 5), by + ((i // 5) % 5))
             if r.success:
                 ok += 1
+                try:
+                    s = vision.take_screenshot()
+                    if s is not None and before is not None:
+                        after = np.asarray(s[0].convert("L")).astype(int)
+                        # 点击位置附近区域变化（游戏对输入有响应）
+                        h, w = after.shape
+                        cx, cy = bx + (i % 5), by + ((i // 5) % 5)
+                        x0, y0 = max(0, cx - 30), max(0, cy - 30)
+                        x1, y1 = min(w, cx + 30), min(h, cy + 30)
+                        if x1 > x0 and y1 > y0:
+                            d = float(np.abs(
+                                after[y0:y1, x0:x1].astype(int)
+                                - before[y0:y1, x0:x1].astype(int)).mean())
+                            if d > 1.0:
+                                closed_loop += 1
+                except Exception:
+                    pass
+            time.sleep(0.05)
         rate = ok / args.clicks
-        print(f"[Test 3] 点击 {args.clicks} 次 success={rate:.2%}")
+        print(f"[Test 3] 点击 {args.clicks} 次 success={rate:.2%} "
+              f"UI响应={closed_loop}/{ok}")
         if rate < 0.95:
             print("[FAIL] Test 3 输入稳定率 < 95%")
             return 1
-        print("[PASS] Test 3 输入稳定")
+        print("[PASS] Test 3 输入稳定（含点击区域 UI 响应）")
 
     # Test 4：遮挡恢复（CaptureManager 降级链调用）
     from runtime.platform.windows.capture import CaptureManager

@@ -33,20 +33,29 @@ class March7thInputBackend(InputBackend):
         return self._wrap("move", self.auto.mouse_move, int(x), int(y))
 
     def press_key(self, key, wait_time=0.2):
-        """#43：March7th 原语 keyDown→sleep→keyUp 无 finally 释放——
-        异常时按键会卡死。此处包一层兜底 keyUp 释放（pyautogui 由 March7th 依赖保证可用）。"""
+        """#43/BUG-06：最低层组合 keyDown→sleep→finally keyUp——
+        March7th press_key 内部 keyDown→sleep→keyUp 一体且无 finally，
+        sleep 卡死/异常时按键会卡死；此处用独立原语组合保证 finally 释放。"""
+        import time
         try:
-            self.auto.press_key(key, wait_time)
-            return InputResult(success=True, action="press_key", backend=self.name,
-                               method="key")
+            self.auto.press_key_down(key)
         except Exception as e:
-            try:
-                import pyautogui
-                pyautogui.keyUp(key)
-            except Exception:
-                pass
             return InputResult(success=False, action="press_key", backend=self.name,
-                               error=f"{type(e).__name__}: {e}")
+                               error=f"keydown:{type(e).__name__}: {e}")
+        try:
+            time.sleep(wait_time)
+        finally:
+            try:
+                self.auto.press_key_up(key)
+            except Exception:
+                # 最后兜底：pyautogui keyUp（March7th 依赖保证可用）
+                try:
+                    import pyautogui
+                    pyautogui.keyUp(key)
+                except Exception:
+                    pass
+        return InputResult(success=True, action="press_key", backend=self.name,
+                           method="key")
 
     def release_key(self, key):
         """#42：兜底 keyup（防卡键），pyautogui 由 March7th 依赖保证可用。"""

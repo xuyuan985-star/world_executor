@@ -122,12 +122,24 @@ class FakeVisionDPI125:
 
 
 class FakeDriver:
-    """每个场景独立实例：不共享类变量，避免测试互相污染。"""
+    """每个场景独立实例：不共享类变量，避免测试互相污染。
+    BUG-04/05：与真实 Driver 结构同构（window 层 + vision_cls 参数化 DPI）。"""
     name = "fake"
 
-    def __init__(self, clicks):
+    def __init__(self, clicks, vision_cls=None, window_found=None):
         self.input = FakeInput(clicks)
-        self.vision = FakeVision()
+        self.vision = (vision_cls or FakeVision)()
+        # 窗口层（真实 Driver 有 find_window/activate_window）
+        self.window_found = window_found if window_found is not None \
+            else {"hwnd": 1, "client": (1920, 1080)}
+        self.activated = 0
+
+    def find_window(self):
+        return self.window_found
+
+    def activate_window(self):
+        self.activated += 1
+        return True
 
 
 # #20-3.7：契约断言——Fake 与真实 backend 必须同签名（防测试 PASS 真机失败）
