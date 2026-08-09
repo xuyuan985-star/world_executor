@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
-from qfluentwidgets import BodyLabel, CardWidget, StrongBodyLabel
+from qfluentwidgets import BodyLabel, CardWidget, ComboBox, StrongBodyLabel
 
 
 def card_layout(card):
