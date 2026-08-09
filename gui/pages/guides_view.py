@@ -83,7 +83,8 @@ class GuidesView(QWidget):
                         continue
                     try:
                         pts = json.loads(pf.read_text(encoding="utf-8"))
-                    except Exception:
+                    except Exception as e:
+                        print(f"[guides] JSON 损坏 {pf}: {e}")  # Bug 126
                         pts = []
                     pcount += sum(1 for pt in pts
                                   if pt.get("region") == adoc["id"])
@@ -98,8 +99,8 @@ class GuidesView(QWidget):
         for f in (md / "points").glob("*.json"):
             try:
                 total += len(json.loads(f.read_text(encoding="utf-8")))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[guides] JSON 损坏 {f}: {e}")  # Bug 126
         return total
 
     def _on_item(self, item, _col):
