@@ -546,6 +546,8 @@ class WorkflowOrchestrator:
             # 开始即激活游戏窗口（自主锁定窗口——不再"检测到失焦才处理"）
             self._foreground_retried = False
             self._ensure_foreground()
+            # Bug 533：目标去重（同目标不重复执行——保持输入顺序）
+            target_ids = list(dict.fromkeys(target_ids))
             results = {}
             for tid in target_ids:
                 if self._aborted():

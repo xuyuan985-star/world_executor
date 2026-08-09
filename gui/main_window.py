@@ -118,10 +118,18 @@ class MainWindow(FluentWindow):
 
     def _on_wake_request(self):
         # Bug 257：收到第二实例 activate 消息 → 置顶显示
+        # Bug 523：IPC 消息格式校验——只接受精确 "activate"（防非法/损坏消息）
         try:
             conn = self._wake_server.nextPendingConnection()
-            if conn is not None:
-                conn.disconnectFromServer()
+            if conn is None:
+                return
+            raw = bytes(conn.readAll()).decode("utf-8", errors="ignore")
+            conn.disconnectFromServer()
+            if raw.strip() != "activate":
+                import logging
+                logging.getLogger("gui.main_window").warning(
+                    "非法 IPC 消息: %r", raw[:60])
+                return
             self.show()
             self.raise_()
             self.activateWindow()

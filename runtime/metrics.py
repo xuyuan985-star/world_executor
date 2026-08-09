@@ -20,6 +20,11 @@ class MetricsCollector:
                        "errors": {"timeout": 0, "rate_limit": 0, "auth": 0,
                                   "invalid_json": 0, "other": 0}}
         self.started_at = time.time()
+        # Bug 539/540：采样周期 + 历史趋势（timeseries 保留最近 N 点）
+        self.sample_interval = 30.0
+        self._timeseries = []  # [{t, cpu, mem, actions_rate}...]
+        self._ts_max = 120  # 60 分钟（30s 间隔）
+        self._last_sample = 0.0
 
     def task_done(self, success):
         with self._lock:
@@ -58,6 +63,27 @@ class MetricsCollector:
                 elif "json" in error.lower() or "parse" in error.lower():
                     cls = "invalid_json"
                 self.models["errors"][cls] += 1
+
+    def sample(self):
+        """Bug 539：按采样周期记录性能快照（趋势分析用，防高频采样影响性能）。"""
+        if time.time() - self._last_sample < self.sample_interval:
+            return
+        self._last_sample = time.time()
+        snap = self.snapshot()
+        with self._lock:
+            self._timeseries.append({
+                "t": snap["uptime_s"],
+                "actions_total": snap["actions"]["total"],
+                "actions_rate": round(
+                    snap["actions"]["total"] / max(1, snap["uptime_s"]), 2),
+                "models_calls": snap["models"]["calls"],
+            })
+            self._timeseries = self._timeseries[-self._ts_max:]
+
+    def trend(self):
+        """Bug 540：性能历史趋势（最近 N 个采样点）。"""
+        with self._lock:
+            return list(self._timeseries)
 
     def snapshot(self):
         with self._lock:

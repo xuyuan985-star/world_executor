@@ -19,8 +19,13 @@ class _UtcFormatter(logging.Formatter):
         return iso_utc(record.created)
 
 
-def setup_logging(level="INFO", log_path=None, console=True):
-    """初始化 root logger：轮转文件（Bug 462）+ 可选控制台 + UTC 格式。"""
+def setup_logging(level="INFO", log_path=None, console=True, async_queue=False):
+    """初始化 root logger：轮转文件（Bug 462）+ 可选控制台 + UTC 格式。
+
+    async_queue=True：Bug 543 异步日志（QueueHandler——高频日志不阻塞 IO）。
+    """
+    import queue
+    import threading
     root = logging.getLogger()
     if getattr(root, "_we_setup", False):
         return root
@@ -31,7 +36,17 @@ def setup_logging(level="INFO", log_path=None, console=True):
     fh = RotatingFileHandler(str(path), maxBytes=10 * 1024 * 1024,
                              backupCount=5, encoding="utf-8")
     fh.setFormatter(fmt)
-    root.addHandler(fh)
+    if async_queue:
+        # Bug 543：QueueHandler + 后台线程落盘（日志不再阻塞业务线程）
+        q = queue.Queue(-1)
+        qh = logging.handlers.QueueHandler(q)
+        qh.setFormatter(fmt)
+        root.addHandler(qh)
+        ql = logging.handlers.QueueListener(q, fh)
+        ql.start()
+        root._we_async_listener = ql
+    else:
+        root.addHandler(fh)
     if console:
         ch = logging.StreamHandler()
         ch.setFormatter(fmt)
