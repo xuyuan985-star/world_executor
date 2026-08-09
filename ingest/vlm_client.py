@@ -52,7 +52,11 @@ class QwenVLProvider(VLMProvider):
         """公开对话接口（Bug 16：外部统一调用，不依赖私有 _chat）。"""
         return self._chat(messages, **kwargs)
 
-    def _chat(self, messages, model=None, fallback=None, temperature=0.2, max_tokens=4096):
+    def _chat(self, messages, model=None, fallback=None, temperature=0.2,
+              max_tokens=None):
+        # Bug 115：默认输出限长 512（防 token 爆炸/超模型上限——omni 上限 2048）
+        if max_tokens is None:
+            max_tokens = 512
         models = [model or self.model] + list(fallback or [])
         last_err = None
         for m in models:

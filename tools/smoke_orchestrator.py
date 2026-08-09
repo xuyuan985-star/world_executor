@@ -92,16 +92,31 @@ class FakeInput:
 
 
 class FakeVision:
+    """Bug 110：支持误识别模拟（miss_rate / confidence_noise）——
+    真实视觉的 false positive/false negative 可测试。
+    默认 miss_rate=None 保持旧行为（恒 miss），显式传入才返回命中。"""
+
+    def __init__(self, miss_rate=None, confidence_noise=0.0):
+        self.miss_rate = miss_rate
+        self.confidence_noise = confidence_noise
+
     def screenshot_path(self, sub):
         return "C:/fake/live.png"
 
     def find_template(self, path, threshold):
-        return None
+        if self.miss_rate is None:
+            return None  # 旧行为：恒 miss（由上层场景驱动）
+        import random
+        if random.random() < self.miss_rate:
+            return None
+        return (100, 100)
 
     def to_absolute(self, nx, ny):
         # Bug 71：归一化坐标边界检查（防 nx=2/ny=-1 产生屏幕外坐标）
         nx = max(0.0, min(1.0, nx))
         ny = max(0.0, min(1.0, ny))
+        if self.confidence_noise:
+            nx = max(0.0, min(1.0, nx + self.confidence_noise))
         return int(nx * 1920), int(ny * 1080)
 
 

@@ -27,6 +27,48 @@ def reload_config():
     return _ENV
 
 
+# ---- Bug 112：日志脱敏（traceback/日志可能携带 key/cookie 等敏感值） ----
+
+_SECRET_PATTERNS = [
+    (r"(sk-[A-Za-z0-9]{8,})", "sk-***"),
+    (r"(Bearer\s+)[A-Za-z0-9._-]{8,}", r"\1***"),
+    (r"(SESSDATA=[A-Za-z0-9%._-]{6,})", "SESSDATA=***"),
+    (r"(QWEN_API_KEY[=:]\s*)[^\s,;]+", r"\1***"),
+    (r"(BILIBILI_COOKIE[=:]\s*)[^\s,;]+", r"\1***"),
+]
+
+
+def redact_secrets(text):
+    """脱敏任意文本（日志/异常信息输出前调用）。"""
+    if not text:
+        return text
+    import re
+    for pat, repl in _SECRET_PATTERNS:
+        text = re.sub(pat, repl, text)
+    return text
+
+
+def install_log_redaction():
+    """给 root logger 挂脱敏 Filter（全局生效，无需逐处调用）。"""
+    import logging
+
+    class _RedactFilter(logging.Filter):
+        def filter(self, record):
+            try:
+                msg = str(record.msg)
+                if msg and any(pat for pat, _ in _SECRET_PATTERNS):
+                    record.msg = redact_secrets(msg)
+                if record.args:
+                    record.args = tuple(
+                        redact_secrets(str(a)) if isinstance(a, str) else a
+                        for a in record.args)
+            except Exception:
+                pass
+            return True
+
+    logging.getLogger().addFilter(_RedactFilter())
+
+
 def get(key, default=None):
     return os.environ.get(key) or _ENV.get(key) or default
 

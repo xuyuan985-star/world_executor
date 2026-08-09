@@ -19,8 +19,23 @@ def _emit(bus, execution_id, event_type, **kw):
         bus.publish(make_event(event_type, execution_id, **kw))
 
 
-def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
+def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None,
+                  fail_rate=0.0, rng=None):
+    """Bug 109：fail_rate>0 时注入随机故障（实机失败路径可在 DryRun 暴露）。
+
+    故障注入点：interact 点击（返回 False → 上层重试/失败路径）。
+    """
+    import random as _random
+    rng = rng or _random.Random()
     kind = step["type"]
+    if kind == "interact" and fail_rate > 0 and rng.random() < fail_rate:
+        print(f"  [SIM] {machine.state.name}  → interact 故障注入 FAILED (fail_rate={fail_rate})")
+        _emit(bus, execution_id, "observation",
+              detail=f"template:{step['template']} miss",
+              context={"room": sim_context["room"], "observer": "template_match",
+                       "confidence": 0.31})
+        machine.on(Event.EVENT_INTERRUPTED, "injected fail")
+        return False
     if kind == "portal":
         portal = pkg.portal(step["portal_id"])
         print(f"  [SIM] {machine.state.name}  → portal step: {portal['id']} ({portal['from']}→{portal['to']})")
@@ -81,7 +96,11 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None):
     return False
 
 
-def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
+def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None,
+            fail_rate=0.0, seed=None):
+    """fail_rate>0：注入随机动作故障（Bug 109——实机失败路径在 DryRun 可暴露）。"""
+    import random
+    rng = random.Random(seed)
     pkg = KnowledgePackage(Path(pkg_dir))
     print(f"== dry_run: {pkg.root.name} ==")
     print(f"   verifies: {DRY_RUN_VERIFIES}")
@@ -138,7 +157,8 @@ def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
         for i, step in enumerate(wf["steps"]):
             if machine.state in (State.DONE, State.ABORT):
                 break
-            simulate_step(machine, step, pkg, sim_context, bus=bus, execution_id=execution_id)
+            simulate_step(machine, step, pkg, sim_context, bus=bus, execution_id=execution_id,
+                          fail_rate=fail_rate, rng=rng)
             if machine.state in (State.DONE, State.ABORT):
                 break
         if machine.state == State.NAVIGATING:

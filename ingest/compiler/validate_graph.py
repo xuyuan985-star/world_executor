@@ -72,6 +72,28 @@ def validate(pkg: KnowledgePackage, verbose=True):
         if p.get("trigger", {}).get("template") and not pkg.template_exists(p["trigger"]["template"]):
             errors.append(f"传送门 {pid} 的触发模板缺失: templates/{p['trigger']['template']}")
 
+    # Bug 105：连通性检测——从出生点 BFS，不可达房间/宝箱提前暴露
+    spawn = pkg.spawn_room()
+    if room_ids and spawn:
+        adj = {}
+        for p in pkg.portals or []:
+            adj.setdefault(p.get("from"), set()).add(p.get("to"))
+            adj.setdefault(p.get("to"), set()).add(p.get("from"))
+        reachable = set()
+        stack = [spawn] if spawn in room_ids else []
+        while stack:
+            r = stack.pop()
+            if r in reachable:
+                continue
+            reachable.add(r)
+            stack.extend(adj.get(r, set()) - reachable)
+        unreachable = room_ids - reachable
+        for r in sorted(unreachable):
+            errors.append(f"房间 {r} 不可达（从出生点 {spawn} 无路径）")
+        for c in pkg.chests or []:
+            if isinstance(c, dict) and c.get("room") in unreachable:
+                errors.append(f"宝箱 {c.get('id')} 位于不可达房间 {c.get('room')}")
+
     for l in pkg.landmarks or []:
         if l.get("room") not in room_ids:
             errors.append(f"地标 {l.get('id')} 的 room '{l.get('room')}' 不存在")

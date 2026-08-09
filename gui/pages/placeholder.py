@@ -303,7 +303,9 @@ class StudioPage(BasePage):
         self.cards_layout.addStretch(1)
         self.content_layout.addWidget(self.cards_container, 1)
 
-        self._refresh()
+        # Bug 113：视频扫描延迟到事件循环（启动不阻塞主线程）
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._refresh)
 
         self._worker = None
 

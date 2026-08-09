@@ -256,6 +256,15 @@ def main():
         # Bug 26：VLM 格式不稳定——chest 可能是 dict / True / str，逐一防护
         chest = data.get("chest")
         if isinstance(chest, dict) and chest.get("found"):
+            # Bug 116：VLM 置信度过滤（低于门槛不入库，防低可信点位）
+            conf = chest.get("confidence")
+            if conf is not None:
+                try:
+                    if float(conf) < 0.8:
+                        print(f"  f_{i:04d} chest 置信 {conf} < 0.8（拒绝入库）")
+                        continue
+                except (TypeError, ValueError):
+                    pass
             if point_area is None:
                 print("  f_{:04d} chest 但区域未解析（跳过，防 region=null）".format(i))
                 continue

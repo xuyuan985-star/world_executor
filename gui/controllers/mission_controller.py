@@ -10,12 +10,33 @@ from runtime.api.commands import MissionSpec
 
 
 class MissionController(QObject):
+    """Bug 107：已完成目标持久化（QSettings）——重启不再从零开始。"""
+
+    COMPLETED_KEY = "completed_targets"
+
     def __init__(self, runtime, knowledge_dir=None, parent=None):
         super().__init__(parent)
         self.runtime = runtime
         # Bug 4：知识库路径基于仓库根绝对定位（任意 cwd 启动不失效）
         self.knowledge_dir = knowledge_dir or str(
             ROOT / "knowledge" / "source" / "black_tower_test")
+
+    def completed_targets(self):
+        from PySide6.QtCore import QSettings
+        s = QSettings("WorldExecutor", "Studio")
+        val = s.value(self.COMPLETED_KEY, [])
+        return list(val) if isinstance(val, (list, tuple)) else []
+
+    def record_completed(self, target_ids):
+        from PySide6.QtCore import QSettings
+        s = QSettings("WorldExecutor", "Studio")
+        done = set(self.completed_targets())
+        done.update(target_ids)
+        s.setValue(self.COMPLETED_KEY, sorted(done))
+
+    def pending_targets(self, all_targets):
+        done = set(self.completed_targets())
+        return [t for t in all_targets if t not in done]
 
     def start(self, targets, mode="dry"):
         """GUI 语义化启动（路径/规格封装在 controller 内）。"""

@@ -12,6 +12,21 @@ EXPECTED_GAME_VERSION = "2.x"
 
 log = logging.getLogger("runtime.knowledge")
 
+# Bug 102：扫描/加载时忽略的目录（备份/缓存/临时——防重复数据）
+IGNORE_DIRS = {".cache", "backup", "tmp", "cache", "old", "archive"}
+
+
+class KnowledgeMissingError(FileNotFoundError):
+    """Bug 101：知识包文件不存在（加载方区分：缺文件 ≠ 损坏 ≠ schema）。"""
+
+
+class KnowledgeCorruptError(ValueError):
+    """Bug 101：知识包 JSON 损坏（加载方区分：损坏需要重建数据）。"""
+
+
+class DuplicateIDError(ValueError):
+    """Bug 103：加载数据中出现重复 id（区域/点位覆盖风险）。"""
+
 
 class KnowledgePackage:
     def __init__(self, root: Path, strict_schema=True):
@@ -23,11 +38,33 @@ class KnowledgePackage:
         self.portals = self._load("portals.json") or []
         self.landmarks = self._load("landmarks.json") or []
         self.chests = self._load("chests.json") or []
+        # Bug 104：点位加载顺序稳定（文件系统顺序不可依赖——路线/执行顺序确定）
+        self.chests = sorted(self.chests, key=lambda c: str(c.get("id", "")))
+        # Bug 103：区域/点位 id 唯一性（重复 id 会互相覆盖）
+        self._check_unique_ids()
         self.templates_dir = self.root / "templates"
         self.workflows_dir = self.root / "workflows"
         # #28：启动即冻结——workflow 缓存 + 内容 hash，运行中改文件不影响执行链
         self._workflow_cache = {}
         self._package_hash = None
+
+    def _check_unique_ids(self):
+        seen = {}
+        for kind, items in (("rooms", (self.rooms or {}).get("rooms", [])),
+                            ("portals", self.portals),
+                            ("landmarks", self.landmarks),
+                            ("chests", self.chests)):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                iid = item.get("id")
+                if not iid:
+                    continue
+                key = f"{kind}:{iid}"
+                if key in seen:
+                    raise DuplicateIDError(
+                        f"知识包 {self.root.name} 中 {kind} id 重复: {iid}")
+                seen[key] = True
 
     def package_hash(self):
         """#28 知识包内容指纹（json 数据 + workflows + 模板文件）。
@@ -76,7 +113,15 @@ class KnowledgePackage:
         p = self.root / name
         if not p.exists():
             return None
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            # Bug 101：JSON 损坏明确归类（不是"空包"）
+            raise KnowledgeCorruptError(
+                f"知识包 {self.root.name} 的 {name} 损坏: {e}") from e
+        except OSError as e:
+            raise KnowledgeMissingError(
+                f"知识包 {self.root.name} 的 {name} 读取失败: {e}") from e
 
     def workflow(self, target_id):
         # #28：缓存冻结——执行链不感知运行期文件修改

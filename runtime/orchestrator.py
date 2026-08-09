@@ -257,8 +257,9 @@ class WorkflowOrchestrator:
                 retry = int(step.get("retry", 1) or 1)
                 recovered = False
                 if result.retryable:
-                    for _ in range(retry):
-                        time.sleep(1.0)
+                    for attempt in range(retry):
+                        # Bug 106：指数退避（1s→2s→4s）——失败重试不高频占资源
+                        time.sleep(2 ** attempt)
                         self._retry_transition()
                         result = self._run_step(step, idx, wf)
                         if result.success:

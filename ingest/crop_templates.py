@@ -63,6 +63,13 @@ def crop(frames, results, out_prefix, kind_name):
     return out
 
 
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
+
+
 def main():
     TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     results = json.loads((CAPTURE_DIR / "results.json").read_text(encoding="utf-8"))
@@ -80,7 +87,14 @@ def main():
     (CAPTURE_DIR / "crop_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(f"输出目录: {TEMPLATE_DIR}")
+    # Bug 118：模板库哈希校验清单（图片被替换/损坏可检测）
+    hashes = {}
+    for p in sorted(TEMPLATE_DIR.glob("*.png")):
+        hashes[p.name] = _sha256(p)
+    (TEMPLATE_DIR / "templates_manifest.json").write_text(
+        json.dumps({"version": 1, "hashes": hashes}, ensure_ascii=False, indent=2),
+        encoding="utf-8")
+    print(f"输出目录: {TEMPLATE_DIR}（模板哈希清单 {len(hashes)} 张）")
 
 
 if __name__ == "__main__":
