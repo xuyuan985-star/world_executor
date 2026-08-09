@@ -124,6 +124,14 @@ def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
         machine.on(Event.START, "dry_run start")
         machine.on(Event.ROOM_MATCH, f"in {spawn}")
         wf = pkg.workflow(cid)
+        if wf is None:
+            # 真实点位无 workflow（VLM 只提取坐标，执行流程未生成）——明确失败而非 TypeError
+            print(f"  [SKIP] {cid} 无执行流程（workflow 未生成）")
+            _emit(bus, execution_id, "target_progress",
+                  detail=f"skip:{cid}:no_workflow",
+                  context={"target": cid, "status": "failed",
+                           "reason": "no_workflow", "category": "F3"})
+            continue
         for i, step in enumerate(wf["steps"]):
             if machine.state in (State.DONE, State.ABORT):
                 break
