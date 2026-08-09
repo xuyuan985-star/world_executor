@@ -10,7 +10,8 @@ from runtime.naturalness import NaturalnessPolicy
 from runtime.observation_store import ObservationStore
 from runtime.observers.vlm_vision import VLMVisionObserver
 
-M7_ROOT = Path(__file__).resolve().parent.parent.parent / "March7thAssistant"
+ROOT = Path(__file__).resolve().parent.parent.parent
+M7_ROOT = ROOT / "March7thAssistant"
 
 # 只对这些动作执行自然性 sleep（#27）：查询/verify/noop 不应人为等待
 INPUT_ACTIONS = {"interact", "click_text", "move", "click"}
@@ -216,7 +217,7 @@ class RealExecutor:
         return str(path) if path.exists() else None
 
     def screenshot_path(self):
-        return self.driver.vision.screenshot_path("ingest/raw/frames/live")
+        return self.driver.vision.screenshot_path(str(ROOT / "ingest/raw/frames/live"))
 
     def _capture_for_vlm(self):
         """#17-B2：截图真实性前置——VLM 不吃垃圾输入。
@@ -229,7 +230,7 @@ class RealExecutor:
         if vision is None:
             return None
         for _ in range(2):
-            shot = vision.screenshot_path("ingest/raw/frames/live")
+            shot = vision.screenshot_path(str(ROOT / "ingest/raw/frames/live"))
             quality = getattr(vision, "last_quality", None)
             if quality is None or quality.quality == "ok":
                 return shot
@@ -471,7 +472,7 @@ class RealExecutor:
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         try:
             if self.driver.vision is not None:
-                frame = self.driver.vision.screenshot_path("failure_reports/frames")
+                frame = self.driver.vision.screenshot_path(str(ROOT / "failure_reports/frames"))
                 ctx["frame"] = str(frame)
         except Exception:
             pass

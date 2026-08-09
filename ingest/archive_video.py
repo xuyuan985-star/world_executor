@@ -70,7 +70,10 @@ def resolve_map_area(video_name):
         if not md.is_dir():
             continue
         for a in (md / "areas").glob("*.json"):
-            adoc = json.loads(a.read_text(encoding="utf-8"))
+            try:
+                adoc = json.loads(a.read_text(encoding="utf-8"))
+            except Exception:
+                continue
             if area_id is not None and a.stem != area_id:
                 continue
             if adoc["name"] in stem or (area_id is not None and a.stem == area_id):
@@ -90,7 +93,10 @@ def room_to_area(mdir, room_text):
         return None
     best_id, best_name = None, ""
     for a in (GUIDES / mdir / "areas").glob("*.json"):
-        adoc = json.loads(a.read_text(encoding="utf-8"))
+        try:
+            adoc = json.loads(a.read_text(encoding="utf-8"))
+        except Exception:
+            continue
         if adoc["name"] in room_text and len(adoc["name"]) > len(best_name):
             best_id, best_name = a.stem, adoc["name"]
     return best_id
@@ -177,6 +183,9 @@ def main():
             if mapped:
                 point_area = mapped
         if data.get("chest", {}).get("found"):
+            if point_area is None:
+                print("  f_{:04d} chest 但区域未解析（跳过，防 region=null）".format(i))
+                continue
             pt = make_point(point_area, mdir.split("_", 1)[1], "chest",
                             data["chest"].get("bbox"), i)
             if pt:

@@ -9,6 +9,9 @@
 """
 import threading
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 from runtime.action_intent import ActionIntent, ActionMethod, ActionType
 from runtime.events.schema import make_event
@@ -379,7 +382,8 @@ class WorkflowOrchestrator:
                 # B-08：视觉决策快照落盘（复盘"执行前看到什么"）
                 try:
                     from runtime.vision_gate import dump_vision_decision
-                    dump_vision_decision("failure_reports/vision", observation.frame_id,
+                    dump_vision_decision(str(ROOT / "failure_reports/vision"),
+                                         observation.frame_id,
                                          self._evidence_from_observation(observation),
                                          {"allowed": False, "reason": gate["reason"],
                                           "score": gate.get("score"),

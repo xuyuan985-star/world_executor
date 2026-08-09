@@ -76,11 +76,17 @@ class GuidesView(QWidget):
                     adoc = json.loads(a.read_text(encoding="utf-8"))
                 except Exception:
                     continue
-                pcount = sum(1 for f, _ in POINT_FILES.items()
-                             if (md / "points" / f).exists()
-                             for p in json.loads(
-                                 (md / "points" / f).read_text(encoding="utf-8"))
-                             if p.get("region") == adoc["id"])
+                pcount = 0
+                for f, _ in POINT_FILES.items():
+                    pf = md / "points" / f
+                    if not pf.exists():
+                        continue
+                    try:
+                        pts = json.loads(pf.read_text(encoding="utf-8"))
+                    except Exception:
+                        pts = []
+                    pcount += sum(1 for pt in pts
+                                  if pt.get("region") == adoc["id"])
                 child = QTreeWidgetItem([adoc.get("name", a.stem), str(pcount)])
                 child.setData(0, Qt.UserRole, ("area", md.name, a.stem))
                 top.addChild(child)
