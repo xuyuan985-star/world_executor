@@ -56,6 +56,11 @@ class ActionState(Enum):
     CANCELLED = "cancelled"
 
 
+# BUG-062：非幂等动作——重复执行产生不同结果（禁 retry）
+_NON_IDEMPOTENT_ACTIONS = {"confirm", "purchase", "delete", "exit",
+                           "use_resource", "submit"}
+
+
 @dataclass(frozen=True)
 class ActionIntent:
     """动作意图：决策层产出，不携带任何坐标。
@@ -99,7 +104,19 @@ class ActionIntent:
         # risk 四级（policy.py）：low/medium/high/critical——critical 需人工确认
         if self.risk not in ("low", "medium", "high", "critical"):
             raise ValueError(f"非法 risk: {self.risk!r}（允许 low/medium/high/critical）")
+        # BUG-062：非幂等动作强制禁 retry（开发者忘设 idempotent=False 也不放行）
+        if self.action in _NON_IDEMPOTENT_ACTIONS:
+            object.__setattr__(self, "idempotent", False)
         object.__setattr__(self, "params", _deep_freeze(self.params))
+
+    @classmethod
+    def create_verified(cls, action, target, method, confidence, evidence_id,
+                        **kw):
+        """BUG-063：已验证意图显式构造入口——视觉证明必须走这里，
+        与未验证意图（普通构造）在创建阶段即区分。"""
+        return cls(action=action, target=target, method=method,
+                   vision_verified=True, vision_confidence=confidence,
+                   evidence_id=evidence_id, **kw)
 
     def to_context(self):
         method = self.method.value if isinstance(self.method, ActionMethod) \

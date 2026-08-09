@@ -484,12 +484,24 @@ class RealExecutor:
         # #30：按 result.error 特征细分子分类（保持 F1/F2/F3 主类冻结）
         sub = subclass_for(result.error)
         cat = sub or "F1"
-        # #31 失败指纹：同因失败可聚合（统计/去重），error 截断防指纹膨胀
-        signature = f"{cat}:{intent.action}:{intent.target}:{(result.error or '')[:40]}"
+        # #31 失败指纹：同因失败可聚合（统计/去重）
+        # BUG-059：指纹用稳定字段（code 优先，error 文本不可靠——
+        # 文案变化会拆散同类失败）；text 仅作展示后缀
+        from runtime.errors import code_of
+        # result 可能是 ExecutionResult 或 InputResult（无 code 属性）——getattr 防御
+        code_val = getattr(result, "code", None)
+        if code_val is not None and hasattr(code_val, "value"):
+            code_val = code_val.value
+        elif code_val is None and result.error:
+            code_val = code_of(result.error).value
+        else:
+            code_val = code_val or "unknown"
+        signature = f"{cat}:{intent.action}:{intent.target}:{code_val}"
         ctx = {"category": cat, "target": intent.target,
                "error": result.error,
+               "error_code": code_val,
                "failure_signature": signature,
-               "suggested_recovery": recovery_for(result.error),  # #19
+               "suggested_recovery": recovery_for(getattr(result, "code", None) or result.error),  # #19/BUG-058
                "related_events": list(self._recent_events)[-8:]}
         # #46：失败瞬间截图快照（真机可用时；mock 下 driver 无 vision 则跳过）
         # BUG-031：截图失败不静默——保留错误证据（不阻断主流程）

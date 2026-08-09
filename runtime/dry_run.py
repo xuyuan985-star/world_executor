@@ -85,7 +85,18 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None,
         return True
 
     if kind == "verify":
-        print(f"  [SIM] {machine.state.name}  → verify signal={step['signal']} expected={step['expected']}")
+        # BUG-060/061：verify 可注入失败——验证失败路径（恢复/重试）可覆盖
+        if fail_rate > 0 and rng.random() < fail_rate:
+            print(f"  [SIM] {machine.state.name}  → verify 故障注入 FAILED")
+            _emit(bus, execution_id, "observation",
+                  detail=f"verify:{step.get('signal')} miss",
+                  context={"room": sim_context["room"], "observer": "template_match",
+                           "confidence": 0.31})
+            machine.on(Event.EVENT_INTERRUPTED, "injected verify fail")
+            return False
+        # BUG-060：verify 区分模拟/已验证——SIM 标记（不冒充 VERIFIED_SUCCESS）
+        print(f"  [SIM] {machine.state.name}  → verify signal={step['signal']} "
+              f"expected={step['expected']} (SIMULATED——非真实视觉验证)")
         return True
 
     if kind == "wait":
