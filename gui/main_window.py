@@ -104,6 +104,29 @@ class MainWindow(FluentWindow):
         self.command_deck.set_health_status("正在检测环境...", busy=True)
         self._health_worker.done.connect(self._on_health_done)
         self._health_worker.start()
+        # Bug 257：监听 IPC 唤醒（第二实例激活本窗口）
+        self._wake_server = None
+        try:
+            from PySide6.QtNetwork import QLocalServer, QLocalSocket
+            QLocalServer.removeServer("WorldExecutorStudio_Wake")
+            server = QLocalServer(self)
+            if server.listen("WorldExecutorStudio_Wake"):
+                server.newConnection.connect(self._on_wake_request)
+                self._wake_server = server
+        except Exception:
+            self._wake_server = None
+
+    def _on_wake_request(self):
+        # Bug 257：收到第二实例 activate 消息 → 置顶显示
+        try:
+            conn = self._wake_server.nextPendingConnection()
+            if conn is not None:
+                conn.disconnectFromServer()
+            self.show()
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
 
     def _safe_page(self, page_cls):
         """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。"""

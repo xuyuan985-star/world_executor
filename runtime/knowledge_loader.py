@@ -35,13 +35,23 @@ class KnowledgePackage:
         if strict_schema:
             self._check_schema_version()
         self.rooms = self._load("rooms.json")
-        self.portals = self._load("portals.json") or []
-        self.landmarks = self._load("landmarks.json") or []
-        self.chests = self._load("chests.json") or []
-        # Bug 104：点位加载顺序稳定（文件系统顺序不可依赖——路线/执行顺序确定）
-        self.chests = sorted(self.chests, key=lambda c: str(c.get("id", "")))
+        # 注意：不能 `or []`——空 dict {} 是 falsy 会被吞成空列表（Bug 246 误报格式错误）
+        self.portals = self._load("portals.json")
+        if self.portals is None:
+            self.portals = []
+        self.landmarks = self._load("landmarks.json")
+        if self.landmarks is None:
+            self.landmarks = []
+        self.chests = self._load("chests.json")
+        if self.chests is None:
+            self.chests = []
+        # Bug 104：点位加载顺序稳定（仅对 list；非 list 保留原值供 validate 报格式错误）
+        if isinstance(self.chests, list):
+            self.chests = sorted(self.chests, key=lambda c: str(c.get("id", "")))
         # Bug 103：区域/点位 id 唯一性（重复 id 会互相覆盖）
         self._check_unique_ids()
+        # Bug 234：运行环境标记（test 包禁止进正式执行——调用方据此拒绝）
+        self.environment = self.meta.get("environment", "prod")
         self.templates_dir = self.root / "templates"
         self.workflows_dir = self.root / "workflows"
         # #28：启动即冻结——workflow 缓存 + 内容 hash，运行中改文件不影响执行链

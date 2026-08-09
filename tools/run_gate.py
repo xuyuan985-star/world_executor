@@ -94,6 +94,7 @@ def run():
         return py('runtime/dry_run.py "knowledge/source/black_tower_test"')
 
     ok_all = True
+    results = []
     for order, (name, func, skip) in enumerate([
             ("architecture", architecture, False),
             ("security", security, False),
@@ -107,15 +108,30 @@ def run():
             ("dry_run", dryrun, False)], start=1):
         if skip:
             print(f"[{order}/9] {name} ... SKIP")
+            results.append({"name": name, "status": "SKIP"})
             continue
         print(f"[{order}/9] {name} ...")
         ok, detail = func()
+        results.append({"name": name, "status": "PASS" if ok else "FAIL",
+                        "detail": detail})
         if ok:
             print(f"  PASS {detail or ''}")
         else:
             print(f"  FAIL {detail or ''}")
         ok_all = ok_all and ok
     print("GATE " + ("PASS" if ok_all else "FAIL"))
+    # Bug 243：机器可读报告（CI/外部消费）
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        from runtime.timeutil import iso_utc
+        rep = {"ok": ok_all, "checks": results, "generated_at": iso_utc()}
+        out = _P(__file__).resolve().parent.parent / "reports" / "gate.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(rep, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+    except Exception:
+        pass
     return 0 if ok_all else 1
 
 

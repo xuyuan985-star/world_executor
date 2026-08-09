@@ -156,6 +156,25 @@ def check_health(verbose=False, game_required=True):
     except Exception as e:
         errors["input"] = f"{type(e).__name__}: {e}"
 
+    # Bug 252：依赖检查——ffmpeg / 磁盘空间 / 知识库
+    try:
+        import shutil
+        result["ffmpeg"] = shutil.which("ffmpeg") is not None
+        if not result["ffmpeg"]:
+            errors["ffmpeg"] = "未找到 ffmpeg（抽帧/下载需要）"
+    except Exception as e:
+        result["ffmpeg"] = False
+        errors["ffmpeg"] = f"{type(e).__name__}: {e}"
+    try:
+        usage = shutil.disk_usage(Path(__file__).resolve().parent.parent)
+        free_mb = usage.free / (1024 * 1024)
+        result["disk"] = free_mb > 500
+        if not result["disk"]:
+            errors["disk"] = f"磁盘剩余 {free_mb:.0f}MB < 500MB"
+    except Exception as e:
+        result["disk"] = False
+        errors["disk"] = f"{type(e).__name__}: {e}"
+
     if verbose:
         for k, v in result.items():
             if v is None:

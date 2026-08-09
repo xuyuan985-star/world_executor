@@ -55,6 +55,44 @@ class TestKnowledgePackage(unittest.TestCase):
         joined = "\n".join(errors)
         self.assertIn("room_C 不可达", joined)
 
+    # ---- Bug 246：损坏/缺字段/错误类型数据覆盖 ----
+
+    def test_broken_json(self):
+        # 损坏 JSON → KnowledgeCorruptError（不是静默空包）
+        d = self._pkg({"package.json": "{}",
+                       "chests.json": '{"id": '})
+        with self.assertRaises(KnowledgeCorruptError):
+            KnowledgePackage(d)
+
+    def test_missing_field_not_crash(self):
+        # 缺字段点位：加载不崩，校验给 warning/error 而非异常
+        from ingest.compiler.validate_graph import validate
+        d = self._pkg({"package.json": "{}",
+                       "rooms.json": {"spawn_room": "room_A",
+                                      "rooms": [{"id": "room_A"}]},
+                       "chests.json": [{"id": "c1", "room": "room_A"}]})
+        pkg = KnowledgePackage(d)
+        errors, warnings = validate(pkg, verbose=False)
+        self.assertTrue(errors or warnings)  # 有反馈，不静默
+
+    def test_wrong_type_chests(self):
+        # chests 为 {} → 明确格式错误
+        from ingest.compiler.validate_graph import validate
+        d = self._pkg({"package.json": "{}",
+                       "rooms.json": {"spawn_room": "room_A",
+                                      "rooms": [{"id": "room_A"}]},
+                       "chests.json": {}})
+        pkg = KnowledgePackage(d)
+        errors, _ = validate(pkg, verbose=False)
+        joined = "\n".join(errors)
+        self.assertIn("格式错误", joined)
+
+    def test_environment_flag(self):
+        # Bug 234：environment 标记可读（test 包不混入正式执行）
+        d = self._pkg({"package.json": json.dumps({"environment": "test"})})
+        pkg = KnowledgePackage(d)
+        self.assertEqual(pkg.environment, "test")
+
 
 if __name__ == "__main__":
     unittest.main()
