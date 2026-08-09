@@ -46,6 +46,22 @@ def _load_env():
 
 
 _ENV = _load_env()
+# 运行时覆盖（GUI 设置页写入，优先于 .env/环境变量——进程内生效）
+_runtime_override = {}
+
+
+def set_override(key, value):
+    """GUI 设置页：运行时覆盖配置（不写 .env，当前进程立即生效）。"""
+    with _config_lock:
+        if value is None:
+            _runtime_override.pop(key, None)
+        else:
+            _runtime_override[key] = str(value)
+
+
+def get_override(key):
+    with _config_lock:
+        return _runtime_override.get(key)
 
 
 def reload_config():
@@ -122,7 +138,10 @@ def install_log_redaction():
 def get(key, default=None):
     # BUG-015：优先级固定为 系统环境变量 > .env > 默认值（部署可覆盖本地配置，
     # 属有意设计）。reload_config 只刷新 .env 层——系统环境不变是预期行为。
+    # 运行时覆盖（GUI 设置页）优先于一切
     with _config_lock:
+        if key in _runtime_override:
+            return _runtime_override[key]
         return os.environ.get(key) or _ENV.get(key) or default
 
 

@@ -426,11 +426,30 @@ class SettingsPage(BasePage):
         row1.addStretch(1)
         cl.addLayout(row1)
 
+        # 模型配置（可改——不再只读）
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("VLM 分析模型:"))
+        self.model_combo = ComboBox()
+        self.model_combo.setEditable(True)
+        self.model_combo.addItems([
+            "qwen3-vl-plus", "qwen3-vl-flash", "qwen-vl-max",
+            "qwen-vl-plus", "qwen-omni-turbo",
+        ])
+        from config import settings as _s
+        self.model_combo.setCurrentText(
+            _s.qwen_vlm_analyze_model() or "qwen3-vl-plus")
+        row2.addWidget(self.model_combo)
+        row2.addStretch(1)
+        cl.addLayout(row2)
+        hint = QLabel("保存后当前进程立即生效（VLM 识别/攻略分析用）")
+        hint.setStyleSheet("color: #7A90B0; font-size: 12px;")
+        cl.addWidget(hint)
+
         # 环境信息（只读）
-        info = QLabel(self._env_info())
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #7A90B0; font-size: 13px;")
-        cl.addWidget(info)
+        self._env_label = QLabel(self._env_info())
+        self._env_label.setWordWrap(True)
+        self._env_label.setStyleSheet("color: #7A90B0; font-size: 13px;")
+        cl.addWidget(self._env_label)
 
         self.content_layout.addWidget(card)
         self.content_layout.addStretch(1)
@@ -466,12 +485,25 @@ class SettingsPage(BasePage):
         s = QSettings("WorldExecutor", "Studio")
         mode = s.value("default_mode", "dry")
         self.mode_combo.setCurrentIndex(1 if mode == "real" else 0)
+        saved_model = s.value("vlm_model", "")
+        if saved_model:
+            self.model_combo.setCurrentText(str(saved_model))
 
     def _save(self):
         from PySide6.QtCore import QSettings
+        from config import settings as _s
         s = QSettings("WorldExecutor", "Studio")
         s.setValue("default_mode", "real" if self.mode_combo.currentIndex() == 1 else "dry")
-        QMessageBox.information(self, "设置", "已保存（默认执行模式）")
+        # 模型保存：运行时覆盖（当前进程立即生效，不写 .env）
+        model = self.model_combo.currentText().strip()
+        if model:
+            _s.set_override("QWEN_VLM_ANALYZE_MODEL", model)
+            s.setValue("vlm_model", model)  # 下次启动 GUI 默认带入
+        self._env_label.setText(self._env_info())
+        QMessageBox.information(
+            self, "设置",
+            f"已保存：默认模式={'真机' if self.mode_combo.currentIndex() == 1 else '模拟'}"
+            + (f"，VLM 模型={model}" if model else ""))
 
     def default_mode(self):
         from PySide6.QtCore import QSettings
