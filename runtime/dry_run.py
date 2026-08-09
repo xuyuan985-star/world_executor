@@ -28,14 +28,24 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None,
     import random as _random
     rng = rng or _random.Random()
     kind = step["type"]
-    if kind == "interact" and fail_rate > 0 and rng.random() < fail_rate:
-        print(f"  [SIM] {machine.state.name}  → interact 故障注入 FAILED (fail_rate={fail_rate})")
+
+    def _inject_fail(reason):
+        """7×24 防御：故障注入的状态迁移安全——EVENT_INTERRUPT 状态再次失败
+        不能重复发 EVENT_INTERRUPTED（TRANSITIONS 无该边——非法迁移崩溃，
+        stress_test 50 轮实测复现）。已中断状态直接走 RECOVER_OK 重试语义。"""
         _emit(bus, execution_id, "observation",
-              detail=f"template:{step['template']} miss",
+              detail=reason,
               context={"room": sim_context["room"], "observer": "template_match",
                        "confidence": 0.31})
-        machine.on(Event.EVENT_INTERRUPTED, "injected fail")
+        if machine.state.name != "EVENT_INTERRUPT":
+            machine.on(Event.EVENT_INTERRUPTED, "injected fail")
+        else:
+            machine.on(Event.RECOVER_OK, "injected fail retry")
         return False
+
+    if kind == "interact" and fail_rate > 0 and rng.random() < fail_rate:
+        print(f"  [SIM] {machine.state.name}  → interact 故障注入 FAILED (fail_rate={fail_rate})")
+        return _inject_fail(f"template:{step['template']} miss")
     if kind == "portal":
         portal = pkg.portal(step["portal_id"])
         print(f"  [SIM] {machine.state.name}  → portal step: {portal['id']} ({portal['from']}→{portal['to']})")
@@ -88,11 +98,15 @@ def simulate_step(machine, step, pkg, sim_context, bus=None, execution_id=None,
         # BUG-060/061：verify 可注入失败——验证失败路径（恢复/重试）可覆盖
         if fail_rate > 0 and rng.random() < fail_rate:
             print(f"  [SIM] {machine.state.name}  → verify 故障注入 FAILED")
+            # 7×24 防御：同 _inject_fail 的状态迁移安全
             _emit(bus, execution_id, "observation",
                   detail=f"verify:{step.get('signal')} miss",
                   context={"room": sim_context["room"], "observer": "template_match",
                            "confidence": 0.31})
-            machine.on(Event.EVENT_INTERRUPTED, "injected verify fail")
+            if machine.state.name != "EVENT_INTERRUPT":
+                machine.on(Event.EVENT_INTERRUPTED, "injected verify fail")
+            else:
+                machine.on(Event.RECOVER_OK, "injected verify fail retry")
             return False
         # BUG-060：verify 区分模拟/已验证——SIM 标记（不冒充 VERIFIED_SUCCESS）
         print(f"  [SIM] {machine.state.name}  → verify signal={step['signal']} "

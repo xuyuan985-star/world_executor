@@ -7,9 +7,11 @@
 """
 
 
-def check_health(verbose=False, game_required=True, input_probe=False):
-    """隐藏 Bug 审查：input_probe 控制 L2 按键注入探测（默认关——
-    会向游戏按 ESC，GUI 启动检测时不能打扰用户）。"""
+def check_health(verbose=False, game_required=True, input_probe=False,
+                 auto_activate=False):
+    """7×24 防御：input_probe 控制 L2 按键注入探测（默认关——会向游戏按 ESC）；
+    auto_activate 控制是否激活游戏窗口到前台（默认关——GUI 启动不抢用户前台，
+    仅真机任务 gate 时开启）。"""
     result = {
         "window": False,
         "capture": False,
@@ -44,14 +46,16 @@ def check_health(verbose=False, game_required=True, input_probe=False):
             errors["window"] = "未找到可见的游戏窗口"
         else:
             # 前台锁定：操作前游戏必须在前台（M1-A 输入前提）
-            # 自动置顶：检测前先尝试激活游戏（用户要求"程序自动把游戏提置顶"）
+            # 自动置顶：仅 auto_activate=True（真机任务 gate）时激活——
+            # GUI 启动的健康检查不激活（用户正在用别的窗口时不能被抢前台）
             import ctypes
-            try:
-                from runtime.win_capture import set_foreground_with_retry
-                set_foreground_with_retry(game["hwnd"])
-                time.sleep(0.3)
-            except Exception:
-                pass
+            if auto_activate:
+                try:
+                    from runtime.win_capture import set_foreground_with_retry
+                    set_foreground_with_retry(game["hwnd"])
+                    time.sleep(0.3)
+                except Exception:
+                    pass
             fg = ctypes.windll.user32.GetForegroundWindow()
             result["foreground"] = fg == game["hwnd"]
             if not result["foreground"]:

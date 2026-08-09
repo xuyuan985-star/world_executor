@@ -83,6 +83,15 @@ class RuntimeAPI:
                     return gate
 
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
+            # 7×24 防御：空目标 → 明确 no_targets（不能空跑后误报 all_done——
+            # all(空dict) 恒 True 是误操作源头）
+            if not targets:
+                bus.publish(make_event("run_finished", execution_id,
+                                       context={"result": "no_targets"}))
+                self._set_state("idle")
+                self._runner = None
+                self._thread = None
+                return "no_targets"
             self._set_state("running")
             # 审查 P1：`"orch" in dir()` 恒 False（orch 首次定义在 line 98）——
             # input_mode 恒为 "dry"。改为按 mode 判定 + 运行后补正
@@ -155,8 +164,9 @@ class RuntimeAPI:
         """
         from runtime.health import check_health
         from runtime.capability import detect_capability
-        # input_probe=True：真机 gate 才做 L2 按键注入探测（会向游戏按 ESC）
-        h = check_health(input_probe=True)
+        # input_probe/auto_activate：真机 gate 才做 L2 按键注入 + 激活游戏前台
+        #（会按 ESC 并抢前台——GUI 启动的健康检查不能打扰用户）
+        h = check_health(input_probe=True, auto_activate=True)
         cap = h["capability"]
         critical = ["window", "capture", "ocr", "vlm", "foreground", "admin"]
         fails = [k for k in critical if not cap.get(k)] + [k for k in ("input_l0", "input_l1")

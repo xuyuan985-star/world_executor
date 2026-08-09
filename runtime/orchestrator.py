@@ -420,12 +420,19 @@ class WorkflowOrchestrator:
         return result
 
     def _step_verify(self, step):
+        # 7×24 稳定性：验证步骤绝不假成功——signal 缺失/验证模板缺失
+        # 都是"无法验证"，必须显式失败（目标 failed → mission 继续下一目标），
+        # 不能标记通过（否则开箱未成却记 done——误操作源头）
         signal = step.get("signal")
         if not signal:
-            return ExecutionResult(success=True, category="F2")
+            return ExecutionResult(
+                success=False, error="verify_no_signal",
+                retryable=False, category="F2_VERIFY")
         template = f"{signal}.png"
         if not self.pkg.template_exists(template):
-            return ExecutionResult(success=True, category="F2")  # 无模板则跳过
+            return ExecutionResult(
+                success=False, error="verify_template_missing",
+                retryable=False, category="F2_VERIFY")
         expected = step.get("expected", "vanished")
         timeout = step.get("timeout", 30)
         # #41：验证循环可中断（emergency / watchdog stall 立即退出）

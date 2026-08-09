@@ -257,4 +257,11 @@ def dump_vision_decision(out_dir, frame_id, evidence, decision):
     }
     p = d / f"vision_{frame_id or int(time.time())}.json"
     p.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 7×24 防御：快照目录保留最近 500 份（长时间运行拒绝频发时磁盘不爆）
+    try:
+        files = sorted(d.glob("vision_*.json"))
+        for old in files[:-500]:
+            old.unlink(missing_ok=True)
+    except Exception:
+        pass
     return p
