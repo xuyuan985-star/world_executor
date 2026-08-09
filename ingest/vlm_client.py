@@ -117,6 +117,8 @@ class QwenVLProvider(VLMProvider):
         raise RuntimeError(f"模型 {models} 全部失败: {last_err}")
 
     def _post(self, model, messages, temperature, max_tokens):
+        import time as _t
+        from runtime.metrics import METRICS
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
@@ -128,7 +130,9 @@ class QwenVLProvider(VLMProvider):
         for attempt in range(self.retries + 1):
             try:
                 GLOBAL_RATE_LIMITER.wait()  # Bug 228：全局限流（多线程共享）
+                t0 = _t.time()
                 resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                elapsed_ms = (_t.time() - t0) * 1000
                 if resp.status_code in self.QUOTA_ERRORS:
                     body = ""
                     try:
@@ -136,12 +140,21 @@ class QwenVLProvider(VLMProvider):
                     except Exception:
                         pass
                     if "quota" in body.lower() or "free" in body.lower():
+                        METRICS.model_call(elapsed_ms, error=f"quota:{body[:60]}")
                         raise QuotaExhausted(f"{model}: {body[:100]}")
                 resp.raise_for_status()
-                return resp.json()["choices"][0]["message"]["content"]
+                data = resp.json()
+                usage = (data.get("usage") or {})
+                METRICS.model_call(
+                    elapsed_ms,
+                    prompt_tokens=usage.get("prompt_tokens") or 0,
+                    completion_tokens=usage.get("completion_tokens") or 0)
+                return data["choices"][0]["message"]["content"]
             except QuotaExhausted:
                 raise
-            except Exception:
+            except Exception as e:
+                # Bug 294：错误分类统计（timeout/rate_limit/auth/json）
+                METRICS.model_call(0, error=f"{type(e).__name__}: {e}")
                 if attempt >= self.retries:
                     raise
                 time.sleep(2 * (attempt + 1))

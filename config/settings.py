@@ -134,6 +134,7 @@ def validate_config():
     """Bug 76：启动阶段配置校验（缺字段/非法值提前暴露，而非运行中才崩）。
 
     返回 (ok, [问题列表])。
+    Bug 299：关键参数范围限制（min/max 越界即报）。
     """
     problems = []
     base = get("QWEN_BASE_URL", "")
@@ -152,6 +153,22 @@ def validate_config():
                 problems.append("MIN_ACTION_INTERVAL 不能为负")
         except ValueError:
             problems.append(f"MIN_ACTION_INTERVAL 非法数值: {interval}")
+    # Bug 299：关键数值参数范围
+    threshold = get("TEMPLATE_THRESHOLD", "")
+    if threshold:
+        try:
+            v = float(threshold)
+            if not (0.0 < v <= 1.0):
+                problems.append(f"TEMPLATE_THRESHOLD={v} 应在 (0, 1]（0-1 置信度）")
+        except ValueError:
+            problems.append(f"TEMPLATE_THRESHOLD 非法数值: {threshold}")
+    rate = get("VLM_RATE_PER_MIN", "")
+    if rate:
+        try:
+            if float(rate) < 0:
+                problems.append("VLM_RATE_PER_MIN 不能为负")
+        except ValueError:
+            problems.append(f"VLM_RATE_PER_MIN 非法数值: {rate}")
     return (not problems), problems
 
 

@@ -49,13 +49,29 @@ class MissionController(QObject):
 
     def start(self, targets, mode="dry"):
         """GUI 语义化启动（路径/规格封装在 controller 内）。"""
+        self._audit(f"start mode={mode} targets={len(targets or [])}")
         spec = MissionSpec(knowledge_dir=self.knowledge_dir,
                            target_ids=targets or None,
                            mode=mode)
         self.runtime.start_mission(spec)
 
     def stop(self):
+        self._audit("stop")
         self.runtime.stop()
+
+    @staticmethod
+    def _audit(action):
+        """Bug 297：用户操作审计（谁/何时改了状态——append-only 日志）。"""
+        import time
+        from pathlib import Path
+        try:
+            root = ROOT
+            log_dir = root / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / "user_action.log", "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {action}\n")
+        except Exception:
+            pass
 
     def set_map(self, knowledge_dir):
         """Bug 94：地图切换 → 换知识目录并刷新（旧目标缓存不再残留）。"""

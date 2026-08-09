@@ -92,11 +92,31 @@ def check_knowledge_pkg():
     return errors
 
 
+def check_gui_smoke():
+    """Bug 300：GUI 层冒烟——MainWindow 可构造（验收链路 GUI 环节）。"""
+    errors = []
+    try:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])
+        from gui.pages.command_deck import CommandDeck
+        from gui.pages.placeholder import (KnowledgePage, ObservationPage,
+                                           SettingsPage, StudioPage,
+                                           WorldGraphPage)
+        for cls in (CommandDeck, KnowledgePage, ObservationPage, SettingsPage,
+                    StudioPage, WorldGraphPage):
+            p = cls([]) if cls is CommandDeck else cls()
+            p.deleteLater()
+    except Exception as e:
+        errors.append(f"GUI 冒烟失败: {type(e).__name__}: {e}")
+    return errors
+
+
 def main():
     ok = True
     for name, fn in [("guides 数据", check_guides),
                      ("点位 id 唯一", check_ids_unique),
-                     ("知识包+workflow", check_knowledge_pkg)]:
+                     ("知识包+workflow", check_knowledge_pkg),
+                     ("GUI 冒烟", check_gui_smoke)]:
         errs = fn()
         if errs:
             ok = False
