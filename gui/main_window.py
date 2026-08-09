@@ -32,6 +32,11 @@ class MainWindow(FluentWindow):
         self.setMinimumSize(1180, 720)
         # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
         self.mission_controller = mission_controller or MissionController(api)
+        # DPI 修复：窗口几何保存/恢复（游戏切分辨率时不被放大/移出屏幕）
+        self._user_geometry = None
+        self._screen_dpi = None
+        self._restore_geometry()
+        self._watch_screen_changes()
 
         self.command_deck = CommandDeck(targets)
         # Bug 53：页面构造异常隔离——单页失败不拖垮主窗口
@@ -133,8 +138,55 @@ class MainWindow(FluentWindow):
             self.command_deck.start_btn.setEnabled(False)
             self.command_deck.stop_btn.setEnabled(True)
 
+    def _restore_geometry(self):
+        """DPI 修复：启动时恢复用户上次窗口大小（QSettings）。"""
+        try:
+            from PySide6.QtCore import QSettings
+            s = QSettings("WorldExecutor", "Studio")
+            self.resize(int(s.value("win_w", 1280)), int(s.value("win_h", 760)))
+        except Exception:
+            pass
+
+    def _save_geometry(self):
+        try:
+            from PySide6.QtCore import QSettings
+            s = QSettings("WorldExecutor", "Studio")
+            s.setValue("win_w", self.width())
+            s.setValue("win_h", self.height())
+        except Exception:
+            pass
+
+    def _watch_screen_changes(self):
+        """DPI 修复：主屏几何/DPI 变化（游戏切分辨率）→ 恢复用户窗口大小。
+
+        游戏全屏切换会使 Qt 重排布局导致窗口放大/移出屏幕。
+        """
+        from PySide6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        self._screen_dpi = screen.logicalDotsPerInch()
+
+        def _on_change():
+            cur = screen.logicalDotsPerInch()
+            changed = self._screen_dpi and abs(cur - self._screen_dpi) > 1
+            self._screen_dpi = cur
+            if changed:
+                # 分辨率/DPI 切换 → 恢复用户窗口大小（居中在屏内）
+                saved = (self.width(), self.height()) if not self._user_geometry \
+                    else self._user_geometry
+                if saved and saved != (0, 0):
+                    self.resize(*saved)
+                    self._user_geometry = saved
+        try:
+            screen.logicalDotsPerInchChanged.connect(_on_change)
+            screen.geometryChanged.connect(_on_change)
+        except Exception:
+            pass
+
     def shutdown(self):
         """第 62 轮：统一关闭（controller/worker/订阅）。"""
+        self._save_geometry()  # DPI 修复：退出保存窗口大小
         try:
             self.mission_controller.stop()
         except Exception:

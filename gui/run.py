@@ -89,6 +89,10 @@ def main():
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
     app = QApplication(sys.argv)
+    # DPI 修复：游戏启动切分辨率时防 Qt 缩放舍入放大（125% 不四舍五入成 150%）
+    from PySide6.QtCore import Qt as _Qt
+    app.setHighDpiScaleFactorRoundingPolicy(
+        _Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)
 
