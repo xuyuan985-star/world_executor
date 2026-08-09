@@ -33,6 +33,13 @@ class CapabilityRegistry:
             import copy
             merged = copy.deepcopy(DEFAULT_CAPABILITIES)
             merged.update(copy.deepcopy(loaded or {}))
+            # 审查 P1：capabilities 键为非 dict（list 等）→ setdefault().update
+            # 抛 AttributeError——显式校验
+            if "capabilities" in merged and not isinstance(
+                    merged["capabilities"], dict):
+                raise CapabilityError(
+                    f"capability yaml 的 capabilities 应为对象，"
+                    f"实际 {type(merged['capabilities']).__name__}")
             merged.setdefault("capabilities", {}).update(
                 copy.deepcopy(DEFAULT_CAPABILITIES["capabilities"]))
             return merged

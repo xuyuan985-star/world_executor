@@ -69,13 +69,19 @@ def install_security_stubs(verbose=True):
 
 
 def require_m7_path(m7_root):
-    """校验 March7th 根目录结构有效后才允许注入 sys.path（防路径注入面）。"""
+    """校验 March7th 根目录结构有效后才允许注入 sys.path（防路径注入面）。
+
+    审查 P1：资产校验原为 pass（未实现）——无 config.yaml 时必须 assets/
+    存在，否则后续 FileNotFoundError 无从定位。
+    """
     m7 = Path(m7_root)
     if not (m7 / "module").is_dir():
         raise RuntimeError(f"March7th 目录结构异常（缺 module/）: {m7}")
-    if not (m7 / "config.yaml").exists() and not (m7 / "assets").is_dir():
-        # 未初始化（无 config.yaml）时 assets 必须在，否则后面 FileNotFoundError
-        pass
+    if not (m7 / "config.yaml").exists():
+        # 未初始化（无 config.yaml）时 assets 必须在，否则后续 FileNotFoundError
+        if not (m7 / "assets").is_dir():
+            raise RuntimeError(
+                f"March7th 未初始化（缺 config.yaml 且缺 assets/）: {m7}")
     return m7
 
 

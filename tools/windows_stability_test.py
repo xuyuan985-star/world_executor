@@ -86,7 +86,7 @@ def main():
                                 f" dark={dark:.2f} var={var:.1f}")
         except Exception as e:
             failures.append(f"#{i}:{type(e).__name__}")
-    rate = ok / args.frames
+    rate = ok / args.frames if args.frames > 0 else 1.0  # 审查 P1：0 帧除零
     print(f"[Test 2] 截图 {args.frames} 帧 success={rate:.2%} ({time.time()-t0:.1f}s)")
     if failures:
         print(f"         异常样本: {failures[:8]}")
@@ -138,7 +138,7 @@ def main():
                 except Exception:
                     pass
             time.sleep(0.05)
-        rate = ok / args.clicks
+        rate = ok / args.clicks if args.clicks > 0 else 1.0  # 审查 P1：0 次除零
         print(f"[Test 3] 点击 {args.clicks} 次 success={rate:.2%} "
               f"UI响应={closed_loop}/{ok}")
         if rate < 0.95:

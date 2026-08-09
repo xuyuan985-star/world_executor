@@ -35,6 +35,12 @@ class KnowledgePackage:
         if strict_schema:
             self._check_schema_version()
         self.rooms = self._load("rooms.json")
+        # 审查 P1：rooms 为畸形非 dict（如 list）时 `(self.rooms or {}).get`
+        # 抛 AttributeError——与 chests 同款防护
+        if self.rooms is not None and not isinstance(self.rooms, dict):
+            raise KnowledgeCorruptError(
+                f"知识包 {self.root.name} 的 rooms.json 应为对象，"
+                f"实际 {type(self.rooms).__name__}")
         # 注意：不能 `or []`——空 dict {} 是 falsy 会被吞成空列表（Bug 246 误报格式错误）
         self.portals = self._load("portals.json")
         if self.portals is None:

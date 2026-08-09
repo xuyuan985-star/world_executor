@@ -80,14 +80,19 @@ def _import_modules(tree):
                         mods.append(node.module)
                     else:
                         mods.append(f"{node.module}.{n.name}")
-            elif node.module and node.level > 0:
+            elif node.level > 0:
                 # 相对导入：由调用方传入当前包前缀补全（3.2-1 修复：
                 # from .step_executor import X → runtime.step_executor）
+                # 审查 P1：`from . import x`（node.module=None）此前漏边——
+                # 补全为仅包前缀
+                base = "." * node.level + (node.module or "")
                 for n in node.names:
                     if n.name == "*":
-                        mods.append("." * node.level + node.module)
+                        mods.append(base)
+                    elif base.endswith("."):
+                        mods.append(base + n.name)
                     else:
-                        mods.append(("." * node.level + node.module) + "." + n.name)
+                        mods.append(base + "." + n.name)
     return mods
 
 

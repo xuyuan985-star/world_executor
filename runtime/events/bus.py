@@ -63,10 +63,11 @@ class EventBus:
         if to_persist is not None:
             try:
                 to_persist.flush()
-            except OSError:
+            except (OSError, ValueError):
+                # 审查 P1：close() 后另一线程 flush → ValueError——一并捕获
                 import logging
                 logging.getLogger("runtime.events").warning(
-                    "事件持久化 flush 失败", exc_info=True)
+                    "事件持久化 flush 失败（可能已 close）", exc_info=True)
         callbacks = []
         with self._lock:
             for kind, ref in list(self._subscribers):

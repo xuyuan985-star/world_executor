@@ -424,10 +424,10 @@ class RealExecutor:
         params = intent.params
         # #5：模板路径/阈值进 result detail——复盘时知道点了哪个模板什么阈值
         result = self.input.click_template(
-            path, params.get("threshold", 0.85), params.get("max_retries", 3),
+            path, params.get("threshold", 0.60), params.get("max_retries", 3),
             scale_range=params.get("scale_range"))
         result.detail.update({"template": str(path),
-                              "threshold": params.get("threshold", 0.85)})
+                              "threshold": params.get("threshold", 0.60)})
         return result
 
     def _execute_text(self, intent):
@@ -513,7 +513,7 @@ class RealExecutor:
 
     # ---------- 便捷包装（调用方免构造 intent） ----------
 
-    def interact_template(self, entity_id, threshold=0.85, max_retries=3):
+    def interact_template(self, entity_id, threshold=0.60, max_retries=3):
         """entity_id = 世界实体 id（chest_A），模板解析在本层完成。
 
         #12：intent 是系统边界，非法实体（None/空）不得进入。

@@ -15,8 +15,10 @@ class GlobalHotkey(QObject):
         self._handlers = {}
         self._lock = threading.Lock()
 
-    def register(self, key, callback):
-        """注册全局热键：key='f10'；回调在主线程（信号投递）。"""
+    def register(self, key, callback=None):
+        """注册全局热键：key='f10'；回调在主线程（信号投递）。
+        callback 参数保留兼容（实际经 pressed 信号分发——审查 P1 死参数
+        保留接口但明确无行为）。"""
         import keyboard
         with self._lock:
             if key in self._handlers:

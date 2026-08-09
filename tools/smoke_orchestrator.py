@@ -537,10 +537,12 @@ def main():
                for ctx in acts) or not acts, "VLM 未定位时不应有点击成功记录"
     # #42-B12：调用级零误触断言——导航点击（move 模板）合法，
     # 但 VLM 未定位时不得出现对目标 chest 的交互点击
+    # 审查 P1：先判空再解引用（原顺序解引用先于 assert 判空，None 时先崩）
+    assert fake_input_10 is not None, "fake_input_10 未创建"
     chest_clicks = [c for c in (fake_input_10.clicks or [])
                     if isinstance(c, tuple) and len(c) == 2
                     and "chest" in str(c[1])]
-    assert fake_input_10 is not None and len(chest_clicks) == 0, \
+    assert len(chest_clicks) == 0, \
         f"VLM 未定位时仍发生目标交互点击: {chest_clicks}"
     print("[ok] VLM 定位失败 → F2_COORD 失败（事件级+调用级零目标点击）PASS")
 

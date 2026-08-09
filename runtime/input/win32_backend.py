@@ -70,9 +70,10 @@ class Win32Backend(InputBackend):
         return InputResult(success=True, action="move", backend=self.name)
 
     def press_key(self, key, wait_time=0.2):
-        VK = {"esc": 0x1B, "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44,
-              "m": 0x4D, "space": 0x20, "enter": 0x0D, "tab": 0x09}
-        vk = VK.get(str(key).lower(), ord(str(key).upper()[0]))
+        vk = self._vk(key)
+        if vk is None:
+            return InputResult(success=False, action="press_key", backend=self.name,
+                               error=f"unknown_key:{key}")
         KEYEVENTF_KEYUP = 0x0002
         self.user32.keybd_event(vk, 0, 0, 0)
         self.pressed_keys.add(vk)  # Bug 386：按下状态登记
@@ -85,9 +86,25 @@ class Win32Backend(InputBackend):
 
     def release_key(self, key):
         """#42：仅发送 keyup，不按 wait_time 等待。"""
-        VK = {"esc": 0x1B, "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44,
-              "m": 0x4D, "space": 0x20, "enter": 0x0D, "tab": 0x09}
-        vk = VK.get(str(key).lower(), ord(str(key).upper()[0]))
+        vk = self._vk(key)
+        if vk is None:
+            return InputResult(success=False, action="release_key", backend=self.name,
+                               error=f"unknown_key:{key}")
         self.user32.keybd_event(vk, 0, 0x0002, 0)
         self.pressed_keys.discard(vk)
         return InputResult(success=True, action="release_key", backend=self.name)
+
+    @staticmethod
+    def _vk(key):
+        """审查 P1：多字符键名显式映射——原 ord(首字母) 导致 shift→S/ctrl→C
+        （emergency_stop 释放 shift 实际按 S）。未知键返回 None（显式失败）。"""
+        VK = {"esc": 0x1B, "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44,
+              "m": 0x4D, "space": 0x20, "enter": 0x0D, "tab": 0x09,
+              "shift": 0x10, "ctrl": 0x11, "alt": 0x12,
+              "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27}
+        k = str(key).lower()
+        if k in VK:
+            return VK[k]
+        if len(k) == 1 and k.isalnum():
+            return ord(k.upper())
+        return None

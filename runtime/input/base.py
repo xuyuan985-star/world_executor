@@ -43,6 +43,10 @@ class InputBackendProtocol(Protocol):
 
 
 class InputBackend:
+    """审查 P1：基类补齐协议全部方法——此前缺 click_template/click_text，
+    导致 Win32Backend/MockBackend 不满足 InputBackendProtocol（isinstance=False），
+    set_input_backend 会拒绝注入真实后端。"""
+
     name = "base"
 
     def click(self, x, y) -> InputResult:
@@ -56,4 +60,11 @@ class InputBackend:
 
     def release_key(self, key) -> InputResult:
         """#42：紧急释放（keyDown→keyUp 异常后兜底，防卡键）。"""
+        raise NotImplementedError
+
+    def click_template(self, path, threshold, max_retries,
+                       scale_range=None) -> InputResult:
+        raise NotImplementedError
+
+    def click_text(self, text, include, max_retries, crop) -> InputResult:
         raise NotImplementedError

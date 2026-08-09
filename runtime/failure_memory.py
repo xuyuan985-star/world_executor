@@ -1,12 +1,16 @@
 """FailureMemory（Sprint E-10：失败即经验——jsonl 追加式，失败学习输入）。
 
 Planner/策略层可查询历史失败（同目标/同原因频率），用于降低置信或换策略。
+审查 P1：record 加锁（GUI + runner 并发写同一 jsonl 可能交错损坏行）。
 """
 import json
+import threading
 import time
 from pathlib import Path
 
 MEMORY_PATH = Path(__file__).resolve().parent.parent / "memory" / "failures.jsonl"
+
+_record_lock = threading.Lock()
 
 
 class FailureMemory:
@@ -15,15 +19,17 @@ class FailureMemory:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def record(self, failure, context=None, solution=None):
-        """追加一条失败经验。"""
+        """追加一条失败经验（线程安全——单行原子写）。"""
         entry = {
             "ts": time.time(),
             "failure": failure,
             "context": context or {},
             "solution": solution,
         }
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        with _record_lock:
+            with open(self.path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                f.flush()
         return entry
 
     def query(self, failure=None, target=None, limit=20):

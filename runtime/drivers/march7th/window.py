@@ -49,12 +49,17 @@ def set_foreground_with_retry(hwnd, attempts=3):
         if fg == hwnd:
             return True
         if user32.IsWindowVisible(hwnd):
-            fg_thread = kernel32.GetCurrentThreadId()
+            # 审查 P1：AttachThreadInput 应 attach【前台窗口】线程与目标窗口线程——
+            # 原代码 attach 调用线程自身 id（Python 线程）导致回退路径无效
+            fg = user32.GetForegroundWindow()
+            fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
             win_thread = user32.GetWindowThreadProcessId(hwnd, None)
-            user32.AttachThreadInput(fg_thread, win_thread, True)
+            if fg_thread and fg_thread != win_thread:
+                user32.AttachThreadInput(fg_thread, win_thread, True)
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
-            user32.AttachThreadInput(fg_thread, win_thread, False)
+            if fg_thread and fg_thread != win_thread:
+                user32.AttachThreadInput(fg_thread, win_thread, False)
     return False
 
 

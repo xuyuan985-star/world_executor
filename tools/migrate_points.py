@@ -84,7 +84,10 @@ def main():
                 continue
             # 事务：backup → write tmp → verify → replace
             rel = f.relative_to(GUIDES)
-            backup_target = backup_dir / rel
+            # 审查 P1：备份带时间戳（原每次覆盖同一路径——上一轮备份丢失）
+            import time as _t
+            backup_target = backup_dir / rel.with_name(
+                f"{rel.name}.{_t.strftime('%Y%m%d%H%M%S')}.bak")
             backup_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(f, backup_target)  # 231：迁移前备份
             tmp = f.with_name(f.name + ".tmp")

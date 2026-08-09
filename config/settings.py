@@ -108,7 +108,8 @@ def install_log_redaction():
         def filter(self, record):
             try:
                 msg = str(record.msg)
-                if msg and any(pat for pat, _ in _SECRET_PATTERNS):
+                # 审查 P1：any() 对非空列表恒真——直接按 msg 非空处理
+                if msg:
                     record.msg = redact_secrets(msg)
                 if record.args:
                     record.args = tuple(

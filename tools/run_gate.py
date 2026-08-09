@@ -44,7 +44,10 @@ def run():
     def security():
         import security.quarantine as q
         try:
-            t = q.sanitize_text(r"C:\Users\xuyua\x") + q.sanitize_text("C:/Users/xuyua/y")
+            # 审查 P1：原硬编码本机用户名——换机器即 FAIL。用任意用户路径
+            from pathlib import Path as _P
+            t = q.sanitize_text(str(_P.home() / "someuser" / "file")) \
+                + q.sanitize_text("C:/Users/anyuser/y")
             assert "<USER>" in t, "sanitize 未生效"
             stub = q.install_pylnk3_stub(verbose=False)
             assert sys.modules.get("pylnk3") is stub, "stub 未注入"
@@ -107,10 +110,10 @@ def run():
             ("pipeline", pipeline, False),
             ("dry_run", dryrun, False)], start=1):
         if skip:
-            print(f"[{order}/9] {name} ... SKIP")
+            print(f"[{order}/10] {name} ... SKIP")
             results.append({"name": name, "status": "SKIP"})
             continue
-        print(f"[{order}/9] {name} ...")
+        print(f"[{order}/10] {name} ...")
         ok, detail = func()
         results.append({"name": name, "status": "PASS" if ok else "FAIL",
                         "detail": detail})

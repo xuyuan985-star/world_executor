@@ -185,8 +185,6 @@ class MainWindow(FluentWindow):
         # 同时开启 HUD（对齐 M7：游戏窗口左下角日志层）
         self._start_hud()
 
-    _F10_ID = 0xF10
-
     def _start_hud(self):
         """F10 全局热键 + 游戏窗口 HUD 日志层（对齐 M7）。"""
         try:
@@ -464,6 +462,17 @@ class MainWindow(FluentWindow):
             # 观察中心同步接收事件统计
             if hasattr(self.observation, "on_event"):
                 self.observation.on_event(event)
+            # 审查 P1：完成状态持久化接线——目标 done 时记录（原实现是死代码）
+            if event.type == "target_progress" \
+                    and event.context.get("status") == "done" \
+                    and event.context.get("target"):
+                try:
+                    self.mission_controller.record_completed(
+                        [event.context["target"]])
+                except Exception:
+                    import logging
+                    logging.getLogger("gui.main_window").exception(
+                        "完成状态持久化失败")
             # 任务结束/报错 → HUD 收起（不再卡在游戏窗口）
             if event.type in ("run_finished", "pause_requested") \
                     and getattr(self, "_hud", None) is not None:

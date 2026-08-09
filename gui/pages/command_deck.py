@@ -52,10 +52,6 @@ def category_text(code):
     return CATEGORY_TEXT.get(code, f"{code}" if code else "unknown")
 
 
-STATUS_TEXT_CN = {"pending": "待命", "running": "进行中", "succeeded": "完成",
-                  "failed": "失败", "interrupted": "中断"}
-
-
 def _status_color(status):
     from PySide6.QtGui import QColor
     return QColor({"running": "#4FD1C5", "succeeded": "#3BA55D",
