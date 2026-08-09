@@ -90,8 +90,11 @@ def dry_run(pkg_dir, target_ids=None, bus=None, execution_id=None):
     caps = CapabilityRegistry()
     try:
         caps.check_requirements(pkg.meta.get("requires", []), knowledge_id=pkg.root.name)
-    except Exception as e:
-        print(f"  [ERROR] {e}")
+    except Exception:
+        # Bug 77：能力检查失败带完整堆栈
+        import logging
+        logging.getLogger("runtime.dry_run").exception("capability check failed")
+        print("  [ERROR] capability check failed")
         return 1
 
     from ingest.compiler.validate_graph import validate

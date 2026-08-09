@@ -99,6 +99,9 @@ class FakeVision:
         return None
 
     def to_absolute(self, nx, ny):
+        # Bug 71：归一化坐标边界检查（防 nx=2/ny=-1 产生屏幕外坐标）
+        nx = max(0.0, min(1.0, nx))
+        ny = max(0.0, min(1.0, ny))
         return int(nx * 1920), int(ny * 1080)
 
 
@@ -118,6 +121,9 @@ class FakeVisionDPI125:
         return None
 
     def to_absolute(self, nx, ny):
+        # Bug 71：归一化坐标边界检查（防 nx=2/ny=-1 产生屏幕外坐标）
+        nx = max(0.0, min(1.0, nx))
+        ny = max(0.0, min(1.0, ny))
         return int(nx * self.PHYSICAL[0]), int(ny * self.PHYSICAL[1])
 
 

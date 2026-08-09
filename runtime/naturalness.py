@@ -11,16 +11,26 @@ class NaturalnessPolicy:
     def __init__(self, enabled=True, seed=None):
         self.enabled = enabled
         self._rng = random.Random(seed)
+        # Bug 75：参数范围启动即校验（非法配置提前暴露，不产生随机异常行为）
+        assert enabled in (True, False), f"enabled 必须为 bool: {enabled}"
         self.click_delay_range = (200, 800)
         self.interaction_delay_range = (500, 1500)
+        assert self.click_delay_range[0] >= 0, "click_delay_range 下界不能为负"
+        assert self.interaction_delay_range[0] >= 0, "interaction_delay_range 下界不能为负"
         self.transition_jitter_ms = 1000
+        assert self.transition_jitter_ms >= 0, "transition_jitter_ms 不能为负"
         self.sprint_duration_variance = 0.15
+        assert 0 <= self.sprint_duration_variance < 1, "sprint_duration_variance 应在 [0,1)"
         self.correction_interval_variance = 0.2
+        assert 0 <= self.correction_interval_variance < 1, "correction_interval_variance 应在 [0,1)"
         self.max_continuous_rotate_s = 3
+        assert self.max_continuous_rotate_s > 0, "max_continuous_rotate_s 必须为正"
         self.max_retry = {"interaction": 2, "portal": 2, "movement": 3}
         self.require_manual_after_limit = True
         self.max_continuous_runtime_min = 60
+        assert self.max_continuous_runtime_min > 0, "max_continuous_runtime_min 必须为正"
         self.idle_break = (3, 10)
+        assert self.idle_break[1] > self.idle_break[0] >= 0, "idle_break 区间非法"
 
     def click_delay(self):
         return self._delay(*self.click_delay_range)

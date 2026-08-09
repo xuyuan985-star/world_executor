@@ -24,14 +24,18 @@ sys.path.insert(0, str(ROOT))
 
 def run():
     import argparse
+    import os
     parser = argparse.ArgumentParser(description="WorldExecutor 门禁")
     parser.add_argument("--skip-smoke", action="store_true", help="跳过 smoke_orchestrator")
     args = parser.parse_args()
 
     def py(args_str):
         import shlex
+        # Bug 64/65：cwd 固定仓库根 + PYTHONPATH 继承注入（虚拟环境/任意启动目录都稳）
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT)
         r = subprocess.run([sys.executable] + shlex.split(args_str),
-                           cwd=str(ROOT), capture_output=True, text=True)
+                           cwd=str(ROOT), capture_output=True, text=True, env=env)
         return r.returncode == 0, (r.stdout + r.stderr)[-400:]
 
     def architecture():

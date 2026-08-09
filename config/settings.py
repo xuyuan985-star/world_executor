@@ -57,6 +57,44 @@ def default_map():
     return get("DEFAULT_MAP", "02_herta_space_station")
 
 
+def qwen_probe_models():
+    """模型探测候选列表（json 数组字符串，默认空 → 调用方用内置默认）。"""
+    raw = get("QWEN_PROBE_MODELS", "")
+    if not raw:
+        return []
+    import json
+    try:
+        val = json.loads(raw)
+        return [str(m) for m in val] if isinstance(val, list) else []
+    except Exception:
+        return []
+
+
+def validate_config():
+    """Bug 76：启动阶段配置校验（缺字段/非法值提前暴露，而非运行中才崩）。
+
+    返回 (ok, [问题列表])。
+    """
+    problems = []
+    base = get("QWEN_BASE_URL", "")
+    if base and not base.startswith(("http://", "https://")):
+        problems.append("QWEN_BASE_URL 应为 http(s) 地址")
+    model = get("QWEN_MODEL", "")
+    if model and not model.strip():
+        problems.append("QWEN_MODEL 为空")
+    vlm = get("QWEN_VLM_ANALYZE_MODEL", "")
+    if vlm and not vlm.strip():
+        problems.append("QWEN_VLM_ANALYZE_MODEL 为空")
+    interval = get("MIN_ACTION_INTERVAL", "")
+    if interval:
+        try:
+            if float(interval) < 0:
+                problems.append("MIN_ACTION_INTERVAL 不能为负")
+        except ValueError:
+            problems.append(f"MIN_ACTION_INTERVAL 非法数值: {interval}")
+    return (not problems), problems
+
+
 def knowledge_root():
     return ROOT / "knowledge"
 

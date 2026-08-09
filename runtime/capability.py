@@ -56,9 +56,13 @@ def detect_capability(health_dict=None):
         try:
             from runtime.health import check_health
             health_dict = check_health() or {}
-        except Exception as e:
+        except Exception:
+            # Bug 77：异常带完整堆栈（health 探测失败原因可定位）
+            import logging
+            logging.getLogger("runtime.capability").exception(
+                "health probe failed")
             return CapabilityReport(mode="BLOCKED",
-                                    reasons=[f"health probe failed: {e!r}"])
+                                    reasons=["health probe failed"])
     rep = CapabilityReport(
         window=bool(health_dict.get("window")),
         capture=bool(health_dict.get("capture")),
