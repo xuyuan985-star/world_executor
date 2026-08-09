@@ -1,4 +1,5 @@
 """Bug 229：统一时间格式（ISO8601 UTC）——日志/JSON/事件统一出口。"""
+import re
 import time
 from datetime import datetime, timezone
 
@@ -15,3 +16,14 @@ def now_iso():
 
 def utc_timestamp():
     return time.time()
+
+
+def sanitize_filename(name, fallback="unnamed"):
+    """Bug 518：文件名清洗——Windows 非法字符替换，长度截断。
+
+    非法：\\ / : * ? " < > |
+    """
+    cleaned = re.sub(r'[\\/:*?"<>|]', "_", str(name)).strip()
+    cleaned = cleaned.rstrip(". ")
+    cleaned = cleaned[:120] or fallback
+    return cleaned

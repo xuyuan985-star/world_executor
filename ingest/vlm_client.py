@@ -118,7 +118,12 @@ class QwenVLProvider(VLMProvider):
 
     def _post(self, model, messages, temperature, max_tokens):
         import time as _t
+        from runtime.circuit_breaker import VLM_BREAKER, CircuitOpenError
         from runtime.metrics import METRICS
+        # Bug 507：熔断——连续失败不持续打 API（冷却后探针恢复）
+        if not VLM_BREAKER.allow():
+            METRICS.model_call(0, error="circuit_open")
+            raise QuotaExhausted(f"{model}: 熔断中（连续失败，冷却后自动恢复）")
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
@@ -149,12 +154,14 @@ class QwenVLProvider(VLMProvider):
                     elapsed_ms,
                     prompt_tokens=usage.get("prompt_tokens") or 0,
                     completion_tokens=usage.get("completion_tokens") or 0)
+                VLM_BREAKER.record_success()  # 成功 → 计数清零
                 return data["choices"][0]["message"]["content"]
             except QuotaExhausted:
                 raise
             except Exception as e:
                 # Bug 294：错误分类统计（timeout/rate_limit/auth/json）
                 METRICS.model_call(0, error=f"{type(e).__name__}: {e}")
+                VLM_BREAKER.record_failure()  # Bug 507：失败计数
                 if attempt >= self.retries:
                     raise
                 time.sleep(2 * (attempt + 1))
