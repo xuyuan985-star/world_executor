@@ -20,6 +20,13 @@ class ExecutionResult:
     category: str = "F1"
     code: ErrorCode = None  # #17-A：稳定错误码（error 字符串的规范化形式）
 
+    def __post_init__(self):
+        # BUG-048：code 与 retryable 强制一致——PERMANENT 码不可被手动标 True
+        if self.code is not None:
+            from runtime.errors import PERMANENT_CODES
+            if self.code in PERMANENT_CODES:
+                self.retryable = False
+
     def to_context(self):
         ctx = {"success": self.success}
         if self.code is not None:

@@ -57,9 +57,17 @@ RECOVERY_POLICY = [
 
 
 def recovery_for(error):
-    """#19：按失败特征给出恢复策略建议。"""
+    """#19：按失败特征给出恢复策略建议。
+
+    BUG-051：优先走 ErrorCode 表（RECOVERY_BY_CODE——稳定契约）；
+    字符串子串表仅兜底 backend 外来文本。
+    """
     if not error:
         return "retry"
+    from runtime.errors import code_of, RECOVERY_BY_CODE
+    code = code_of(error)
+    if code is not None and code in RECOVERY_BY_CODE:
+        return RECOVERY_BY_CODE[code]
     for key, action in RECOVERY_POLICY:
         if key in error:
             return action
@@ -340,8 +348,13 @@ class RealExecutor:
             return ExecutionResult(success=False, error="aborted_before_execute",
                                    retryable=True, category="F3")
         # BUG-50：输入节流——VLM/OCR 抖动导致的连点保护（默认关，真机开启）
+        # BUG-050：按风险加权——high/critical 动作间隔更长（防连续高风险操作）
         if self.min_action_interval > 0:
-            wait = self._last_action_at + self.min_action_interval - time.time()
+            risk_weight = {"low": 1.0, "medium": 1.5,
+                           "high": 3.0, "critical": 5.0}.get(
+                               getattr(intent, "risk", "low"), 1.0)
+            interval = self.min_action_interval * risk_weight
+            wait = self._last_action_at + interval - time.time()
             if wait > 0:
                 time.sleep(wait)
         self._last_action_at = time.time()

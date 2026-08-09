@@ -527,8 +527,18 @@ class WorkflowOrchestrator:
                 guard_store = self.executor.guard.evidence_store
             if guard_store is not None:
                 import time as _t
+                # BUG-047：evidence 生命周期——注册时清理过期（TTL×2）+ 容量上限
                 guard_store[evidence_id] = {"timestamp": _t.time(),
                                             "confidence": vision_conf}
+                cutoff = _t.time() - (getattr(self.executor.guard, "max_age", 3.0) * 2)
+                stale = [k for k, v in guard_store.items()
+                         if v.get("timestamp", 0) < cutoff]
+                for k in stale:
+                    guard_store.pop(k, None)
+                if len(guard_store) > 500:
+                    # LRU 近似：删最早注册的一批
+                    for k in sorted(guard_store, key=lambda k: guard_store[k].get("timestamp", 0))[:100]:
+                        guard_store.pop(k, None)
             intent = replace(intent, vision_verified=True,
                              vision_confidence=vision_conf,
                              evidence_id=evidence_id)

@@ -37,8 +37,23 @@ class ActionGuard:
         expired = evidence_age is not None and evidence_age > self.max_age
         risk = calculate_risk(intent, observation, evidence_expired=expired)
 
+        # BUG-046：风险等级由动态计算驱动（intent.risk 静态字段可伪造）——
+        # risk score 高 → 更高置信要求 / critical 拒绝自动执行
+        risk_level = "low"
+        if risk >= 70:
+            risk_level = "critical"
+        elif risk >= 40:
+            risk_level = "high"
+        elif risk >= 20:
+            risk_level = "medium"
+        # 显式声明（workflow 标注）与动态推导取更严者
+        declared = getattr(intent, "risk", "low")
+        _ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+        if _ORDER.get(declared, 0) > _ORDER[risk_level]:
+            risk_level = declared
+
         # BUG-54：critical 等级拒绝自动执行（人工确认）
-        if is_critical(getattr(intent, "risk", "low")):
+        if is_critical(risk_level):
             return {"allowed": False, "risk": risk, "reason": "RISK_CRITICAL",
                     "limit": None}
 
@@ -47,7 +62,7 @@ class ActionGuard:
             return {"allowed": False, "risk": risk, "reason": "VISION_EXPIRED",
                     "limit": None}
         # BUG-54：risk 等级 → 置信要求（high 需双通道高置信）
-        required_conf = confidence_for(getattr(intent, "risk", "low"))
+        required_conf = confidence_for(risk_level)
         conf_threshold = max(self.min_confidence, required_conf)
         if intent.vision_verified and intent.vision_confidence < conf_threshold:
             return {"allowed": False, "risk": risk, "reason": "VISION_LOW_CONFIDENCE",
