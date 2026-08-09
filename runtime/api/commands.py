@@ -68,6 +68,16 @@ class RuntimeAPI:
                 return "invalid"
 
             if spec.mode == "real":
+                # 自动置顶：gate 检查前先激活游戏窗口（否则 foreground=False
+                # 永远拦——激活发生在 orchestrator.run_mission 太晚）
+                try:
+                    from runtime.drivers.march7th.window import find_game_window
+                    from runtime.win_capture import set_foreground_with_retry
+                    game = find_game_window()
+                    if game:
+                        set_foreground_with_retry(game["hwnd"])
+                except Exception:
+                    pass
                 gate = self._gate_check(bus, execution_id, pkg)
                 if gate is not None:
                     return gate

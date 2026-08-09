@@ -55,7 +55,7 @@ class ObservationPage(BasePage):
         # 游戏画面卡片（实时监测）
         frame_card = CardWidget()
         card_title(frame_card, "游戏画面")
-        self.frame_label = QLabel("点击「抓取画面」获取当前帧")
+        self.frame_label = QLabel("实时画面加载中…")
         self.frame_label.setAlignment(Qt.AlignCenter)
         self.frame_label.setMinimumHeight(200)
         self.frame_label.setStyleSheet(
@@ -63,12 +63,20 @@ class ObservationPage(BasePage):
             "color: #7A90B0;")
         card_layout(frame_card).addWidget(self.frame_label)
         cap_row = QHBoxLayout()
-        self.capture_btn = QPushButton("抓取画面")
+        self.capture_btn = QPushButton("立即刷新")
         self.capture_btn.clicked.connect(self._capture)
         cap_row.addWidget(self.capture_btn)
         cap_row.addStretch(1)
         card_layout(frame_card).addLayout(cap_row)
         self.content_layout.addWidget(frame_card, 1)
+
+        # 实时自动刷新（每 5 秒抓一帧——页面可见时）
+        from PySide6.QtCore import QTimer
+        self._auto_refresh = QTimer(self)
+        self._auto_refresh.setInterval(5000)
+        self._auto_refresh.timeout.connect(self._capture_if_visible)
+        self._auto_refresh.start()
+        QTimer.singleShot(1000, self._capture_if_visible)
 
         # 统计卡片
         stats_card = CardWidget()
@@ -90,6 +98,14 @@ class ObservationPage(BasePage):
         self.content_layout.addWidget(timeline_card)
 
         self._worker = None
+
+    def _capture_if_visible(self):
+        """实时自动刷新——仅页面可见（isVisibleTo 主窗口）时抓帧，防后台空转。"""
+        if not self.isVisible():
+            return
+        if getattr(self, "_worker", None) is not None and self._worker.isRunning():
+            return  # 上一帧还在抓——跳过（防队列堆积）
+        self._capture()
 
     def _capture(self):
         """后台线程抓帧 → 主线程显示（Qt 跨线程安全链）。"""

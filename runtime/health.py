@@ -42,7 +42,14 @@ def check_health(verbose=False, game_required=True):
             errors["window"] = "未找到可见的游戏窗口"
         else:
             # 前台锁定：操作前游戏必须在前台（M1-A 输入前提）
+            # 自动置顶：检测前先尝试激活游戏（用户要求"程序自动把游戏提置顶"）
             import ctypes
+            try:
+                from runtime.win_capture import set_foreground_with_retry
+                set_foreground_with_retry(game["hwnd"])
+                time.sleep(0.3)
+            except Exception:
+                pass
             fg = ctypes.windll.user32.GetForegroundWindow()
             result["foreground"] = fg == game["hwnd"]
             if not result["foreground"]:

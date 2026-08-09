@@ -179,6 +179,18 @@ def main():
     except Exception:
         import traceback
         traceback.print_exc()
+        # 启动失败必须落盘（pythonw 无控制台——弹窗之外日志可查）
+        try:
+            import datetime
+            from pathlib import Path
+            err_log = ROOT / "logs" / "startup_error.log"
+            err_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(err_log, "a", encoding="utf-8") as f:
+                f.write("\n===== " + datetime.datetime.now().isoformat()
+                        + " =====\n")
+                f.write(traceback.format_exc())
+        except Exception:
+            pass
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox
             app = QApplication.instance() or QApplication(sys.argv)
