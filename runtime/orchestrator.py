@@ -39,7 +39,7 @@ class SessionWatchdog(threading.Thread):
     """
 
     def __init__(self, bus, execution_id, stall_seconds=WATCHDOG_STALL_SECONDS):
-        super().__init__(daemon=True)
+        super().__init__(daemon=True, name="SessionWatchdog")  # #163
         self.bus = bus
         self.execution_id = execution_id
         self.stall_seconds = stall_seconds

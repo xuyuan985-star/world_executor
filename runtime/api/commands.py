@@ -102,7 +102,8 @@ class RuntimeAPI:
         # GUI-2：runner_factory 注入（诊断/测试用）——此前参数存在但被忽略
         make_runner = runner_factory or (lambda bus_, eid: runner(bus_, eid))
         self._thread = threading.Thread(
-            target=lambda: make_runner(self.bus, self.execution_id), daemon=True)
+            target=lambda: make_runner(self.bus, self.execution_id), daemon=True,
+            name="RuntimeAPI-runner")  # #163：线程命名（日志可辨识）
         self._thread.start()
         return self.execution_id
 
