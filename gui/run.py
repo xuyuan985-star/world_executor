@@ -42,7 +42,8 @@ def _elevate_if_needed():
 
 def main():
     import ctypes
-    ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
+    if sys.platform == "win32":  # AI 审计 B2：非 Windows 不调 windll
+        ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
     app = QApplication(sys.argv)

@@ -1,6 +1,10 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QLabel
 
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent  # world_executor 根（AI 审计 B1）
+
 from gui.pages.command_deck import CommandDeck
 from gui.pages.placeholder import (KnowledgePage, ObservationPage, SettingsPage,
                                    StudioPage, WorldGraphPage)

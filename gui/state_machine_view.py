@@ -101,18 +101,23 @@ class StateMachineView(QScrollArea):
         h = self._canvas.height()
         n = len(MAIN_STATES)
         margin = 40
-        span = (w - margin * 2) / (n - 1)
+        # AI 审计 B3：画布过小（w < margin*2）→ 负跨度，退化为均匀 0~w 布局
+        span = (w - margin * 2) / (n - 1) if w > margin * 2 and n > 1 \
+            else (w / max(n, 1))
         centers = []
         for i, name in enumerate(MAIN_STATES):
-            cx = margin + i * span
+            cx = (margin + i * span) if w > margin * 2 else (i * span)
             cy = 60
             centers.append((cx, cy, name))
             self._draw_node(painter, cx, cy, name)
         for i in range(n - 1):
             self._draw_edge(painter, centers[i], centers[i + 1])
         if self._current:
-            cx, cy, _ = next(c for c in centers if c[2] == self._current)
-            self._draw_pulse(painter, cx, cy)
+            # AI 审计 B3：_current 不在 MAIN_STATES 时用 next(default) 防 StopIteration
+            node = next((c for c in centers if c[2] == self._current), None)
+            if node:
+                cx, cy, _ = node
+                self._draw_pulse(painter, cx, cy)
         if self._overlays:
             self._draw_overlays(painter)
 
