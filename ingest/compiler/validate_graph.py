@@ -78,8 +78,8 @@ def validate(pkg: KnowledgePackage, verbose=True):
     if room_ids and spawn and pkg.portals:
         adj = {}
         for p in pkg.portals or []:
+            # 有向边（传送门单向语义：from → to）
             adj.setdefault(p.get("from"), set()).add(p.get("to"))
-            adj.setdefault(p.get("to"), set()).add(p.get("from"))
         reachable = set()
         stack = [spawn] if spawn in room_ids else []
         while stack:
