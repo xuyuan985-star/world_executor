@@ -1,0 +1,28 @@
+{
+  "protocol": "1.3",
+  "target_id": "herta_space_station_storage_zone_0054_b3d1",
+  "room": "storage_zone",
+  "steps": [
+    {
+      "type": "interact",
+      "template": "herta_space_station_storage_zone_0054_b3d1.png",
+      "threshold": 0.8,
+      "scale_range": [
+        0.9,
+        1.1
+      ],
+      "retry": 2,
+      "verify": {
+        "ocr": [
+          "宝箱"
+        ]
+      }
+    },
+    {
+      "type": "verify",
+      "signal": "herta_space_station_storage_zone_0054_b3d1",
+      "expected": "vanished",
+      "timeout": 15
+    }
+  ]
+}
