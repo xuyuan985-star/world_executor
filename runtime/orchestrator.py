@@ -456,11 +456,34 @@ class WorkflowOrchestrator:
 
     # ---------- 会话级（多目标） ----------
 
+    def _ensure_foreground(self):
+        """#72：任务开始时主动把游戏窗口拉到前台（抄 March7th window 激活逻辑）。
+
+        操作前激活窗口（C.4 协议）——不等失焦检测，开始即抢占前台。
+        """
+        if not self.foreground_check:
+            return True
+        try:
+            from runtime.drivers.march7th.window import find_game_window
+            from runtime.win_capture import set_foreground_with_retry
+            game = find_game_window()
+            if game is None:
+                return False
+            set_foreground_with_retry(game["hwnd"])
+            import ctypes
+            fg = ctypes.windll.user32.GetForegroundWindow()
+            return fg == game["hwnd"]
+        except Exception:
+            return False
+
     def run_mission(self, target_ids, emergency=True):
         if emergency:  # #10：emergency=False 不启动安全线程
             self.start_emergency()
         self.start_watchdog()
         try:
+            # 开始即激活游戏窗口（自主锁定窗口——不再"检测到失焦才处理"）
+            self._foreground_retried = False
+            self._ensure_foreground()
             results = {}
             for tid in target_ids:
                 if self._aborted():
