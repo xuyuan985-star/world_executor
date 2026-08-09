@@ -6,6 +6,13 @@ import sys
 
 
 def main():
+    # pythonw 启动（无控制台）时 stdout/stderr 为 None——print 会崩，重定向
+    if sys.stdout is None:
+        import io
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        import io
+        sys.stderr = io.StringIO()
     from app.launcher import run
     sys.exit(run(sys.argv[1:]))
 

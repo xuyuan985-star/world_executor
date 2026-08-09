@@ -4,6 +4,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# DPI 警告修复：RoundPreferFloor 必须在任何 QGuiApplication 创建前设置
+#（此前在 app 创建后才调用——Qt 警告且不生效）
+from PySide6.QtCore import Qt as _Qt
+_Qt.setHighDpiScaleFactorRoundingPolicy(
+    _Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
+
 from PySide6.QtWidgets import QApplication
 
 from gui.main_window import MainWindow
@@ -213,12 +219,8 @@ def _start():
     # Bug 32：复用提权检查阶段创建的 QApplication（Qt 只允许一个实例）
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv)
-    # DPI 修复：游戏启动切分辨率时防 Qt 缩放舍入放大（125% 不四舍五入成 150%）
-    # Bug 14：不再手动 SetProcessDPIAware——Qt6 创建 QApplication 时统一接管
-    #（进程级 DPI awareness 由 Qt 设置，mss/win32 截图运行时自动沿用）
-    from PySide6.QtCore import Qt as _Qt
-    app.setHighDpiScaleFactorRoundingPolicy(
-        _Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
+    # DPI：RoundPreferFloor 已在模块导入时设置（早于任何 QApplication 创建——
+    # 此处不再重复调用，Qt 警告消除）
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)
 
