@@ -31,8 +31,11 @@ class Win32Backend(InputBackend):
         MOUSEEVENTF_LEFTUP = 0x0004
 
         class MOUSEINPUT(ctypes.Structure):
+            # dwExtraInfo 必须 ULONG_PTR（64 位下 c_size_t）——c_ulong 会致
+            # 结构大小错误，SendInput 拒绝（管理员下 move 成功 click 失败的根因）
             _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_ulong),
-                        ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_ulong)]
+                        ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong),
+                        ("dwExtraInfo", ctypes.c_size_t)]
 
         class INPUT(ctypes.Structure):
             _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]

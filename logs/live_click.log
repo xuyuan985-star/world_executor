@@ -1,0 +1,10 @@
+[diag] IsUserAnAdmin=True
+=== live_click_test（管理员）===
+[ok] 截图 (1920, 1080) pos=(632, 61, 1920, 1080)
+[ok] 命中 herta_space_station_base_zone_0006_87d3.png 置信 0.63 → 绝对 (1581,258)
+[diag] SendInput move ret=1
+[diag] SendInput leftdown ret=1
+[diag] SendInput leftup ret=1
+[ok] 点击 成功 
+[verify] 点击后模板置信 0.63
+CLICK TEST DONE
