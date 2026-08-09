@@ -1,4 +1,4 @@
-﻿"""统一门禁入口（目标 3：CI 门禁）——一条命令跑完所有可自动化检查。
+"""统一门禁入口（目标 3：CI 门禁）——一条命令跑完所有可自动化检查。
 
     python tools/run_gate.py            # 全量（smoke 需 mock 即可跑）
     python tools/run_gate.py --skip-smoke   # 跳过 orchestrator 冒烟

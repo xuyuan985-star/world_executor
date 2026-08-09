@@ -126,6 +126,8 @@ class ObservationSnapshot(CardWidget):
         self._history = []
 
     def set_frame(self, pixmap_or_none):
+        # Bug 6：先 clear 再 set——防旧 pixmap 残留（setPixmap 不保证清理）
+        self._shot.clear()
         if pixmap_or_none is not None:
             self._shot.setPixmap(pixmap_or_none)
         else:
@@ -269,18 +271,22 @@ class CommandDeck(BasePage):
         self.target_combo = ComboBox()
         self._map_groups = {}
         self._region_groups = {}
+        self._combo_data = []  # 每项结构化数据 (kind, payload)，防同名串区
         combo_items = ["全部目标"]
+        self._combo_data.append(("all", None))
         for t in self._targets:
             map_name = t.get("map_name") or "未分组"
             region = t.get("room") or t.get("region") or "未知区域"
             if map_name not in self._map_groups:
                 self._map_groups[map_name] = []
                 combo_items.append(f"〔地图〕{map_name}")
+                self._combo_data.append(("map", map_name))
             self._map_groups[map_name].append(t)
             key = (map_name, region)
             if key not in self._region_groups:
                 self._region_groups[key] = []
                 combo_items.append(f"    〔区域〕{region}")
+                self._combo_data.append(("region", key))
             self._region_groups[key].append(t)
         self.target_combo.addItems(combo_items)
 
@@ -403,26 +409,25 @@ class CommandDeck(BasePage):
     def mode(self):
         return "real" if self.mode_combo.currentIndex() == 1 else "dry"
 
-    def _resolve_selection(self, sel):
-        if sel == "全部目标":
+    def _resolve_selection(self, idx):
+        """按 itemData 精确解析（地图/区域同名不串区）。"""
+        data = self._combo_data[idx] if 0 <= idx < len(self._combo_data) else None
+        if data is None:
+            return []
+        kind, payload = data
+        if kind == "all":
             return [t["id"] for t in self._targets]
-        if sel.startswith("〔地图〕"):
-            mname = sel.replace("〔地图〕", "")
-            return [t["id"] for t in self._map_groups.get(mname, [])]
-        if "〔区域〕" in sel:
-            region = sel.split("〔区域〕")[1]
-            out = []
-            for (mname, rname), lst in self._region_groups.items():
-                if rname == region:
-                    out.extend(t["id"] for t in lst)
-            return out
-        return [sel] if sel in self.rows else []
+        if kind == "map":
+            return [t["id"] for t in self._map_groups.get(payload, [])]
+        if kind == "region":
+            return [t["id"] for t in self._region_groups.get(payload, [])]
+        return []
 
     def _on_start(self):
-        sel = self.target_combo.currentText()
+        sel = self.target_combo.currentIndex()
         targets = self._resolve_selection(sel)
         if not targets:
-            self.led.setText("● 目标不存在: " + sel)
+            self.led.setText("● 目标不存在: " + self.target_combo.currentText())
             self.led.setStyleSheet("color: #E64545; font-size: 12px;")
             return
         self.run_requested.emit(targets)

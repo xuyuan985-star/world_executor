@@ -3,18 +3,30 @@
 坐标体系（源码确认）：截图内坐标 + screenshot_pos（客户区左上角绝对屏幕坐标）= 绝对坐标；
 >1920px 截图由 screenshot_scale_factor 归一化。执行器不感知 relative/DPI。
 """
+import os
 import sys
+import threading
 
 from runtime.drivers.march7th.window import ensure_march7th_env
+
+# Bug 5：March7th 构造需要 cwd=M7_ROOT（读 ./config.yaml），但 os.chdir 是
+# 进程级——多线程（GUI HealthWorker/FrameWorker）会互相污染 cwd。
+# 锁内构造 + 构造完立即恢复：cwd 只在国际窗口内短暂处于 M7。
+_M7_INIT_LOCK = threading.Lock()
 
 
 class March7thVision:
     name = "march7th"
 
     def __init__(self):
-        ensure_march7th_env()
-        from module.automation import auto
-        from module.ocr import ocr
+        with _M7_INIT_LOCK:
+            saved = os.getcwd()
+            try:
+                ensure_march7th_env()
+                from module.automation import auto
+                from module.ocr import ocr
+            finally:
+                os.chdir(saved)  # 构造完成即恢复（后续截图/OCR 不依赖 cwd）
         self.auto = auto
         self.ocr = ocr
         # #17-G：最近一次截图的结构质量（成功 ≠ 正确，供调用方在进 VLM 前决策）

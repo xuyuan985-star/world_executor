@@ -96,20 +96,10 @@ class MainWindow(FluentWindow):
             done = Signal(dict, str)  # Bug 23：capability + 错误信息（不再吞异常）
 
             def run(self):
-                # GUI-1：March7th 探测会 os.chdir(M7)（硬约束）——线程共享进程 cwd，
-                # 不恢复会让后续相对路径解析错（validate 报缺 rooms.json → 点开始无反应）
-                import os
-                saved = os.getcwd()
-                try:
-                    from runtime.health import check_health
-                    self.done.emit(check_health().get("capability", {}), "")
-                except Exception as e:
-                    self.done.emit({}, str(e))  # Bug 23：错误透传 GUI 显示
-                finally:
-                    try:
-                        os.chdir(saved)
-                    except Exception:
-                        pass
+                # Bug 5：cwd 切换逻辑已移除——March7thVision 锁内构造并立即恢复
+                # （线程安全由 runtime/drivers/march7th/vision.py 保证）
+                from runtime.health import check_health
+                self.done.emit(check_health().get("capability", {}), "")
 
         self._health_worker = HealthWorker(self)
         self.command_deck.set_health_status("正在检测环境...", busy=True)
@@ -230,14 +220,15 @@ class MainWindow(FluentWindow):
             pass
 
     def closeEvent(self, event):
-        # Bug 55：关闭顺序——先停 Runtime（防后台继续点击），再停 HealthWorker
-        self.shutdown()
+        # Bug 7：关闭顺序——先停 worker/取消订阅（杜绝后台线程继续发 GUI 信号），
+        # 再停 Runtime（防后台继续点击），最后保存诊断
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(1000)
         # #57：窗口销毁时取消事件订阅（防已删 Qt 信号被后续 publish 调用）
         if getattr(self, "event_bus", None) is not None:
             self.event_bus.unsubscribe(self._on_runtime_event)
+        self.shutdown()
         event.accept()
 
     @gui_safe

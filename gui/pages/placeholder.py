@@ -2,9 +2,9 @@
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
+                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
 from qfluentwidgets import BodyLabel, CardWidget, ComboBox, StrongBodyLabel
 

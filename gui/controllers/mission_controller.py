@@ -4,6 +4,7 @@ MainWindow 不再知道 MissionSpec/知识路径——只调 controller.start/st
 """
 from PySide6.QtCore import QObject
 
+from config.settings import ROOT
 from runtime.api.commands import MissionSpec
 
 
@@ -11,7 +12,9 @@ class MissionController(QObject):
     def __init__(self, runtime, knowledge_dir=None, parent=None):
         super().__init__(parent)
         self.runtime = runtime
-        self.knowledge_dir = knowledge_dir or "knowledge/source/black_tower_test"
+        # Bug 4：知识库路径基于仓库根绝对定位（任意 cwd 启动不失效）
+        self.knowledge_dir = knowledge_dir or str(
+            ROOT / "knowledge" / "source" / "black_tower_test")
 
     def start(self, targets, mode="dry"):
         """GUI 语义化启动（路径/规格封装在 controller 内）。"""
