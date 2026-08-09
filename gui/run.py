@@ -43,8 +43,12 @@ def _elevate_if_needed():
     if box.exec_() != QMessageBox.Yes:
         return False
     # Bug 30：提权启动失败（UAC 拒绝/系统错误）→ 明确提示，不静默退出
+    # 闪退根因修复：ShellExecuteW lpDirectory 必须传当前工作目录——
+    # runas 新进程默认 cwd=System32，`python -m app` 会 No module named 直接闪退
+    import os
     result = ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", _sys.executable, " ".join(_sys.argv), None, 1)
+        None, "runas", _sys.executable, " ".join(_sys.argv),
+        os.getcwd(), 1)
     if result <= 32:
         QMessageBox.warning(None, "WorldExecutor Studio",
                             f"提权启动失败（错误码 {result}）。\n"
