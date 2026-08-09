@@ -1,277 +1,277 @@
 [
   {
     "id": "herta_space_station_base_zone_0006_87d3",
-    "name": "base_zone·帧0006 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱01",
     "type": "chest",
     "region": "base_zone",
     "x": 0.451,
     "y": 0.562,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0006.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_base_zone_0009_1a42",
-    "name": "base_zone·帧0009 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱02",
     "type": "chest",
     "region": "base_zone",
     "x": 0.776,
     "y": 0.378,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0009.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_base_zone_0021_0a41",
-    "name": "base_zone·帧0021 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱03",
     "type": "chest",
     "region": "base_zone",
     "x": 0.806,
     "y": 0.447,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0021.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_base_zone_0029_eaaa",
-    "name": "base_zone·帧0029 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱04",
     "type": "chest",
     "region": "base_zone",
     "x": 0.481,
     "y": 0.302,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0029.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_base_zone_0037_93ec",
-    "name": "base_zone·帧0037 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱05",
     "type": "chest",
     "region": "base_zone",
     "x": 0.431,
     "y": 0.403,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0037.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_base_zone_0053_fdf5",
-    "name": "base_zone·帧0053 识别点位（5遍×5/5）",
+    "name": "黑塔空间站·基座舱段·宝箱06",
     "type": "chest",
     "region": "base_zone",
     "x": 0.588,
     "y": 0.448,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0053.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0001_6924",
-    "name": "supply_zone·帧0001 识别点位（5遍×3/5）",
+    "name": "黑塔空间站·支援舱段·宝箱01",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.258,
     "y": 0.497,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0001.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_supply_zone_0005_4761",
-    "name": "supply_zone·帧0005 识别点位（5遍×3/5）",
-    "type": "chest",
-    "region": "supply_zone",
-    "x": 0.406,
-    "y": 0.336,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0005.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_supply_zone_0034_cecc",
-    "name": "supply_zone·帧0034 识别点位（5遍×5/5）",
-    "type": "chest",
-    "region": "supply_zone",
-    "x": 0.495,
-    "y": 0.618,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0034.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0002_b93e",
-    "name": "supply_zone·帧0002 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱02",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.302,
     "y": 0.12,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0002.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0003_e78f",
-    "name": "supply_zone·帧0003 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱03",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.304,
     "y": 0.119,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0003.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0005_4761",
+    "name": "黑塔空间站·支援舱段·宝箱04",
+    "type": "chest",
+    "region": "supply_zone",
+    "x": 0.406,
+    "y": 0.336,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0009_826a",
-    "name": "supply_zone·帧0009 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱05",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.439,
     "y": 0.244,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0009.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0010_dc3d",
-    "name": "supply_zone·帧0010 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱06",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.66,
     "y": 0.254,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0010.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0012_2376",
-    "name": "supply_zone·帧0012 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱07",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.52,
     "y": 0.551,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0012.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0013_ae57",
-    "name": "supply_zone·帧0013 识别点位（5遍×4/5）",
+    "name": "黑塔空间站·支援舱段·宝箱08",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.459,
     "y": 0.577,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0013.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_supply_zone_0023_4af8",
-    "name": "supply_zone·帧0023 识别点位（5遍×4/5）",
-    "type": "chest",
-    "region": "supply_zone",
-    "x": 0.491,
-    "y": 0.532,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0023.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0021_1605",
-    "name": "storage_zone·帧0021 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.507,
-    "y": 0.41,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0021.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0022_92f9",
-    "name": "storage_zone·帧0022 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.539,
-    "y": 0.605,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0022.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0046_e705",
-    "name": "storage_zone·帧0046 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.573,
-    "y": 0.35,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0046.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0049_6dfc",
-    "name": "storage_zone·帧0049 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.367,
-    "y": 0.33,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0049.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0053_7dc7",
-    "name": "storage_zone·帧0053 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.509,
-    "y": 0.274,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0053.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0054_b3d1",
-    "name": "storage_zone·帧0054 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.357,
-    "y": 0.267,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0054.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0055_2a8d",
-    "name": "storage_zone·帧0055 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.46,
-    "y": 0.303,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0055.jpg（VLM 自动识别，待人工复核）"
-  },
-  {
-    "id": "herta_space_station_storage_zone_0056_9a6f",
-    "name": "storage_zone·帧0056 识别点位（5遍×2/5）",
-    "type": "chest",
-    "region": "storage_zone",
-    "x": 0.49,
-    "y": 0.61,
-    "rarity": null,
-    "tier": "T1",
-    "note": "来源视频帧 f_0056.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   },
   {
     "id": "herta_space_station_supply_zone_0014_97dd",
-    "name": "supply_zone·帧0014 识别点位（5遍×2/5）",
+    "name": "黑塔空间站·支援舱段·宝箱09",
     "type": "chest",
     "region": "supply_zone",
     "x": 0.502,
     "y": 0.584,
     "rarity": null,
     "tier": "T1",
-    "note": "来源视频帧 f_0014.jpg（VLM 自动识别，待人工复核）"
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0023_4af8",
+    "name": "黑塔空间站·支援舱段·宝箱10",
+    "type": "chest",
+    "region": "supply_zone",
+    "x": 0.491,
+    "y": 0.532,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_supply_zone_0034_cecc",
+    "name": "黑塔空间站·支援舱段·宝箱11",
+    "type": "chest",
+    "region": "supply_zone",
+    "x": 0.495,
+    "y": 0.618,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0021_1605",
+    "name": "黑塔空间站·收容舱段·宝箱01",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.507,
+    "y": 0.41,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0022_92f9",
+    "name": "黑塔空间站·收容舱段·宝箱02",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.539,
+    "y": 0.605,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0046_e705",
+    "name": "黑塔空间站·收容舱段·宝箱03",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.573,
+    "y": 0.35,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0049_6dfc",
+    "name": "黑塔空间站·收容舱段·宝箱04",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.367,
+    "y": 0.33,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0053_7dc7",
+    "name": "黑塔空间站·收容舱段·宝箱05",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.509,
+    "y": 0.274,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0054_b3d1",
+    "name": "黑塔空间站·收容舱段·宝箱06",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.357,
+    "y": 0.267,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0055_2a8d",
+    "name": "黑塔空间站·收容舱段·宝箱07",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.46,
+    "y": 0.303,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
+  },
+  {
+    "id": "herta_space_station_storage_zone_0056_9a6f",
+    "name": "黑塔空间站·收容舱段·宝箱08",
+    "type": "chest",
+    "region": "storage_zone",
+    "x": 0.49,
+    "y": 0.61,
+    "rarity": null,
+    "tier": "T1",
+    "note": "VLM 自动识别（2遍一致），待人工复核"
   }
 ]

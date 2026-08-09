@@ -102,8 +102,27 @@ def room_to_area(mdir, room_text):
     return best_id
 
 
-def make_point(area_id, map_id, kind, bbox, frame_no):
-    """VLM bbox → 攻略点位（bbox [x1,y1,x2,y2] 0-1000 → 归一化中心）。"""
+# 区域英文 id → 中文名（命名可读，对齐视频目录规范）
+REGION_CN = {
+    "base_zone": "基座舱段", "master_zone": "主控舱段",
+    "storage_zone": "收容舱段", "supply_zone": "支援舱段",
+    "detention_zone": "禁闭舱段",
+    "herta_space_station": "全空间站",
+    "jarilo_vi": "雅利洛", "xianzhou_luofu": "仙舟罗浮",
+    "penacony": "匹诺康尼", "amphoreus": "翁法罗斯",
+}
+MAP_CN = {
+    "herta_space_station": "黑塔空间站",
+    "jarilo_vi": "雅利洛-Ⅵ", "xianzhou_luofu": "仙舟罗浮",
+    "penacony": "匹诺康尼", "amphoreus": "翁法罗斯",
+}
+
+
+def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
+    """VLM bbox → 攻略点位（bbox [x1,y1,x2,y2] 0-1000 → 归一化中心）。
+
+    命名可读：{地图中文}·{区域中文}·宝箱{序号}（对齐视频目录规范）。
+    """
     try:
         x1, y1, x2, y2 = [float(v) for v in bbox]
     except (TypeError, ValueError):
@@ -111,16 +130,18 @@ def make_point(area_id, map_id, kind, bbox, frame_no):
     cx = min(1.0, max(0.0, (x1 + x2) / 2 / 1000.0))
     cy = min(1.0, max(0.0, (y1 + y2) / 2 / 1000.0))
     seq = uuid.uuid4().hex[:4]
+    map_cn = MAP_CN.get(map_id, map_id)
+    region_cn = REGION_CN.get(area_id, area_id)
     return {
         "id": f"{map_id}_{area_id}_{frame_no:04d}_{seq}",
-        "name": f"{area_id}·帧{frame_no:04d} 识别点位",
+        "name": f"{map_cn}·{region_cn}·宝箱{seq_no:02d}",
         "type": kind,
         "region": area_id,
         "x": round(cx, 3),
         "y": round(cy, 3),
         "rarity": None,
         "tier": "T1",
-        "note": f"来源视频帧 f_{frame_no:04d}.jpg（VLM 自动识别，待人工复核）",
+        "note": "VLM 自动识别（2遍一致），待人工复核",
     }
 
 
