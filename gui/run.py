@@ -209,25 +209,36 @@ def _start():
     # Bug 150：单实例保护（QSharedMemory——自动化工具防双开冲突）
     # Bug 255：系统对象锁（崩溃自动释放，无锁文件残留）
     from PySide6.QtCore import QSharedMemory
+    import time
     SINGLE_INSTANCE = QSharedMemory("WorldExecutorStudio_SingleInstance")
     if not SINGLE_INSTANCE.create(1):
-        # Bug 257：第二次启动 → IPC 唤醒旧窗口（不只干提示）
-        try:
-            from PySide6.QtNetwork import QLocalSocket
-            sock = QLocalSocket()
-            sock.connectToServer("WorldExecutorStudio_Wake")
-            if sock.waitForConnected(500):
-                sock.write(b"activate")
-                sock.flush()
-                sock.waitForBytesWritten(500)
-                sock.disconnectFromServer()
-        except Exception:
-            pass
-        from PySide6.QtWidgets import QMessageBox
-        app_tmp = QApplication(sys.argv)
-        QMessageBox.information(None, "WorldExecutor Studio",
-                                "程序已在运行（已尝试唤醒原窗口）")
-        return
+        # 提权重启竞态修复：旧进程点「是」后还没退出（仍持锁），
+        # 新进程此时 create 失败——等待重试（等旧进程释放锁），
+        # 避免"点完是又消失"（新进程被误判为第二实例退出）
+        acquired = False
+        for _ in range(15):  # 最多等 4.5 秒
+            time.sleep(0.3)
+            if SINGLE_INSTANCE.create(1):
+                acquired = True
+                break
+        if not acquired:
+            # Bug 257：第二次启动 → IPC 唤醒旧窗口（不只干提示）
+            try:
+                from PySide6.QtNetwork import QLocalSocket
+                sock = QLocalSocket()
+                sock.connectToServer("WorldExecutorStudio_Wake")
+                if sock.waitForConnected(500):
+                    sock.write(b"activate")
+                    sock.flush()
+                    sock.waitForBytesWritten(500)
+                    sock.disconnectFromServer()
+            except Exception:
+                pass
+            from PySide6.QtWidgets import QMessageBox
+            app_tmp = QApplication(sys.argv)
+            QMessageBox.information(None, "WorldExecutor Studio",
+                                    "程序已在运行（已尝试唤醒原窗口）")
+            return
     if _elevate_if_needed():
         return  # 已发起提权，本进程退出
     # Bug 32：复用提权检查阶段创建的 QApplication（Qt 只允许一个实例）

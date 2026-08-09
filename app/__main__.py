@@ -3,6 +3,9 @@
 职责分离：cli（参数）→ launcher（环境/生命周期）→ 具体命令。
 """
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
@@ -13,8 +16,22 @@ def main():
     if sys.stderr is None:
         import io
         sys.stderr = io.StringIO()
-    from app.launcher import run
-    sys.exit(run(sys.argv[1:]))
+    try:
+        from app.launcher import run
+        sys.exit(run(sys.argv[1:]))
+    except BaseException:
+        # pythonw 下启动异常静默死——落盘可查
+        import traceback
+        from pathlib import Path
+        try:
+            err = ROOT / "logs" / "startup_error.log"
+            err.parent.mkdir(parents=True, exist_ok=True)
+            with open(err, "a", encoding="utf-8") as f:
+                f.write("\n===== app entry =====\n")
+                f.write(traceback.format_exc())
+        except Exception:
+            pass
+        sys.exit(1)
 
 
 if __name__ == "__main__":
