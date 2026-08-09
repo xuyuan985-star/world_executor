@@ -32,10 +32,13 @@ class _Canvas(QWidget):
         self._view = view
 
     def paintEvent(self, event):
+        # Bug 85：QPainter 异常保护——_render 抛错也保证 end()（防资源泄漏）
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        self._view._render(painter)
-        painter.end()
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            self._view._render(painter)
+        finally:
+            painter.end()
 
 
 class StateMachineView(QScrollArea):
