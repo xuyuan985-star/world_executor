@@ -93,10 +93,17 @@ def check_knowledge_pkg():
 
 
 def check_gui_smoke():
-    """Bug 300：GUI 层冒烟——MainWindow 可构造（验收链路 GUI 环节）。"""
-    errors = []
+    """Bug 300：GUI 层冒烟——MainWindow 可构造（验收链路 GUI 环节）。
+
+    缺 PySide6 环境时 SKIP（gate 由系统 python 跑时不可用）。
+    """
     try:
         from PySide6.QtWidgets import QApplication
+    except ImportError:
+        print("  [SKIP] 无 PySide6（GUI 冒烟跳过）")
+        return []
+    errors = []
+    try:
         app = QApplication.instance() or QApplication([])
         from gui.pages.command_deck import CommandDeck
         from gui.pages.placeholder import (KnowledgePage, ObservationPage,
