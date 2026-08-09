@@ -30,13 +30,13 @@ def placeholder_page(title, note):
 
 
 class WorldGraphPage(BasePage):
-    """世界图：地图级可视化（当前复用攻略体系视图）。"""
+    """世界图：地图级可视化（嵌入攻略体系视图，不重复页头）。"""
 
     def __init__(self, parent=None):
         super().__init__("世界图", parent)
         self.set_status("地图级执行视图")
         from gui.pages.guides_view import GuidesView
-        self._view = GuidesView(self)
+        self._view = GuidesView(self).set_embedded()
         self.content_layout.addWidget(self._view)
 
 
@@ -74,12 +74,15 @@ class ObservationPage(BasePage):
         card_layout(stats_card).addWidget(self._stats)
         self.content_layout.addWidget(stats_card)
 
-        # 占位：时间线（后续接入）
+        # 时间线：真事件流（最近 50 条）
         timeline_card = CardWidget()
         card_title(timeline_card, "事件时间线")
-        placeholder = BodyLabel("时间线视图待接入")
-        placeholder.setStyleSheet("color: #7A90B0;")
-        card_layout(timeline_card).addWidget(placeholder)
+        self.timeline = QListWidget()
+        self.timeline.setMaximumHeight(220)
+        self.timeline.setStyleSheet(
+            "background: #101826; border: 1px solid #24405F; border-radius: 8px;"
+            "color: #B0C4DE; font-size: 12px;")
+        card_layout(timeline_card).addWidget(self.timeline)
         self.content_layout.addWidget(timeline_card)
 
         self._worker = None
@@ -135,6 +138,16 @@ class ObservationPage(BasePage):
         top = "、".join(f"{k}×{v}" for k, v in
                         sorted(self._counts.items(), key=lambda x: -x[1])[:5])
         self._stats.setText(f"已接收 {total} 事件 | {top}")
+        # 时间线追加（滚动条跟随最新）
+        from PySide6.QtWidgets import QListWidgetItem
+        ctx = event.context or {}
+        detail = event.detail or ""
+        item = QListWidgetItem(f"[{event.type}] {detail}" +
+                               (f" ({ctx.get('status', '')})" if ctx.get("status") else ""))
+        self.timeline.addItem(item)
+        if self.timeline.count() > 50:
+            self.timeline.takeItem(0)
+        self.timeline.scrollToBottom()
 
 
 class KnowledgePage(BasePage):
@@ -235,10 +248,23 @@ class VideoCard(CardWidget):
         layout.addLayout(info)
         layout.addStretch(1)
 
+        self.play_btn = QPushButton("播放")
+        self.play_btn.setFixedWidth(64)
+        self.play_btn.setProperty("video_path", str(video_path))
+        self.play_btn.clicked.connect(self._play)
+        layout.addWidget(self.play_btn)
+
         self.archive_btn = QPushButton("归档")
         self.archive_btn.setFixedWidth(80)
         self.archive_btn.setProperty("video_path", str(video_path))
         layout.addWidget(self.archive_btn)
+
+    def _play(self):
+        """系统默认播放器打开（os.startfile 支持视频文件）。"""
+        import os
+        p = self.play_btn.property("video_path")
+        if p and os.path.exists(p):
+            os.startfile(p)
 
 
 class StudioPage(BasePage):

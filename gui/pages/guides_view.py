@@ -29,9 +29,9 @@ class GuidesView(BasePage):
         self.set_status("选择大地图查看区域")
 
         split = QSplitter(Qt.Horizontal)
-        # 左侧：大地图列表（只到地图层）
+        # 左侧：大地图列表（只到地图层）——35/65 比例，不固定宽（防长名省略号）
         self.map_list = QListWidget()
-        self.map_list.setFixedWidth(220)
+        self.map_list.setMinimumWidth(180)
         self.map_list.currentItemChanged.connect(self._on_map_selected)
         split.addWidget(self.map_list)
 
@@ -39,7 +39,7 @@ class GuidesView(BasePage):
         self.region_box = QWidget()
         self.region_layout = QVBoxLayout(self.region_box)
         self.region_layout.setContentsMargins(0, 0, 0, 0)
-        self.region_layout.setSpacing(10)
+        self.region_layout.setSpacing(12)
         self.empty_label = QLabel("选择左侧大地图查看区域")
         self.empty_label.setStyleSheet("color: #7A90B0;")
         self.region_layout.addWidget(self.empty_label)
@@ -47,6 +47,7 @@ class GuidesView(BasePage):
         split.addWidget(self.region_box)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
+        split.setSizes([350, 650])
         self.content_layout.addWidget(split, 1)
 
         self._maps = {}        # map_dir -> {map_name, regions: {region_id: {name, points}}}

@@ -63,7 +63,7 @@ class BasePage(QWidget):
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(12, 12, 12, 12)
-        self._layout.setSpacing(10)
+        self._layout.setSpacing(12)
 
         # Header：标题 + 右侧状态槽
         self._header = QWidget()
@@ -92,6 +92,12 @@ class BasePage(QWidget):
         self._layout.addWidget(self.footer, 0)
 
     # ---- 子类接口 ----
+
+    def set_embedded(self):
+        """嵌入模式：隐藏自身页头/页脚（供页面嵌套复用，防重复标题）。"""
+        self._header.setVisible(False)
+        self.footer.setVisible(False)
+        return self
 
     def set_status(self, text, busy=False):
         self.status_label.setText(text)
