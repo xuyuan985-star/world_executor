@@ -1,4 +1,4 @@
-﻿import json
+import json
 import sys
 from pathlib import Path
 
@@ -21,24 +21,46 @@ def main():
     files = sorted(TEMPLATE_DIR.glob("*.png"))
     print(f"共 {len(files)} 张候选")
     reviews = []
+    failed = []
     for i in range(0, len(files), BATCH):
         batch = files[i:i + BATCH]
         paths = [str(f) for f in batch]
-        content = [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{_b64(p)}"}} for p in paths]
+        # Bug 20：单图编码失败只记录，不拖垮整批
+        content = []
+        for f in batch:
+            try:
+                mime = "image/png" if f.suffix.lower() == ".png" else "image/jpeg"  # Bug 15
+                content.append({"type": "image_url",
+                                "image_url": {"url": f"data:{mime};base64,{_b64(str(f))}"}})
+            except Exception as e:
+                failed.append(f.name)
+                print(f"  编码失败 {f.name}: {e}")
         content.append({"type": "text", "text": PROMPT})
-        messages = [{"role": "system", "content": "你是图像模板质检员。"}, {"role": "user", "content": content}]
+        messages = [{"role": "system", "content": "你是图像模板质检员。"},
+                    {"role": "user", "content": content}]
+        batch_reviews = []
         try:
-            text = provider._chat(messages, temperature=0)
-            start, end = text.find("["), text.rfind("]")
-            batch_reviews = json.loads(text[start:end + 1]) if start >= 0 else []
+            # Bug 16：公开 chat()；Bug 17：先整体 loads，失败再提取
+            text = provider.chat(messages, temperature=0)
+            try:
+                batch_reviews = json.loads(text)
+            except Exception:
+                start, end = text.find("["), text.rfind("]")
+                batch_reviews = json.loads(text[start:end + 1]) if start >= 0 else []
         except Exception as e:
             print(f"批 {i} 失败: {e}")
+        if not isinstance(batch_reviews, list):
             batch_reviews = []
         for f, rev in zip(batch, batch_reviews):
+            if not isinstance(rev, dict):
+                continue
             rev["file"] = f.name
             reviews.append(rev)
             print(f"  {f.name}: {rev}")
-        (TEMPLATE_DIR / "reviews.json").write_text(json.dumps(reviews, ensure_ascii=False, indent=2), encoding="utf-8")
+        (TEMPLATE_DIR / "reviews.json").write_text(
+            json.dumps(reviews, ensure_ascii=False, indent=2), encoding="utf-8")
+    if failed:
+        print(f"[warn] 编码失败跳过 {len(failed)} 张: {failed}")
     usable = [r for r in reviews if r.get("usable")]
     print(f"\n可用 {len(usable)}/{len(files)}")
     by_cat = {}

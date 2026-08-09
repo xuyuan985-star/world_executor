@@ -48,6 +48,10 @@ class QwenVLProvider(VLMProvider):
         self.timeout = 120
         self.retries = 1
 
+    def chat(self, messages, **kwargs):
+        """公开对话接口（Bug 16：外部统一调用，不依赖私有 _chat）。"""
+        return self._chat(messages, **kwargs)
+
     def _chat(self, messages, model=None, fallback=None, temperature=0.2, max_tokens=4096):
         models = [model or self.model] + list(fallback or [])
         last_err = None
