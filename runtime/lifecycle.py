@@ -10,6 +10,16 @@ class AppState(Enum):
     ERROR = "error"
 
 
+class StartupStage(Enum):
+    """Bug 322：启动阶段——卡在哪一步可明确报告。"""
+    CONFIG = "config"
+    KNOWLEDGE = "knowledge"
+    RUNTIME = "runtime"
+    GUI = "gui"
+    READY = "ready"
+    FAILED = "failed"
+
+
 class AppLifecycle:
     def __init__(self, on_change=None):
         self._state = AppState.INITIALIZING

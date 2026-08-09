@@ -41,7 +41,53 @@ def normalize_ocr(text):
     return s.translate(_OCR_TRANSLATE) if s.isascii() else s
 
 
-class March7thVision:
+from abc import ABC, abstractmethod
+
+
+class VisionInterface(ABC):
+    """Bug 331：视觉接口抽象——Fake 与真实实现同契约（防测试 PASS 实机缺方法）。
+
+    线程安全：构造线程安全（锁内初始化）；实例方法预期单线程调用（thread_safe=False）。
+    """
+
+    thread_safe = False
+
+    @abstractmethod
+    def screenshot_path(self, out_dir):
+        """截图落盘 → 路径（VLM 观测帧用）。"""
+
+    @abstractmethod
+    def take_screenshot(self, crop=None):
+        """截图 → (PIL.Image, screenshot_pos, scale_factor)。"""
+
+    @abstractmethod
+    def ocr_lines(self, crop=(0, 0, 1, 1)):
+        """OCR → [(text, box), ...]。"""
+
+    @abstractmethod
+    def find_template(self, path, threshold=0.8, max_retries=1):
+        """模板匹配 → 绝对坐标框或 None。"""
+
+    @abstractmethod
+    def to_absolute(self, norm_x, norm_y):
+        """归一化(0-1) → 绝对屏幕坐标。"""
+
+
+def normalize_image(img, target="RGB"):
+    """Bug 335：图像格式统一（RGB/BGR/RGBA → 目标通道，入口一致化）。
+
+    返回新对象；已是目标模式则原样返回。
+    """
+    if img is None:
+        return None
+    if getattr(img, "mode", None) == target:
+        return img
+    if hasattr(img, "convert"):
+        return img.convert(target)
+    return img
+
+
+class March7thVision(VisionInterface):
     name = "march7th"
 
     def __init__(self):

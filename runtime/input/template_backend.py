@@ -30,6 +30,16 @@ class TemplateMatcher:
         return np.frombuffer(shot.rgb, dtype=np.uint8).reshape(
             shot.height, shot.width, 3)[:, :, ::-1]
 
+    def _load_template(self, template_path):
+        """Bug 336：模板加载校验（空图/损坏 → 明确错误，不崩 matcher）。"""
+        t = cv2.imread(template_path)
+        if t is None:
+            raise ValueError(f"模板读取失败: {template_path}")
+        h, w = t.shape[:2]
+        if h < 10 or w < 10:
+            raise ValueError(f"模板尺寸过小 {w}x{h}: {template_path}")
+        return t
+
     def locate(self, template_path):
         """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
 
@@ -37,21 +47,23 @@ class TemplateMatcher:
         """
         import time
         t0 = time.time()
-        t = cv2.imread(template_path)
-        if t is None:
-            return None
+        t = self._load_template(template_path)
         screen = self._screenshot()
         sh, sw = screen.shape[:2]
         best = (0.0, 0, 0)
-        for scale in self.SCALES:
-            th = cv2.resize(t, None, fx=scale, fy=scale,
-                            interpolation=cv2.INTER_AREA)
-            if th.shape[0] >= sh or th.shape[1] >= sw:
-                continue
-            res = cv2.matchTemplate(screen, th, cv2.TM_CCOEFF_NORMED)
-            _, mv, _, ml = cv2.minMaxLoc(res)
-            if mv > best[0]:
-                best = (mv, ml[0], ml[1])
+        try:
+            for scale in self.SCALES:
+                th = cv2.resize(t, None, fx=scale, fy=scale,
+                                interpolation=cv2.INTER_AREA)
+                if th.shape[0] >= sh or th.shape[1] >= sw:
+                    continue
+                res = cv2.matchTemplate(screen, th, cv2.TM_CCOEFF_NORMED)
+                _, mv, _, ml = cv2.minMaxLoc(res)
+                if mv > best[0]:
+                    best = (mv, ml[0], ml[1])
+        except cv2.error as e:
+            # Bug 337：OpenCV 失败显式处理（不静默吞/不裸崩）
+            raise RuntimeError(f"模板匹配 OpenCV 错误: {e}") from e
         val, x, y = best
         if val < self.threshold:
             return None

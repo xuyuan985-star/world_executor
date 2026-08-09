@@ -92,9 +92,21 @@ def main():
     if "--gate" in sys.argv:
         from tools import run_gate
         return run_gate.run()
-    # 默认：GUI
-    from gui import run as gui_run
-    gui_run.main()
+    # Bug 322：启动阶段进度（日志可定位卡在哪一步）
+    from runtime.lifecycle import LIFECYCLE, AppState
+    LIFECYCLE.set(AppState.INITIALIZING)
+    # Bug 330：异常/中断也保证清理（临时文件/注册资源）
+    try:
+        # 默认：GUI
+        from gui import run as gui_run
+        gui_run.main()
+    finally:
+        try:
+            cleanup_temp()
+        except Exception:
+            pass
+        from runtime.resource import _shutdown
+        _shutdown()
     return 0
 
 
