@@ -133,6 +133,27 @@ class MainWindow(FluentWindow):
             self.mission_controller.stop()
         except Exception:
             pass
+        self._save_diag_snapshot()
+
+    def _save_diag_snapshot(self):
+        """Bug 187：退出现场保存（运行指标/线程/状态）——复盘"昨晚挂了"。"""
+        import json
+        import threading
+        from pathlib import Path
+        try:
+            snap = {
+                "api_state": getattr(self.mission_controller, "state", None),
+                "threads": [t.name for t in threading.enumerate()
+                            if t.is_alive() and t is not threading.current_thread()],
+                "execution_id": getattr(getattr(self, "api", None),
+                                       "execution_id", None),
+            }
+            log_dir = Path(__file__).resolve().parent.parent / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / "gui_snapshot.json").write_text(
+                json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         # Bug 55：关闭顺序——先停 Runtime（防后台继续点击），再停 HealthWorker
