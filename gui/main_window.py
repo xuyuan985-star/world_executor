@@ -128,6 +128,7 @@ class MainWindow(FluentWindow):
 
     def _on_health_done(self, health, error):
         # Bug 22/23：检测完成状态反馈（失败显示原因，不再静默）
+        self._health = health or {}
         if error:
             self.command_deck.set_health_status("环境检测失败: " + error[:120], busy=False)
         else:
@@ -244,6 +245,20 @@ class MainWindow(FluentWindow):
         # Bug 21：防重复启动（连点/事件未达窗口期）
         if self.mission_controller.state not in ("idle", "done", "crashed", "invalid"):
             return
+        # 真机模式前置校验（G3 会拦，但提前告知更好）
+        if mode == "real" and getattr(self, "_health", None):
+            h = self._health
+            warns = []
+            if h.get("admin") is False:
+                warns.append("非管理员（输入会被 UIPI 拦截）")
+            if h.get("foreground") is False:
+                warns.append("游戏窗口不在前台")
+            if warns:
+                self.command_deck.led.setText("● 真机执行需先处理: " + "；".join(warns))
+                self.command_deck.led.setStyleSheet("color: #FFB454; font-size: 12px;")
+                self.command_deck.start_btn.setEnabled(True)
+                self.command_deck.stop_btn.setEnabled(False)
+                return
         self.command_deck.reset()
         self.command_deck.set_starting()  # Bug 30：同步禁按钮（不依赖事件）
         try:

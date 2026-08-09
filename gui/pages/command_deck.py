@@ -437,10 +437,23 @@ class CommandDeck(BasePage):
             self.stop_btn.setEnabled(True)
         elif event.type == "run_finished":
             result = event.context.get("result", "")
-            if result in ("invalid", "crashed", "gate_blocked"):
+            if result == "gate_blocked":
+                # G3 门槛拦截——显示可行动原因（中文）
+                reasons = event.context.get("reasons") or []
+                fails = event.context.get("fails") or []
+                msg = "执行被拦截（G3 能力门槛）"
+                if reasons:
+                    msg += "：\n" + "\n".join(str(r) for r in reasons[:4])
+                elif fails:
+                    msg += "：" + "、".join(str(f) for f in fails[:4])
+                self.led.setText("● " + msg[:100])
+                self.led.setStyleSheet("color: #FFB454; font-size: 12px;")
+                self.set_run_status("● 执行被拦截（环境不满足）")
+            elif result in ("invalid", "crashed"):
                 err = event.context.get("error") or event.context.get("fails")
                 self.led.setText("● 失败: " + result + (f" ({err})" if err else ""))
                 self.led.setStyleSheet("color: #E64545; font-size: 12px;")
+                self.set_run_status("● 执行失败")
             else:
                 self.led.setText("● 空闲")
                 self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
