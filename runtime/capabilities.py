@@ -25,11 +25,19 @@ class CapabilityRegistry:
     def _load(self):
         if self.path.exists():
             loaded = yaml.safe_load(self.path.read_text(encoding="utf-8"))
-            merged = DEFAULT_CAPABILITIES.copy()
-            merged.update(loaded or {})
-            merged.setdefault("capabilities", {}).update(DEFAULT_CAPABILITIES["capabilities"])
+            # Bug 630：YAML 顶层必须是 dict（list/标量 → 明确错误而非 update 崩）
+            if loaded is not None and not isinstance(loaded, dict):
+                raise CapabilityError(
+                    f"capability yaml 顶层应为对象，实际 {type(loaded).__name__}: {self.path}")
+            # Bug 629：深拷贝——嵌套 capabilities 不被默认值/后续修改污染
+            import copy
+            merged = copy.deepcopy(DEFAULT_CAPABILITIES)
+            merged.update(copy.deepcopy(loaded or {}))
+            merged.setdefault("capabilities", {}).update(
+                copy.deepcopy(DEFAULT_CAPABILITIES["capabilities"]))
             return merged
-        return DEFAULT_CAPABILITIES.copy()
+        import copy
+        return copy.deepcopy(DEFAULT_CAPABILITIES)
 
     def status(self, capability):
         return self.data["capabilities"].get(capability, {}).get("status", "disabled")

@@ -92,13 +92,14 @@ class TargetRecord:
         self.retry_count = 0
 
     def mark_start(self):
+        # Bug 628：耗时计时用 monotonic（NTP/改时间不干扰 duration）
         import time
-        self.started_at = time.time()
+        self.started_at = time.monotonic()
 
     def mark_finish(self):
         import time
         if self.started_at is not None:
-            self.duration_s = round(time.time() - self.started_at, 1)
+            self.duration_s = round(time.monotonic() - self.started_at, 1)
 
     def to_dict(self):
         return {"target": self.target_id, "status": self.status,
@@ -136,7 +137,10 @@ class WorkflowOrchestrator:
         if self._executor is None:
             from runtime.step_executor import RealExecutor
             # S13：seed 由 execution_id 派生——同 id 重跑可复现自然性延迟
-            seed = hash(self.execution_id or "default") & 0xFFFFFFFF
+            # Bug 625：hash() 受 PYTHONHASHSEED 影响跨进程不稳定——改 sha256
+            import hashlib
+            seed = int(hashlib.sha256(
+                (self.execution_id or "default").encode()).hexdigest()[:8], 16)
             self._executor = RealExecutor(self.pkg, self.bus, self.execution_id,
                                           self.use_vlm, self.natural_mode, seed,
                                           abort_check=self._aborted)
@@ -171,7 +175,18 @@ class WorkflowOrchestrator:
             # 自伤防护：executor 点击前挂起 monitor 光标检测
             self.executor.monitor = self._monitor
         except Exception:
+            # Bug 626：安全模块失败不能静默——告警事件 + 记录（继续执行但可知晓）
+            import logging
+            logging.getLogger("runtime.orchestrator").exception(
+                "EmergencyMonitor 启动失败——继续执行但无人机介入保护")
             self._monitor = None
+            try:
+                self._emit("fail_recorded",
+                           detail="F3:emergency_monitor_failed",
+                           context={"category": "F3", "target": None,
+                                    "error": "emergency_monitor_failed"})
+            except Exception:
+                pass
 
     def start_watchdog(self):
         """S10：watchdog 随 mission 启停（独立于窗口，始终可用）。"""
@@ -204,6 +219,20 @@ class WorkflowOrchestrator:
             record.status = "failed"
             record.last_error = "orchestrator_crash"
             record.category = "F1_EXEC"
+            # Bug 627：崩溃现场快照（状态/目标/最近事件——可复盘）
+            try:
+                snap = {"state": self._machine.state.name
+                        if self._machine is not None else None,
+                        "target": target_id}
+                import json as _json
+                from pathlib import Path as _P
+                crash_dir = _P(__file__).resolve().parent.parent / "failure_reports" / "orchestrator_crash"
+                crash_dir.mkdir(parents=True, exist_ok=True)
+                (crash_dir / f"{target_id}_{int(time.time() * 1000)}.json").write_text(
+                    _json.dumps(snap, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+            except Exception:
+                pass
             self._emit("fail_recorded",
                        detail=f"F1_EXEC:crash:{target_id}",
                        context={"category": "F1_EXEC", "target": target_id,

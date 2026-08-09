@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import QApplication, QLabel
 
 from pathlib import Path
@@ -8,6 +8,21 @@ ROOT = Path(__file__).resolve().parent.parent  # world_executor 根（AI 审计 
 from gui.pages.command_deck import CommandDeck
 from gui.controllers.mission_controller import MissionController
 from gui.safe import gui_safe
+
+
+class HealthWorker(QThread):
+    """Bug 623：模块级 HealthWorker（可测试/可复用——不再嵌套在 __init__ 内）。
+
+    Bug 23：done 携带 capability + 错误信息（不再吞异常）。
+    """
+
+    done = Signal(dict, str)
+
+    def run(self):
+        # Bug 5：cwd 切换逻辑已移除——March7thVision 锁内构造并立即恢复
+        # （线程安全由 runtime/drivers/march7th/vision.py 保证）
+        from runtime.health import check_health
+        self.done.emit(check_health().get("capability", {}), "")
 from gui.pages.placeholder import (KnowledgePage, ObservationPage, SettingsPage,
                                    StudioPage, WorldGraphPage)
 from qfluentwidgets import (FluentIcon, FluentWindow, NavigationItemPosition)
@@ -37,13 +52,8 @@ class MainWindow(FluentWindow):
         self._restore_geometry()
         self._watch_screen_changes()
 
-        # 指挥台构造兜底（嫌疑 2）：炸则用空目标实例——窗口仍活着，不整个死亡
-        try:
-            self.command_deck = CommandDeck(targets or [])
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            self.command_deck = CommandDeck([])
+        # 指挥台构造兜底：失败走 error_page（不再二次创建失败对象——Bug 621）
+        self.command_deck = self._safe_page(CommandDeck, targets or [])
         # 页面构造异常隔离——单页失败不拖垮主窗口
         self.world_graph = self._safe_page(WorldGraphPage)
         self.observation = self._safe_page(ObservationPage)
@@ -91,15 +101,6 @@ class MainWindow(FluentWindow):
 
         from PySide6.QtCore import QThread, Signal
 
-        class HealthWorker(QThread):
-            done = Signal(dict, str)  # Bug 23：capability + 错误信息（不再吞异常）
-
-            def run(self):
-                # Bug 5：cwd 切换逻辑已移除——March7thVision 锁内构造并立即恢复
-                # （线程安全由 runtime/drivers/march7th/vision.py 保证）
-                from runtime.health import check_health
-                self.done.emit(check_health().get("capability", {}), "")
-
         self._health_worker = HealthWorker(self)
         self.command_deck.set_health_status("正在检测环境...", busy=True)
         self._health_worker.done.connect(self._on_health_done)
@@ -136,10 +137,11 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
-    def _safe_page(self, page_cls):
-        """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。"""
+    def _safe_page(self, page_cls, *args):
+        """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。
+        Bug 621：只尝试一次——失败显示错误页，不重复创建失败对象。"""
         try:
-            return page_cls()
+            return page_cls(*args)
         except Exception as e:
             import traceback
             traceback.print_exc()
