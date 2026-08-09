@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar,
-                               QVBoxLayout, QWidget)
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from gui.state_machine_view import StateMachineView
 from qfluentwidgets import (CardWidget, ComboBox, PrimaryPushButton,
@@ -62,6 +62,16 @@ CATEGORY_TEXT = {
 
 def category_text(code):
     return CATEGORY_TEXT.get(code, f"{code}" if code else "unknown")
+
+
+STATUS_TEXT_CN = {"pending": "待命", "running": "进行中", "succeeded": "完成",
+                  "failed": "失败", "interrupted": "中断"}
+
+
+def _status_color(status):
+    from PySide6.QtGui import QColor
+    return QColor({"running": "#4FD1C5", "succeeded": "#3BA55D",
+                   "failed": "#E64545", "interrupted": "#FFB020"}.get(status, "#7A90B0"))
 
 
 class TargetRow(QFrame):
@@ -278,7 +288,24 @@ class CommandDeck(QWidget):
 
         control_bar = QHBoxLayout()
         self.target_combo = ComboBox()
-        self.target_combo.addItems(["全部目标"] + [t["id"] for t in targets])
+        # 目标 = 地图级（组）：全部目标 / 各大地图 / 各区域 / 单点位
+        self._targets = targets
+        self._map_groups = {}
+        self._region_groups = {}
+        combo_items = ["全部目标"]
+        for t in targets:
+            map_name = t.get("map_name") or "未分组"
+            region = t.get("room") or t.get("region") or "未知区域"
+            if map_name not in self._map_groups:
+                self._map_groups[map_name] = []
+                combo_items.append(f"〔地图〕{map_name}")
+            self._map_groups[map_name].append(t)
+            key = (map_name, region)
+            if key not in self._region_groups:
+                self._region_groups[key] = []
+                combo_items.append(f"    〔区域〕{region}")
+            self._region_groups[key].append(t)
+        self.target_combo.addItems(combo_items)
         self.start_btn = PrimaryPushButton("开始收集")
         from qfluentwidgets import ComboBox as _Combo
         self.mode_combo = _Combo()
@@ -300,16 +327,35 @@ class CommandDeck(QWidget):
 
         bottom = QHBoxLayout()
         queue_card = CardWidget()
-        card_title(queue_card, "目标队列")
-        self.queue_layout = QVBoxLayout()
-        self.queue_layout.setSpacing(8)
+        card_title(queue_card, "目标队列（地图 → 区域 → 点位，滚轮浏览）")
+        # 地图→区域→点位 树：列表可滚动，页面不被内容撑大
+        self.target_tree = QTreeWidget()
+        self.target_tree.setHeaderLabels(["目标", "状态"])
+        self.target_tree.setMaximumHeight(320)
+        self.target_tree.setAlternatingRowColors(True)
         self.rows = {}
+        self._map_nodes = {}
+        self._region_nodes = {}
+        from collections import OrderedDict
         for t in targets:
-            row = TargetRow(t["id"], t.get("room", ""), name=t.get("name"))
-            self.rows[t["id"]] = row
-            self.queue_layout.addWidget(row)
-        self.queue_layout.addStretch(1)
-        card_layout(queue_card).addLayout(self.queue_layout)
+            map_name = t.get("map_name") or "未分组"
+            region = t.get("room") or t.get("region") or "未知区域"
+            if map_name not in self._map_nodes:
+                node = QTreeWidgetItem([map_name, ""])
+                self.target_tree.addTopLevelItem(node)
+                self._map_nodes[map_name] = node
+            rkey = (map_name, region)
+            if rkey not in self._region_nodes:
+                rnode = QTreeWidgetItem([f"  {region}", ""])
+                self._map_nodes[map_name].addChild(rnode)
+                self._region_nodes[rkey] = rnode
+            name = t.get("name") or t["id"]
+            leaf = QTreeWidgetItem([f"    {name}", "待命"])
+            self._region_nodes[rkey].addChild(leaf)
+            self.rows[t["id"]] = leaf
+            leaf.setData(0, Qt.UserRole, t["id"])
+        self.target_tree.expandToDepth(1)  # 展开到区域级（点位折叠）
+        card_layout(queue_card).addWidget(self.target_tree)
         bottom.addWidget(queue_card, 3)
 
         self.snapshot = ObservationSnapshot()
@@ -350,14 +396,30 @@ class CommandDeck(QWidget):
     def mode(self):
         return "real" if self.mode_combo.currentIndex() == 1 else "dry"
 
+    def _resolve_selection(self, sel):
+        """选择 → 点位 id 列表（地图/区域级自动展开为点位）。"""
+        if sel == "全部目标":
+            return [t["id"] for t in self._targets]
+        if sel.startswith("〔地图〕"):
+            mname = sel.replace("〔地图〕", "")
+            return [t["id"] for t in self._map_groups.get(mname, [])]
+        if "〔区域〕" in sel:
+            region = sel.split("〔区域〕")[1]
+            out = []
+            for (mname, rname), lst in self._region_groups.items():
+                if rname == region:
+                    out.extend(t["id"] for t in lst)
+            return out
+        return [sel] if sel in self.rows else []
+
     def _on_start(self):
         sel = self.target_combo.currentText()
-        if sel != "全部目标" and sel not in self.rows:
+        targets = self._resolve_selection(sel)
+        if not targets:
             # Bug 100：未知目标（配置删除/残留）——不启动，明确提示
             self.led.setText("● 目标不存在: " + sel)
             self.led.setStyleSheet("color: #E64545; font-size: 12px;")
             return
-        targets = [] if sel == "全部目标" else [sel]
         self.run_requested.emit(targets)
 
     def on_event(self, event):
@@ -386,7 +448,9 @@ class CommandDeck(QWidget):
             ctx = event.context
             status = ctx.get("status")
             if ctx.get("target") in self.rows and status:
-                self.rows[ctx["target"]].set_status(status)
+                leaf = self.rows[ctx["target"]]
+                leaf.setText(1, STATUS_TEXT.get(status, status))
+                leaf.setForeground(1, _status_color(status))
             if status == "failed":
                 self.inspector.on_failure(
                     run_no=self._run_no, state=self._last_state,
@@ -435,8 +499,9 @@ class CommandDeck(QWidget):
     def reset(self):
         # Bug 36：完整重置（LED/按钮/状态）
         self.sm_view.reset()
-        for row in self.rows.values():
-            row.set_status("pending")
+        for leaf in self.rows.values():
+            leaf.setText(1, "待命")
+            leaf.setForeground(1, _status_color("pending"))
         self.led.setText("● 空闲")
         self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
         self.start_btn.setEnabled(True)
