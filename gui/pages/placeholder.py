@@ -19,6 +19,11 @@ def card_title(card, text):
     return label
 
 
+def error_page(source, error):
+    """Bug 53：页面构造失败兜底页（显示错误而非空白/崩溃）。"""
+    return placeholder_page(f"{source} 初始化失败", f"错误: {error}")
+
+
 def placeholder_page(title, note):
     page = QWidget()
     layout = QVBoxLayout(page)

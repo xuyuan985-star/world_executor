@@ -23,11 +23,12 @@ class MainWindow(FluentWindow):
         self.setMinimumSize(1180, 720)
 
         self.command_deck = CommandDeck(targets)
-        self.world_graph = WorldGraphPage()
-        self.observation = ObservationPage()
-        self.knowledge = KnowledgePage()
-        self.studio = StudioPage()
-        self.settings = SettingsPage()
+        # Bug 53：页面构造异常隔离——单页失败不拖垮主窗口
+        self.world_graph = self._safe_page(WorldGraphPage)
+        self.observation = self._safe_page(ObservationPage)
+        self.knowledge = self._safe_page(KnowledgePage)
+        self.studio = self._safe_page(StudioPage)
+        self.settings = self._safe_page(SettingsPage)
 
         for page, name in [
             (self.command_deck, "commandDeck"),
@@ -91,6 +92,16 @@ class MainWindow(FluentWindow):
         self._health_worker.done.connect(self._on_health_done)
         self._health_worker.start()
 
+    def _safe_page(self, page_cls):
+        """Bug 53：页面构造异常 → ErrorPage（显示错误，主窗口照常启动）。"""
+        try:
+            return page_cls()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            from gui.pages.placeholder import error_page
+            return error_page(page_cls.__name__, str(e))
+
     def _on_health_done(self, health, error):
         # Bug 22/23：检测完成状态反馈（失败显示原因，不再静默）
         if error:
@@ -100,6 +111,12 @@ class MainWindow(FluentWindow):
             self.command_deck.set_health_status("环境就绪", busy=False)
 
     def closeEvent(self, event):
+        # Bug 55：关闭顺序——先停 Runtime（防后台继续点击），再停 HealthWorker
+        try:
+            if getattr(self, "api", None) is not None:
+                self.api.stop()
+        except Exception:
+            pass
         if getattr(self, "_health_worker", None) is not None and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(1000)

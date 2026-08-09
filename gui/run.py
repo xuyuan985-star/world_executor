@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,7 +40,35 @@ def _elevate_if_needed():
     return True
 
 
+def _install_excepthook():
+    """Bug 54：全局异常捕获——Qt 槽/线程异常落盘 + 提示（不静默）。"""
+    import logging
+    from pathlib import Path
+    log_path = Path(__file__).resolve().parent.parent / "logs" / "gui_error.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(filename=str(log_path), level=logging.ERROR,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    _orig = sys.excepthook
+
+    def hook(t, v, tb):
+        import traceback
+        traceback.print_exception(t, v, tb)
+        logging.error("uncaught", exc_info=(t, v, tb))
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            app = QApplication.instance()
+            if app is not None:
+                QMessageBox.critical(None, "WorldExecutor 错误",
+                                     f"发生未捕获异常:\n{t.__name__}: {v}")
+        except Exception:
+            pass
+        _orig(t, v, tb)
+
+    sys.excepthook = hook
+
+
 def main():
+    _install_excepthook()
     import ctypes
     if sys.platform == "win32":  # AI 审计 B2：非 Windows 不调 windll
         ctypes.windll.user32.SetProcessDPIAware()  # #18：DPI context 进程早期设置
