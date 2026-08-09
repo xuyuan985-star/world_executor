@@ -126,6 +126,14 @@ def main():
     assert sm.state == State.DONE, "非法迁移污染了状态机状态！"
     print("[guard] 状态机非法迁移防护（DONE 后状态不变）PASS")
 
+    # BUG-10：ReplayInput 耗尽行为——空队列不得 IndexError/假成功
+    from runtime.input.replay import ReplayInput
+    empty = ReplayInput([])
+    r_e = empty.click(10, 10)
+    assert r_e.success is False and r_e.error == "replay_denied", r_e
+    assert empty.consumed == 0 and empty.history == ["click"]
+    print("[guard] ReplayInput 耗尽（空队列安全失败，无 IndexError）PASS")
+
     print("[guard] Case 1-4 + 幻觉风险 全部 PASS")
 
 

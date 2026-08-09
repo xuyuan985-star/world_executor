@@ -491,6 +491,10 @@ def main():
     assert results == {"chest_A": False}, results
     cats = [ctx.get("category") for t, ctx in seen if t == "fail_recorded"]
     assert any("F2_COORD" in c for c in cats), cats
+    # BUG-13：不只验证 category——还要验证失败原因粒度（vlm 未定位）
+    errs = [ctx.get("error") for t, ctx in seen if t == "fail_recorded"]
+    assert any(e and ("no_observation" in e or "move_stuck" in e
+                      or "move_aborted" in e) for e in errs), errs
     acts = [ctx for t, ctx in seen if t == "action_executed"]
     assert all(ctx.get("success") is not False or ctx.get("action") == "wait"
                for ctx in acts) or not acts, "VLM 未定位时不应有点击成功记录"

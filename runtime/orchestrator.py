@@ -395,6 +395,16 @@ class WorkflowOrchestrator:
         # Sprint B-2：gate 通过 → 视觉证明写入意图（ActionGuard 消费）
         if vision_ok and intent.action != ActionType.WAIT.value:
             from dataclasses import replace
+            # BUG-12：evidence 注册到 guard.evidence_store——TTL 过期检查
+            # 依赖它（此前只生成 id 不注册，_evidence_age 恒 None → 过期失效）
+            guard_store = getattr(self.executor.guard, "evidence_store", None)
+            if guard_store is None and hasattr(self.executor.guard, "evidence_store"):
+                self.executor.guard.evidence_store = {}
+                guard_store = self.executor.guard.evidence_store
+            if guard_store is not None:
+                import time as _t
+                guard_store[evidence_id] = {"timestamp": _t.time(),
+                                            "confidence": vision_conf}
             intent = replace(intent, vision_verified=True,
                              vision_confidence=vision_conf,
                              evidence_id=evidence_id)

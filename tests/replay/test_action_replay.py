@@ -109,6 +109,8 @@ def main():
     order = [t for t, _ in r["events"] if t in
              ("state_changed", "action_executed", "target_progress")]
     assert "state_changed" in order[:3], order[:3]  # 放宽：允许初始化事件在前
+    # BUG-07：顺序强校验——action_executed 必须先于 target_progress（防乱序终态）
+    assert order.index("action_executed") < order.index("target_progress"), order
     assert order[-1] == "target_progress", order[-2:]
     print(f"[replay] PASS（状态 {r['state'].value}，事件 {len(r['events'])} 条，行为序确定）")
 
