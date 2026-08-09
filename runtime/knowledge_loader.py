@@ -57,6 +57,39 @@ class KnowledgePackage:
         # #28：启动即冻结——workflow 缓存 + 内容 hash，运行中改文件不影响执行链
         self._workflow_cache = {}
         self._package_hash = None
+        # Bug 320：数据索引（查询不遍历全表）
+        self._index_chests_by_room = {}
+        self._index_chests_by_id = {}
+        self._index_portals_by_id = {}
+        self._index_rooms_by_id = {}
+        self._build_indexes()
+
+    def _build_indexes(self):
+        """Bug 320：按 room/id 建索引（O(1) 查询替代全表遍历）。"""
+        if isinstance(self.chests, list):
+            for c in self.chests:
+                if isinstance(c, dict) and c.get("id"):
+                    self._index_chests_by_id[c["id"]] = c
+                    self._index_chests_by_room.setdefault(
+                        c.get("room"), []).append(c)
+        for p in self.portals or []:
+            if isinstance(p, dict) and p.get("id"):
+                self._index_portals_by_id[p["id"]] = p
+        rooms = (self.rooms or {}).get("rooms", [])
+        for r in rooms:
+            if isinstance(r, dict) and r.get("id"):
+                self._index_rooms_by_id[r["id"]] = r
+
+    def chests_by_room(self, room_id):
+        """O(1) 查询：指定房间的全部点位（替代逐条扫描）。"""
+        return list(self._index_chests_by_room.get(room_id, []))
+
+    def portal_by_id(self, portal_id):
+        """O(1) 查询：传送门 by id。"""
+        return self._index_portals_by_id.get(portal_id)
+
+    def room_by_id(self, room_id):
+        return self._index_rooms_by_id.get(room_id)
 
     def _check_unique_ids(self):
         seen = {}
@@ -177,16 +210,10 @@ class KnowledgePackage:
         return {r["id"] for r in self.rooms["rooms"]} if self.rooms else set()
 
     def chest(self, chest_id):
-        for c in self.chests or []:
-            if c["id"] == chest_id:
-                return c
-        return None
+        return self._index_chests_by_id.get(chest_id)
 
     def portal(self, portal_id):
-        for p in self.portals or []:
-            if p["id"] == portal_id:
-                return p
-        return None
+        return self._index_portals_by_id.get(portal_id)
 
     def template_exists(self, name):
         return (self.templates_dir / name).exists()

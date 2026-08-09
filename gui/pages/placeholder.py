@@ -188,7 +188,9 @@ class KnowledgePage(BasePage):
         self.add_footer(refresh_btn)
         self.footer.layout().setDirection(QHBoxLayout.RightToLeft)
 
-        self._refresh()
+        # Bug 303：统计扫描延迟到事件循环（页面初始化不阻塞 UI）
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._refresh)
 
     def _refresh(self):
         from gui.pages.guides_view import GUIDES, POINT_FILES

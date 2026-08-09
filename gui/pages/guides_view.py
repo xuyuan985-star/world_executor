@@ -54,6 +54,16 @@ class GuidesView(BasePage):
         self.reload()
 
     def reload(self):
+        # Bug 304：刷新防抖（高频触发合并为一次重载）
+        from PySide6.QtCore import QTimer
+        if getattr(self, "_reload_timer", None) is None:
+            self._reload_timer = QTimer(self)
+            self._reload_timer.setSingleShot(True)
+            self._reload_timer.setInterval(300)
+            self._reload_timer.timeout.connect(self._do_reload)
+        self._reload_timer.start()
+
+    def _do_reload(self):
         self.map_list.clear()
         self._maps = {}
         if not GUIDES.exists():
