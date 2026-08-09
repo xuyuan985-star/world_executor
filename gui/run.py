@@ -6,8 +6,10 @@ sys.path.insert(0, str(ROOT))
 
 # DPI 警告修复：RoundPreferFloor 必须在任何 QGuiApplication 创建前设置
 #（此前在 app 创建后才调用——Qt 警告且不生效）
+# 注意：这是 QGuiApplication 的静态方法（不是 Qt 类方法）
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtCore import Qt as _Qt
-_Qt.setHighDpiScaleFactorRoundingPolicy(
+QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
     _Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
 
 from PySide6.QtWidgets import QApplication
