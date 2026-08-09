@@ -16,22 +16,36 @@ FPS_INTERVAL = 3
 SCALE = 1280
 
 
-def extract_frames(video, scale=SCALE, interval=None):
+def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
+    """Bug 172：2s 密集固定采样（默认）不漏短现目标；Bug 171：帧数上限。
+
+    间隔与上限互斥保障：短间隔 = 不漏关键帧；上限 = 长视频不爆 VLM 请求。
+    """
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
     # Bug 47：抽帧前清空旧帧（防第二次处理混入上次视频残留）
     for f in FRAME_DIR.glob("f_*.jpg"):
         f.unlink()
-    iv = interval or FPS_INTERVAL
+    iv = min(interval or FPS_INTERVAL, 2)  # Bug 172：默认 2s 采样（不漏 1-2s 短现目标）
+    vf = f"fps=1/{iv},scale={scale}:-1"
     try:
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-            "-vf", f"fps=1/{iv},scale={scale}:-1",
+            "-vf", vf,
             str(FRAME_DIR / "f_%04d.jpg"),
         ], check=True)
     except subprocess.CalledProcessError as e:
         # Bug 48：抽帧失败带视频上下文（用户知道哪个视频/什么命令失败）
         raise RuntimeError(f"视频抽帧失败: {video}（ffmpeg 返回 {e.returncode}）") from e
-    return sorted(FRAME_DIR.glob("f_*.jpg"))
+    frames = sorted(FRAME_DIR.glob("f_*.jpg"))
+    # Bug 171：单视频帧数上限（超长视频均匀采样，防 VLM 请求爆炸）
+    if len(frames) > max_frames:
+        step = len(frames) / max_frames
+        keep = {frames[int(i * step)] for i in range(max_frames)}
+        for f in frames:
+            if f not in keep:
+                f.unlink()
+        frames = sorted(FRAME_DIR.glob("f_*.jpg"))
+    return frames
 
 
 PROMPT = (

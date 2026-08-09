@@ -65,6 +65,21 @@ def _install_excepthook():
     _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger().addHandler(_h)
     logging.getLogger().setLevel(logging.ERROR)
+    # Bug 112：日志脱敏（API key/cookie 不落盘）
+    from config.settings import install_log_redaction
+    install_log_redaction()
+    # Bug 193：依赖缺失给安装指引（ModuleNotFoundError 不裸抛）
+    _PIP_HINTS = {
+        "PySide6": "pip install PySide6",
+        "qfluentwidgets": "pip install PySide6-Fluent-Widgets",
+        "PIL": "pip install pillow",
+        "cv2": "pip install opencv-python",
+        "mss": "pip install mss",
+        "requests": "pip install requests",
+        "ruamel": "pip install ruamel.yaml",
+        "pyuac": "pip install pyuac",
+        "win32gui": "pip install pywin32",
+    }
     _orig = sys.excepthook
 
     def hook(t, v, tb):
@@ -86,17 +101,63 @@ def _install_excepthook():
         except Exception:
             pass
         logging.error("uncaught", exc_info=(t, v, tb))
+        # Bug 197：崩溃现场自动保存（dump/state.json + 截图 + 日志）
+        try:
+            _save_crash_dump(t, v, tb)
+        except Exception:
+            pass
         try:
             from PySide6.QtWidgets import QMessageBox
             app = QApplication.instance()
             if app is not None:
-                QMessageBox.critical(None, "WorldExecutor 错误",
-                                     f"发生未捕获异常:\n{t.__name__}: {v}")
+                msg = f"发生未捕获异常:\n{t.__name__}: {v}"
+                if isinstance(v, ModuleNotFoundError):
+                    name = str(v).split("'")[1] if "'" in str(v) else ""
+                    hint = _PIP_HINTS.get(name)
+                    if hint:
+                        msg += f"\n\n缺少依赖 {name} → {hint}"
+                QMessageBox.critical(None, "WorldExecutor 错误", msg)
         except Exception:
             pass
         _orig(t, v, tb)
 
     sys.excepthook = hook
+
+
+def _save_crash_dump(t, v, tb):
+    """Bug 197：崩溃现场（dump/时间戳/state.json + 游戏截图 + 错误日志）。"""
+    import time
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    dump_dir = root / "dump" / time.strftime("%Y%m%d_%H%M%S")
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    import traceback as _tb
+    (dump_dir / "traceback.txt").write_text(
+        "".join(_tb.format_exception(t, v, tb)), encoding="utf-8")
+    state = {}
+    try:
+        from gui.main_window import MainWindow
+        for w in QApplication.instance().topLevelWidgets():
+            if isinstance(w, MainWindow):
+                mc = getattr(w, "mission_controller", None)
+                state = {"state": getattr(mc, "state", None),
+                         "knowledge_dir": getattr(mc, "knowledge_dir", None)}
+                break
+    except Exception:
+        pass
+    import json
+    (dump_dir / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:  # 游戏画面现场
+        from runtime.drivers.march7th.window import find_game_window
+        from runtime.win_capture import capture_game_foreground
+        game = find_game_window()
+        if game:
+            img = capture_game_foreground(game)
+            img.save(dump_dir / "screen.png")
+    except Exception:
+        pass
+    print(f"[crash] 现场已保存: {dump_dir}")
 
 
 def main():

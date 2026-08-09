@@ -22,13 +22,9 @@ class MainWindow(FluentWindow):
                  mission_controller=None):
         super().__init__(parent)
         apply_theme(QApplication.instance())
-        # Bug 232：版本信息入标题（用户反馈可定位构建）
-        import importlib.metadata as _md
-        try:
-            _ver = _md.version("world-executor")
-        except Exception:
-            _ver = "dev"
-        self.setWindowTitle(f"世界执行器 v{_ver}")
+        # Bug 232：版本信息入标题（用户反馈可定位构建）——Bug 194：单一版本源
+        from config.version import APP_VERSION
+        self.setWindowTitle(f"世界执行器 v{APP_VERSION}")
         self.setMinimumSize(1180, 720)
         # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
         # Bug 15：知识目录显式注入——与 run.py 目标加载同源（真点位执行包，

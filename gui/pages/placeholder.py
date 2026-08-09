@@ -17,10 +17,14 @@ def error_page(source, error):
 
 
 def placeholder_page(title, note):
-    """占位页：卡片置顶（无顶部 stretch 空洞）。"""
+    """占位页：卡片置顶（无顶部 stretch 空洞）。
+    Bug 185：明确标注「功能开发中」——防止用户误以为 TODO 已实现。"""
     page = BasePage(title)
     card = CardWidget()
     card_layout(card)
+    badge = BodyLabel("功能开发中")
+    badge.setStyleSheet("color: #FFB454; font-weight: 700; font-size: 13px;")
+    card_layout(card).addWidget(badge)
     label = BodyLabel(note)
     label.setStyleSheet("color: #7A90B0;")
     card_layout(card).addWidget(label)

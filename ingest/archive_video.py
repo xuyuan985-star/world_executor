@@ -12,7 +12,9 @@
 归档正确性测试：P8 支援舱段5.mp4 → 02_herta_space_station/points/chests.json
 """
 import argparse
+import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -147,7 +149,20 @@ def map_id_of(mdir):
     return tail if head.isdigit() else mdir
 
 
-def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
+def _file_sha256(path, chunk=1 << 20):
+    """Bug 174：视频内容指纹（改名/移动仍可识别重复）。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+
+def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1,
+               source_video=None, source_frame=None):
     """VLM bbox → 攻略点位（bbox [x1,y1,x2,y2] 0-1000 → 归一化中心）。
 
     命名可读：{地图中文}·{区域中文}·宝箱{序号}（对齐视频目录规范）。
@@ -180,6 +195,9 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
         "status": "pending_review",
         # Bug 168：识别置信度（VLM 未输出时 null）
         "confidence": None,
+        # Bug 173：来源追溯（哪个视频/哪一帧）
+        "source_video": source_video,
+        "source_frame": source_frame if source_frame is not None else frame_no,
         "rarity": None,
         "tier": "T1",
         "note": "VLM 自动识别（2遍一致），待人工复核",
@@ -187,7 +205,31 @@ def make_point(area_id, map_id, kind, bbox, frame_no, seq_no=1):
 
 
 def archive_point(mdir, point, dry_run=False):
-    """点位 → maps/<map>/points/<type>.json（去重 by id）。"""
+    """点位 → maps/<map>/points/<type>.json（去重 by id）。
+
+    Bug 180：跨进程文件锁——两个视频同时归档不互相覆盖。
+    """
+    lock_path = GUIDES / mdir / "points" / ".archive.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        time.sleep(0.2)
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL)
+        except FileExistsError:
+            return "归档锁被占用（另一视频处理中，跳过）"
+    try:
+        return _archive_point_locked(mdir, point, dry_run)
+    finally:
+        os.close(lock_fd)
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+
+
+def _archive_point_locked(mdir, point, dry_run):
     pdir = GUIDES / mdir / "points"
     pdir.mkdir(parents=True, exist_ok=True)
     fname = {
@@ -240,6 +282,19 @@ def main():
         print(f"[FAIL] 视频不存在: {video}")
         return 2
 
+    # Bug 174：重复视频检测（内容 sha256——文件改名也能识别已处理）
+    video_hash = _file_sha256(video)
+    done_log = ROOT / "ingest" / "raw" / "archived_videos.json"
+    done_map = {}
+    if done_log.exists():
+        try:
+            done_map = json.loads(done_log.read_text(encoding="utf-8"))
+        except Exception:
+            done_map = {}
+    if video_hash in done_map:
+        print(f"[SKIP] 视频已处理过（{done_map[video_hash]}）——防重复分析")
+        return 0
+
     mdir, area_id, err = resolve_map_area(video.name)
     if err:
         print(f"[FAIL] 归档目标解析失败: {err}")
@@ -251,10 +306,25 @@ def main():
 
     provider = QwenVLProvider()
     archived = 0
+    # Bug 178：VLM 结果分类统计（NO_CHEST / INVALID_JSON / INVALID_BOX / LOW_CONFIDENCE）
+    stats = {"no_chest": 0, "invalid_json": 0, "invalid_box": 0,
+             "low_confidence": 0, "archived": 0}
+    # Bug 176：分析中间产物目录（误判可人工复核）
+    artifact_dir = ROOT / "ingest" / "raw" / "analysis" / mdir
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     for i, f in enumerate(frames):
         data = ask_frame(provider, f, i)
-        if not data or "chest" not in data:
+        if data.get("error"):
+            stats["invalid_json"] += 1
+            print(f"  f_{i:04d} VLM 异常: {data['error'][:80]}")
             continue
+        if not data or "chest" not in data:
+            stats["no_chest"] += 1
+            continue
+        # Bug 176：保存原始响应（复核依据）
+        resp_file = artifact_dir / f"{f.stem}_response.json"
+        resp_file.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
         # 特殊任务视频（标题无区域）→ 用 VLM room 输出自动映射具体区域
         point_area = area_id
         if data.get("room"):
@@ -269,6 +339,7 @@ def main():
             if conf is not None:
                 try:
                     if float(conf) < 0.8:
+                        stats["low_confidence"] += 1
                         print(f"  f_{i:04d} chest 置信 {conf} < 0.8（拒绝入库）")
                         continue
                 except (TypeError, ValueError):
@@ -277,20 +348,31 @@ def main():
                 print("  f_{:04d} chest 但区域未解析（跳过，防 region=null）".format(i))
                 continue
             pt = make_point(point_area, map_id_of(mdir), "chest",
-                            chest.get("bbox"), i)
+                            chest.get("bbox"), i,
+                            source_video=video.name, source_frame=i)
             if not pt:
-                # Bug 27：bbox 缺失/非法静默跳过 → 显式日志（用户可查为何少点位）
+                # Bug 27/178：bbox 缺失/非法 → 分类统计（可查为何少点位）
+                stats["invalid_box"] += 1
                 print(f"  f_{i:04d} chest bbox 无效或缺失（跳过）")
                 continue
             msg = archive_point(mdir, pt, args.dry_run)
             if "归档" in msg:
+                stats["archived"] += 1
                 archived += 1
             print(f"  f_{i:04d} chest[{point_area}] -> {msg}")
         if data.get("room"):
             print(f"  f_{i:04d} room={data['room']}")
 
+    # Bug 174：记录已处理视频（内容 hash）
+    if not args.dry_run:
+        done_map[video_hash] = str(video)
+        done_log.parent.mkdir(parents=True, exist_ok=True)
+        done_log.write_text(json.dumps(done_map, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+
     print(f"[done] 归档 {archived} 条（dry_run={args.dry_run}）"
           f" -> {GUIDES / mdir / 'points'}")
+    print(f"[stats] {stats}")
     return 0
 
 
