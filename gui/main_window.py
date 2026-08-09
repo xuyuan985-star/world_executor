@@ -22,7 +22,13 @@ class MainWindow(FluentWindow):
                  mission_controller=None):
         super().__init__(parent)
         apply_theme(QApplication.instance())
-        self.setWindowTitle("WorldExecutor Studio")
+        # Bug 232：版本信息入标题（用户反馈可定位构建）
+        import importlib.metadata as _md
+        try:
+            _ver = _md.version("world-executor")
+        except Exception:
+            _ver = "dev"
+        self.setWindowTitle(f"WorldExecutor Studio v{_ver} (gui-20260809)")
         self.setMinimumSize(1180, 720)
         # 第 62 轮：业务封装注入（缺省内部构造，测试可传 Fake）
         self.mission_controller = mission_controller or MissionController(api)
