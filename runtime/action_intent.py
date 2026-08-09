@@ -47,6 +47,15 @@ class ActionMethod(Enum):
     VLM_BBOX = "vlm_bbox"
 
 
+class ActionState(Enum):
+    """Bug 351：动作生命周期——统一状态（审计/UI/恢复可追踪）。"""
+    CREATED = "created"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 @dataclass(frozen=True)
 class ActionIntent:
     """动作意图：决策层产出，不携带任何坐标。

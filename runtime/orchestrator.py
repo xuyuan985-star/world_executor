@@ -76,7 +76,10 @@ class SessionWatchdog(threading.Thread):
 
 
 class TargetRecord:
-    """#38：单目标生命周期记录——attempts/结果/失败分类，会话结束可统计。"""
+    """#38：单目标生命周期记录——attempts/结果/失败分类，会话结束可统计。
+
+    Bug 380：补 duration/retry 维度（统计不只 success/fail）。
+    """
 
     def __init__(self, target_id):
         self.target_id = target_id
@@ -84,11 +87,24 @@ class TargetRecord:
         self.attempts = 0
         self.last_error = None
         self.category = None
+        self.started_at = None
+        self.duration_s = None
+        self.retry_count = 0
+
+    def mark_start(self):
+        import time
+        self.started_at = time.time()
+
+    def mark_finish(self):
+        import time
+        if self.started_at is not None:
+            self.duration_s = round(time.time() - self.started_at, 1)
 
     def to_dict(self):
         return {"target": self.target_id, "status": self.status,
                 "attempts": self.attempts, "error": self.last_error,
-                "category": self.category}
+                "category": self.category, "duration_s": self.duration_s,
+                "retry_count": self.retry_count}
 
 
 class WorkflowOrchestrator:
@@ -177,6 +193,7 @@ class WorkflowOrchestrator:
         self._records[target_id] = record
         record.status = "running"
         record.attempts += 1
+        record.mark_start()  # Bug 380：耗时统计起点
         try:
             return self._run_target_inner(target_id, record)
         except Exception:
@@ -198,6 +215,8 @@ class WorkflowOrchestrator:
                 self._machine.on(Event.ABORT_REQUEST, "orchestrator crash")
             self._interrupted(target_id)
             return False
+        finally:
+            record.mark_finish()  # Bug 380：所有结束路径统一计时
 
     def _run_target_inner(self, target_id, record):
         wf = self.pkg.workflow(target_id)
@@ -258,6 +277,7 @@ class WorkflowOrchestrator:
                 recovered = False
                 if result.retryable:
                     for attempt in range(retry):
+                        record.retry_count += 1  # Bug 380：重试次数统计
                         # Bug 106：指数退避（1s→2s→4s）——失败重试不高频占资源
                         # Bug 144：退避可中断（stop/abort 期间不再空等）
                         if not self._interruptible_wait(2 ** attempt):
