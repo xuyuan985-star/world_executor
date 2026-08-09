@@ -21,12 +21,19 @@ runtime.db
 runtime.db-*
 *.sqlite3
 
+# 运行时日志/快照/报告（不入库）
+logs/
+reports/
+dump/
+ingest/raw/events/*.jsonl
+
 # 原始视频/中间产物
 攻略视频/
 ingest/raw/frames/
 ingest/raw/events/*.json
 ingest/raw/videos/
 ingest/tmp/
+ingest/raw/analysis/
 
 # 密钥与本地配置
 settings.local.json
