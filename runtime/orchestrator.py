@@ -94,6 +94,8 @@ class WorkflowOrchestrator:
         self._monitor = None
         self._watchdog = None
         self._records = {}
+        self._foreground_retried = False  # BUG-24：失焦激活只尝试一次
+        self.foreground_check = True      # BUG-24：前台锁定（mock 环境关闭）
         # #20-7：决策层——Planner 输入 Observation 输出 ActionIntent（零坐标）
         self.planner = Planner()
         self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
@@ -191,6 +193,18 @@ class WorkflowOrchestrator:
                 return False
             # S9：窗口消失/丢失 → 系统不可用，停止执行（不再黑屏点击）
             window_problem = self._window_lost()
+            if window_problem == "window_not_foreground" and not self._foreground_retried:
+                # BUG-24：窗口存在但失焦——按 C.4 协议尝试激活一次再继续
+                try:
+                    from runtime.win_capture import set_foreground_with_retry
+                    from runtime.drivers.march7th.window import find_game_window
+                    game = find_game_window()
+                    if game:
+                        set_foreground_with_retry(game["hwnd"])
+                except Exception:
+                    pass
+                self._foreground_retried = True
+                window_problem = self._window_lost()
             if window_problem:
                 self._system_failure(target_id, window_problem)
                 return False
@@ -448,9 +462,12 @@ class WorkflowOrchestrator:
 
     # ---------- 系统状态（S9/S10） ----------
 
-    @staticmethod
-    def _window_lost():
-        """S9：窗口消失/尺寸异常 → 返回原因，正常返回 None。"""
+    def _window_lost(self):
+        """S9：窗口消失/尺寸异常/失焦 → 返回原因，正常返回 None。
+
+        BUG-24：窗口存在但不在前台 → window_not_foreground（点击会打到别的窗口）。
+        foreground_check=False（mock 环境）时跳过前台判定。
+        """
         try:
             from runtime.drivers.march7th.window import find_game_window
             game = find_game_window()
@@ -459,6 +476,12 @@ class WorkflowOrchestrator:
             w, h = game["client"]
             if w < 500 or h < 500:
                 return f"window_too_small:{w}x{h}"
+            # BUG-24：前台锁定（操作前游戏必须在最前——防点到浏览器）
+            if self.foreground_check:
+                import ctypes
+                fg = ctypes.windll.user32.GetForegroundWindow()
+                if fg != game["hwnd"]:
+                    return "window_not_foreground"
         except Exception as e:
             return f"window_check_error:{type(e).__name__}"
         return None

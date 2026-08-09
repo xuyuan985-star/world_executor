@@ -23,7 +23,9 @@ class EventBus:
             self._fh = open(persist_path, "a", encoding="utf-8")
 
     def subscribe(self, callback):
-        self._subscribers.append(callback)
+        # BUG-28：订阅者列表并发修改（GUI 线程注册 / runner 线程 publish 快照）
+        with self._lock:
+            self._subscribers.append(callback)
 
     def publish(self, event: WorldEvent):
         with self._lock:

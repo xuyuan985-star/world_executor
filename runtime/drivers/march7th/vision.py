@@ -34,11 +34,15 @@ class March7thVision:
         返回 (PIL.Image, screenshot_pos, scale_factor)。
         #17-G：返回前做结构质量校验（全黑/全白/黑边），记入 self.last_quality——
         不抛异常（截图本身成功），由调用方在进 OCR/VLM 前决策。
+        BUG-26：降级原因记录进 last_quality.meta.fallback_chain——排查
+        "为什么一直走 mss"有据可查。
         """
         source = "print_window"
+        chain = []
         try:
             out = self.auto.take_screenshot()
-        except Exception:
+        except Exception as e:
+            chain.append(f"print_window_failed:{type(e).__name__}")
             out = None
         if out is None:
             try:
@@ -51,10 +55,13 @@ class March7thVision:
                 left, top = game["client"][0], game["client"][1]
                 out = (img, (left, top, game["client"][0], game["client"][1]), 1.0)
                 source = "foreground_mss"
-            except Exception:
+            except Exception as e:
+                chain.append(f"foreground_mss_failed:{type(e).__name__}")
                 raise RuntimeError("截图降级链失败：PrintWindow 与前台 mss 均不可用")
         img = out[0]
         self.last_quality = self.validator.validate(img, source=source)
+        if chain:
+            self.last_quality.meta["fallback_chain"] = chain
         return out
 
     def screenshot_path(self, out_dir):

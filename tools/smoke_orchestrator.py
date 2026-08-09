@@ -252,6 +252,7 @@ def run_scenario(clicks, label):
 
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id=f"smoke-{label}", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
 
     def driver_factory():
         return FakeDriver(list(clicks))
@@ -289,6 +290,7 @@ def main():
     bus.subscribe(lambda e: seen.append(e.type))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-order", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
 
     def driver_factory():
         return FakeDriver([True] * 10)
@@ -315,6 +317,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-emergency", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
 
     class FakePaused:
         # #16：spy——确认 monitor 真的被轮询（防代码路径跳过导致假成功）
@@ -345,6 +348,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-window", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
 
     def driver_factory():
         return FakeDriver([])
@@ -365,6 +369,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-obsact", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
 
     def driver_factory():
@@ -388,6 +393,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-fusion", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
     from runtime.vision_observer import VisionObserver
     from runtime.observation_memory import StableState
     orch.observer = VisionObserver(ocr=FakeOCRDeny(), vlm=FakeBadVLM(),
@@ -427,6 +433,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-replay", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
     replay = ReplayInput([True, True, False])
 
@@ -452,6 +459,7 @@ def main():
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-observeonly", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
     observe = ObserveOnlyInput()
 
@@ -475,6 +483,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-vlmfalse", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
 
     def driver_factory():
         return FakeDriver([True] * 10)
@@ -521,6 +530,7 @@ def main():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-guard", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
     replay = ReplayInput([True, True])
 
@@ -561,6 +571,7 @@ def main():
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-crash", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
 
     def driver_factory():
@@ -582,6 +593,7 @@ def main():
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="smoke-disappear", use_vlm=False)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserverSequence([["chest_A"], []])  # 第二次目标消失
 
     def driver_factory():

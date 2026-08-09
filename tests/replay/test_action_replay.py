@@ -45,6 +45,7 @@ def replay(events):
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="replay-test", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
     orch.observer = FakeObserver(text=["chest_A"])
 
     def driver_factory():
@@ -78,6 +79,7 @@ def replay_failure():
     bus.subscribe(lambda e: seen.append((e.type, e.context)))
     pkg = KnowledgePackage(KNOWLEDGE)
     orch = WorkflowOrchestrator(pkg, bus=bus, execution_id="replay-fail", use_vlm=True)
+    orch.foreground_check = False  # mock 跳过前台判定
     replay = ReplayInput([True, False, False, False])  # 点击拒绝 → 重试用尽
 
     def driver_factory():
