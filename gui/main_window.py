@@ -260,3 +260,6 @@ class MainWindow(FluentWindow):
     def _on_event_delivered(self, event):
         # GUI 线程内执行（信号队列投递后）——所有 Qt 控件操作都在这里
         self.command_deck.on_event(event)
+        # 观察中心同步接收事件统计
+        if hasattr(self.observation, "on_event"):
+            self.observation.on_event(event)

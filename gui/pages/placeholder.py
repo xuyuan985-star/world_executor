@@ -1,22 +1,14 @@
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+"""Placeholder 页面：全部接入 BasePage 统一框架。"""
+import json
+from pathlib import Path
+
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from qfluentwidgets import BodyLabel, CardWidget, ComboBox, StrongBodyLabel
 
-
-def card_layout(card):
-    if card.layout() is None:
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(16, 16, 16, 16)
-        lay.setSpacing(10)
-    return card.layout()
-
-
-def card_title(card, text):
-    label = StrongBodyLabel(text)
-    label.setStyleSheet("font-size: 13px; letter-spacing: 1px;")
-    card_layout(card).insertWidget(0, label)
-    return label
+from gui.pages.base_page import BasePage, card_layout, card_title
 
 
 def error_page(source, error):
@@ -26,7 +18,6 @@ def error_page(source, error):
 
 def placeholder_page(title, note):
     """占位页：卡片置顶（无顶部 stretch 空洞）。"""
-    from gui.pages.base_page import BasePage
     page = BasePage(title)
     card = CardWidget()
     card_layout(card)
@@ -38,34 +29,43 @@ def placeholder_page(title, note):
     return page
 
 
-class WorldGraphPage(QWidget):
+class WorldGraphPage(BasePage):
+    """世界图：地图级可视化（当前复用攻略体系视图）。"""
+
     def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        # GUI 联动：世界图 = 攻略体系地图层级
+        super().__init__("世界图", parent)
+        self.set_status("地图级执行视图")
         from gui.pages.guides_view import GuidesView
-        layout.addWidget(GuidesView(self))
+        self._view = GuidesView(self)
+        self.content_layout.addWidget(self._view)
 
 
-class ObservationPage(QWidget):
+class ObservationPage(BasePage):
+    """观察中心：事件流统计与诊断。"""
+
     def __init__(self, parent=None):
-        super().__init__(parent)
-        from gui.pages.base_page import BasePage
-        bp = BasePage("观察中心")
-        bp.set_status("运行事件将显示在此")
+        super().__init__("观察中心", parent)
+        self.set_status("运行事件将显示在此")
+        self._counts = {}
+
+        # 统计卡片
+        stats_card = CardWidget()
+        card_title(stats_card, "事件统计")
         self._stats = BodyLabel("尚未开始任务 — 事件统计将显示在这里")
-        self._stats.setStyleSheet("color: #7A90B0;")
-        bp.content_layout.addWidget(self._stats)
-        bp.content_layout.addStretch(1)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(bp)
+        self._stats.setStyleSheet("color: #7A90B0; font-size: 13px;")
+        card_layout(stats_card).addWidget(self._stats)
+        self.content_layout.addWidget(stats_card)
+
+        # 占位：时间线（后续接入）
+        timeline_card = CardWidget()
+        card_title(timeline_card, "事件时间线")
+        placeholder = BodyLabel("时间线视图待接入")
+        placeholder.setStyleSheet("color: #7A90B0;")
+        card_layout(timeline_card).addWidget(placeholder)
+        card_layout(timeline_card).addStretch(1)
+        self.content_layout.addWidget(timeline_card, 1)
 
     def on_event(self, event):
-        # 观察中心：事件计数统计（时间线/失败统计后续接入）
-        if not hasattr(self, "_counts"):
-            self._counts = {}
         self._counts[event.type] = self._counts.get(event.type, 0) + 1
         total = sum(self._counts.values())
         top = "、".join(f"{k}×{v}" for k, v in
@@ -73,105 +73,214 @@ class ObservationPage(QWidget):
         self._stats.setText(f"已接收 {total} 事件 | {top}")
 
 
-class KnowledgePage(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        # GUI 联动：攻略体系（knowledge/guides 地图→区域→点位）
-        from gui.pages.guides_view import GuidesView
-        layout.addWidget(GuidesView(self))
-
-
-class StudioPage(QWidget):
-    """工作室：视频列表 + 一键归档（ingest/archive_video.py 链路）。"""
+class KnowledgePage(BasePage):
+    """知识体系：攻略库管理入口（统计视图，与世界图执行视图区分）。"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        from PySide6.QtCore import QThread, Signal
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        super().__init__("知识体系", parent)
+        self.set_status("攻略库统计与数据源")
 
-        title = StrongBodyLabel("视频攻略")
-        layout.addWidget(title)
-        # 首屏统计
-        self.video_stats = QLabel("")
-        self.video_stats.setStyleSheet("color: #7A90B0;")
-        layout.addWidget(self.video_stats)
+        # 统计卡片
+        self.stats_card = CardWidget()
+        card_title(self.stats_card, "入库统计")
+        self.stats_label = BodyLabel("正在扫描…")
+        self.stats_label.setStyleSheet("color: #7A90B0; font-size: 13px;")
+        card_layout(self.stats_card).addWidget(self.stats_label)
+        self.content_layout.addWidget(self.stats_card)
 
-        self.video_list = QListWidget()
-        layout.addWidget(self.video_list)
+        # 数据源明细
+        self.source_card = CardWidget()
+        card_title(self.source_card, "数据源文件")
+        self.source_label = BodyLabel("")
+        self.source_label.setWordWrap(True)
+        self.source_label.setStyleSheet("color: #B0C4DE; font-size: 13px;")
+        card_layout(self.source_card).addWidget(self.source_label)
+        card_layout(self.source_card).addStretch(1)
+        self.content_layout.addWidget(self.source_card, 1)
 
-        row = QHBoxLayout()
-        self.archive_btn = QPushButton("归档选中视频")
-        self.archive_btn.clicked.connect(self._archive)
-        self.refresh_btn = QPushButton("刷新")
-        self.refresh_btn.clicked.connect(self._refresh)
-        row.addWidget(self.archive_btn)
-        row.addWidget(self.refresh_btn)
-        row.addStretch(1)
-        layout.addLayout(row)
+        # 刷新按钮
+        refresh_btn = QPushButton("刷新统计")
+        refresh_btn.setFixedWidth(110)
+        refresh_btn.clicked.connect(self._refresh)
+        self.add_footer(refresh_btn)
+        self.footer.layout().setDirection(QHBoxLayout.RightToLeft)
 
-        self._videos = []
         self._refresh()
 
-        class ArchiveWorker(QThread):
-            log = Signal(str)
-            done = Signal(bool, str)
+    def _refresh(self):
+        from gui.pages.guides_view import GUIDES, POINT_FILES
+        if not GUIDES.exists():
+            self.stats_label.setText("攻略库不存在")
+            self.source_label.setText("请先导入知识库")
+            return
 
-            def __init__(self, video):
-                super().__init__()
-                self.video = video
+        map_count = 0
+        area_count = 0
+        point_count = 0
+        lines = []
+        for md in sorted(GUIDES.iterdir()):
+            if not md.is_dir():
+                continue
+            map_count += 1
+            areas = list((md / "areas").glob("*.json")) if (md / "areas").exists() else []
+            area_count += len(areas)
+            map_name = md.name
+            try:
+                doc = json.loads((md / "map.json").read_text(encoding="utf-8"))
+                map_name = doc.get("name", md.name)
+            except Exception:
+                pass
+            sub_lines = [f"地图: {map_name}"]
+            for f, zh in POINT_FILES.items():
+                pf = md / "points" / f
+                if not pf.exists():
+                    continue
+                try:
+                    pts = json.loads(pf.read_text(encoding="utf-8"))
+                    point_count += len(pts)
+                    sub_lines.append(f"  {zh}: {len(pts)} 条")
+                except Exception:
+                    sub_lines.append(f"  {zh}: 读取失败")
+            lines.append("\n".join(sub_lines))
 
-            def run(self):
-                import subprocess
-                import sys
-                from pathlib import Path
-                root = Path(__file__).resolve().parent.parent.parent
-                r = subprocess.run(
-                    [sys.executable, str(root / "ingest" / "archive_video.py"),
-                     str(self.video), "--max-frames", "12"],
-                    capture_output=True, text=True, cwd=str(root))
-                out = (r.stdout + r.stderr)
-                for line in out.splitlines():
-                    self.log.emit(line)
-                self.done.emit(r.returncode == 0, out[-300:])
+        self.stats_label.setText(
+            f"地图 {map_count} 个 · 区域 {area_count} 个 · 点位 {point_count} 条")
+        self.source_label.setText("\n\n".join(lines) or "暂无数据")
+
+
+class VideoCard(CardWidget):
+    """视频卡片：名称 + 大小 + 操作。"""
+
+    def __init__(self, video_path, parent=None):
+        super().__init__(parent)
+        self.video_path = video_path
+        self.setFixedHeight(90)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(16)
+
+        info = QVBoxLayout()
+        info.setSpacing(4)
+        self.name_label = StrongBodyLabel(video_path.name)
+        self.name_label.setStyleSheet("font-size: 13px;")
+        mb = video_path.stat().st_size // 1024 // 1024
+        self.size_label = BodyLabel(f"{mb} MB")
+        self.size_label.setStyleSheet("color: #7A90B0; font-size: 12px;")
+        info.addWidget(self.name_label)
+        info.addWidget(self.size_label)
+        layout.addLayout(info)
+        layout.addStretch(1)
+
+        self.archive_btn = QPushButton("归档")
+        self.archive_btn.setFixedWidth(80)
+        self.archive_btn.setProperty("video_path", str(video_path))
+        layout.addWidget(self.archive_btn)
+
+
+class StudioPage(BasePage):
+    """工作室：视频攻略卡片化列表 + 一键归档。"""
+
+    def __init__(self, parent=None):
+        super().__init__("视频攻略", parent)
+        self.set_status("视频归档管理")
+        self._videos = []
+
+        # 统计行
+        stats_card = CardWidget()
+        stats_layout = QHBoxLayout(stats_card)
+        stats_layout.setContentsMargins(16, 12, 16, 12)
+        self.video_stats = BodyLabel("正在扫描视频…")
+        self.video_stats.setStyleSheet("color: #7A90B0; font-size: 13px;")
+        self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn.setFixedWidth(80)
+        self.refresh_btn.clicked.connect(self._refresh)
+        stats_layout.addWidget(self.video_stats)
+        stats_layout.addStretch(1)
+        stats_layout.addWidget(self.refresh_btn)
+        self.content_layout.addWidget(stats_card)
+
+        # 卡片网格容器
+        self.cards_container = QWidget()
+        self.cards_layout = QVBoxLayout(self.cards_container)
+        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout.setSpacing(10)
+        self.cards_layout.addStretch(1)
+        self.content_layout.addWidget(self.cards_container, 1)
+
+        self._refresh()
 
         self._worker = None
-        self._worker_cls = ArchiveWorker
+
+    class ArchiveWorker(QThread):
+        log = Signal(str)
+        done = Signal(bool, str)
+
+        def __init__(self, video):
+            super().__init__()
+            self.video = video
+
+        def run(self):
+            import subprocess
+            import sys
+            from pathlib import Path
+            root = Path(__file__).resolve().parent.parent.parent
+            r = subprocess.run(
+                [sys.executable, str(root / "ingest" / "archive_video.py"),
+                 str(self.video), "--max-frames", "12"],
+                capture_output=True, text=True, cwd=str(root))
+            out = (r.stdout + r.stderr)
+            for line in out.splitlines():
+                self.log.emit(line)
+            self.done.emit(r.returncode == 0, out[-300:])
 
     def _refresh(self):
-        from pathlib import Path
         root = Path(__file__).resolve().parent.parent.parent
         dirs = [root / "ingest" / "raw" / "videos",
-                root.parent / "攻略视频"]  # 高清视频目录（Open Code 根）
+                root.parent / "攻略视频"]
         self._videos = []
         for d in dirs:
             if d.exists():
                 self._videos.extend(sorted(d.glob("*.mp4")))
-        self.video_list.clear()
-        total_mb = sum(v.stat().st_size for v in self._videos) // 1024 // 1024
-        self.video_stats.setText(f"共 {len(self._videos)} 个视频 · {total_mb}MB · 已处理 → 攻略存档")
-        for v in self._videos:
-            QListWidgetItem(f"{v.name}  ({v.stat().st_size//1024//1024}MB)",
-                            self.video_list)
 
-    def _archive(self):
-        item = self.video_list.currentItem()
-        if item is None:
-            QMessageBox.information(self, "提示", "先选择一个视频")
-            return
-        idx = self.video_list.row(item)
-        video = self._videos[idx]
-        self.archive_btn.setEnabled(False)
-        self.archive_btn.setText("归档中…")
-        self._worker = self._worker_cls(video)
+        # 清空旧卡片
+        while self.cards_layout.count():
+            item = self.cards_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        total_mb = sum(v.stat().st_size for v in self._videos) // 1024 // 1024
+        self.video_stats.setText(
+            f"共 {len(self._videos)} 个视频 · {total_mb}MB · 已处理 → 攻略存档")
+
+        for v in self._videos:
+            card = VideoCard(v)
+            card.archive_btn.clicked.connect(self._make_archive_handler(v))
+            self.cards_layout.addWidget(card)
+        self.cards_layout.addStretch(1)
+
+    def _make_archive_handler(self, video_path):
+        def _handler():
+            self._archive(video_path)
+        return _handler
+
+    def _archive(self, video):
+        self._worker = self.ArchiveWorker(video)
         self._worker.done.connect(self._on_done)
+        # 禁用所有归档按钮
+        for i in range(self.cards_layout.count()):
+            w = self.cards_layout.itemAt(i).widget()
+            if isinstance(w, VideoCard):
+                w.archive_btn.setEnabled(False)
+                w.archive_btn.setText("归档中…")
         self._worker.start()
 
     def _on_done(self, ok, tail):
-        self.archive_btn.setEnabled(True)
-        self.archive_btn.setText("归档选中视频")
+        for i in range(self.cards_layout.count()):
+            w = self.cards_layout.itemAt(i).widget()
+            if isinstance(w, VideoCard):
+                w.archive_btn.setEnabled(True)
+                w.archive_btn.setText("归档")
         QMessageBox.information(self, "归档结果",
                                 "成功\n" if ok else "失败（见日志）\n" + tail[-200:])
         from gui.pages.guides_view import GuidesView
@@ -179,21 +288,14 @@ class StudioPage(QWidget):
             w.reload()
 
 
-class SettingsPage(QWidget):
+class SettingsPage(BasePage):
     """设置页：可交互配置（默认执行模式保存到 QSettings）。"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        from PySide6.QtCore import QSettings
-        from qfluentwidgets import PrimaryPushButton as _PB
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-
-        title = StrongBodyLabel("设置")
-        layout.addWidget(title)
+        super().__init__("设置", parent)
+        self.set_status("执行模式与环境信息")
 
         card = CardWidget()
-        card_layout(card)
         cl = card_layout(card)
 
         # 默认执行模式
@@ -208,20 +310,20 @@ class SettingsPage(QWidget):
         # 环境信息（只读）
         info = QLabel(self._env_info())
         info.setWordWrap(True)
-        info.setStyleSheet("color: #7A90B0;")
+        info.setStyleSheet("color: #7A90B0; font-size: 13px;")
         cl.addWidget(info)
 
-        layout.addWidget(card)
-        layout.addStretch(1)
+        self.content_layout.addWidget(card)
+        self.content_layout.addStretch(1)
 
-        # 保存：右下固定宽（防撑满整行）
-        save_row = QHBoxLayout()
-        save_row.addStretch(1)
-        save_btn = _PB("保存设置")
+        # 保存按钮：右下固定宽
+        save_btn = QPushButton("保存设置")
         save_btn.setFixedWidth(130)
         save_btn.clicked.connect(self._save)
-        save_row.addWidget(save_btn)
-        layout.addLayout(save_row)
+        self.add_footer(save_btn)
+        # Footer 右对齐
+        f = self.footer.layout()
+        f.setDirection(QHBoxLayout.RightToLeft)
 
         self._load()
 
@@ -250,8 +352,6 @@ class SettingsPage(QWidget):
         from PySide6.QtCore import QSettings
         s = QSettings("WorldExecutor", "Studio")
         s.setValue("default_mode", "real" if self.mode_combo.currentIndex() == 1 else "dry")
-        self.led = self.findChild(QLabel, "save_hint") if False else None
-        from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(self, "设置", "已保存（默认执行模式）")
 
     def default_mode(self):

@@ -1,25 +1,13 @@
+"""CommandDeck（重构版）：BasePage 框架 + 指挥台业务。"""
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QProgressBar,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from gui.state_machine_view import StateMachineView
-from qfluentwidgets import (CardWidget, ComboBox, PrimaryPushButton,
-                            PushButton, StrongBodyLabel, SubtitleLabel)
-
-
-def card_layout(card):
-    if card.layout() is None:
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(16, 16, 16, 16)
-        lay.setSpacing(10)
-    return card.layout()
+from gui.pages.base_page import BasePage, card_layout, card_title
+from qfluentwidgets import CardWidget, ComboBox, PrimaryPushButton, PushButton, StrongBodyLabel
 
 
-def card_title(card, text):
-    label = StrongBodyLabel(text)
-    label.setStyleSheet("font-size: 13px; letter-spacing: 1px;")
-    card_layout(card).insertWidget(0, label)
-    return label
+# ---- 状态常量 ----
 
 STATUS_TEXT = {
     "pending": "待命",
@@ -74,6 +62,8 @@ def _status_color(status):
                    "failed": "#E64545", "interrupted": "#FFB020"}.get(status, "#7A90B0"))
 
 
+# ---- 目标行 ----
+
 class TargetRow(QFrame):
     def __init__(self, target_id, room, name=None, parent=None):
         super().__init__(parent)
@@ -83,7 +73,6 @@ class TargetRow(QFrame):
             "#targetRow { background: #16283F; border: 1px solid #24405F; border-radius: 8px; }")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 0, 14, 0)
-        # 显示可读名（攻略点位名），id 作为状态键
         self.name_label = StrongBodyLabel(name or target_id)
         self.room_label = QLabel(room)
         self.room_label.setStyleSheet("color: #7A90B0;")
@@ -95,7 +84,6 @@ class TargetRow(QFrame):
         lay.addWidget(self.status_label)
         self.set_status("pending")
 
-    # Bug 34：目标状态迁移保护（防事件乱序回退——completed 后不接受 running）
     VALID_TRANSITIONS = {
         "pending": {"running"},
         "running": {"succeeded", "failed", "interrupted"},
@@ -106,22 +94,23 @@ class TargetRow(QFrame):
 
     def set_status(self, status):
         if status not in self.ALL_STATUS:
-            return  # Bug 40：非法值忽略（防拼写错误进 UI）
+            return
         cur = getattr(self, "_status", "pending")
         allowed = self.VALID_TRANSITIONS.get(cur, set())
         if cur != "pending" and status not in allowed:
-            return  # 非法回退忽略（UI 保持已达成状态）
+            return
         self._status = status
         color = STATUS_COLOR.get(status, "#7A90B0")
         self.status_label.setText(STATUS_TEXT.get(status, status))
         self.status_label.setStyleSheet(f"color: {color}; font-weight: 700;")
 
 
+# ---- 实时观测卡片 ----
+
 class ObservationSnapshot(CardWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         card_title(self, "实时观测")
-        # 截图占位（后续接真机帧）
         self._shot = QLabel("游戏画面（待真机接入）")
         self._shot.setAlignment(Qt.AlignCenter)
         self._shot.setMinimumHeight(180)
@@ -129,16 +118,14 @@ class ObservationSnapshot(CardWidget):
             "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
             "color: #7A90B0;")
         card_layout(self).addWidget(self._shot)
-        # 主信息行：目标/识别/置信
         self._body = QLabel("—")
         self._body.setWordWrap(True)
         self._body.setStyleSheet("color: #7A90B0;")
         card_layout(self).addWidget(self._body)
         card_layout(self).addStretch(1)
-        self._history = []  # Bug 42：观测历史（限 20 条）
+        self._history = []
 
     def set_frame(self, pixmap_or_none):
-        """截图占位更新（pixmap 或 None=占位）。"""
         if pixmap_or_none is not None:
             self._shot.setPixmap(pixmap_or_none)
         else:
@@ -153,20 +140,20 @@ class ObservationSnapshot(CardWidget):
         snapshot = "\n".join(lines)
         self._body.setText(snapshot)
         self._body.setStyleSheet("color: #E8F0FE; font-size: 13px;")
-        self._push(snapshot)  # Bug 42
+        self._push(snapshot)
 
     def text(self):
-        """Bug 33：公开读取（不暴露私有 _body）。"""
         return self._body.text()
 
     def history_text(self, last=5):
-        """Bug 42：最近观测历史（诊断用，限 last 条）。"""
         return "\n".join(self._history[-last:])
 
     def _push(self, text):
         self._history.append(text)
         self._history = self._history[-20:]
 
+
+# ---- 健康栏 ----
 
 HEALTH_LABELS = {
     "window": "窗口",
@@ -194,25 +181,6 @@ class RuntimeHealthBar(QWidget):
             self._items[key] = box
         lay.addStretch(1)
 
-    def set_starting(self):
-        # Bug 30：启动瞬间双按钮禁用 + 初始化提示（不依赖事件到达）
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-        self.led.setText("● 初始化")
-        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
-
-    def set_stopping(self):
-        # Bug 31：停止反馈（不等 run_finished 才知道生效）
-        self.stop_btn.setEnabled(False)
-        self.led.setText("● 停止中")
-        self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
-
-    def set_health_status(self, text, busy=False):
-        """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
-        self.led.setText("● " + text)
-        self.led.setStyleSheet("color: #FFB020;" if busy else "color: #7A90B0;")
-        self.start_btn.setEnabled(not busy)
-
     def set_health(self, health):
         for key, ok in health.items():
             box = self._items.get(key)
@@ -236,6 +204,8 @@ class RuntimeHealthBar(QWidget):
                               "border-radius: 4px; padding: 2px 8px;")
 
 
+# ---- 失败检查器 ----
+
 class FailureInspector(CardWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -245,16 +215,7 @@ class FailureInspector(CardWidget):
         self._body.setStyleSheet("color: #7A90B0;")
         card_layout(self).addWidget(self._body)
         card_layout(self).addStretch(1)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        card_title(self, "失败检查器")
-        self._body = QLabel("尚无失败记录 —")
-        self._body.setWordWrap(True)
-        self._body.setStyleSheet("color: #7A90B0;")
-        card_layout(self).addWidget(self._body)
-        card_layout(self).addStretch(1)
-        self.history = []  # Bug 41：失败历史（不覆盖，限 20 条）
+        self.history = []
 
     def on_failure(self, run_no, state, observation, action, input_info, reason, category=None):
         cat_text = f"[{category}] " if category else ""
@@ -267,8 +228,7 @@ class FailureInspector(CardWidget):
             f"Reason: {reason or '—'}",
         ]
         self.history.append((run_no, state, reason, category))
-        self.history = self.history[-20:]  # 限 20 条
-        # Bug 41：显示最近 5 条（历史可见，不再只留最后一次）
+        self.history = self.history[-20:]
         recent = [
             f"#{r} [{cat or '-'}] {st or '-'} → {rr or '-'}"
             for r, st, rr, cat in self.history[-5:]
@@ -281,36 +241,36 @@ class FailureInspector(CardWidget):
         self._body.setStyleSheet("color: #7A90B0;")
 
 
-class CommandDeck(QWidget):
+# ---- 指挥台主页面 ----
+
+class CommandDeck(BasePage):
     run_requested = Signal(list)
     stop_requested = Signal()
 
     def __init__(self, targets, parent=None):
-        super().__init__(parent)
+        super().__init__("指挥台", parent)
         self._run_no = 0
         self._last_state = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(14)
+        self._targets = targets or []
 
-        header = QHBoxLayout()
-        title = SubtitleLabel("指挥台")
-        title.setStyleSheet("font-size: 20px; font-weight: 700; letter-spacing: 1px;")
+        # Header：状态 LED
         self.led = QLabel("● 空闲")
         self.led.setStyleSheet("color: #7A90B0; font-size: 12px;")
-        header.addWidget(title)
-        header.addStretch(1)
-        header.addWidget(self.led)
-        layout.addLayout(header)
+        self._header.layout().addWidget(self.led)
+        self.set_status("选择目标后开始")
 
-        control_bar = QHBoxLayout()
+        # ---- Content 上半：控制栏 ----
+        control_card = CardWidget()
+        control_card.setStyleSheet("background: #16283F;")
+        control_layout = QHBoxLayout(control_card)
+        control_layout.setContentsMargins(16, 12, 16, 12)
+        control_layout.setSpacing(12)
+
         self.target_combo = ComboBox()
-        # 目标 = 地图级（组）：全部目标 / 各大地图 / 各区域 / 单点位
-        self._targets = targets
         self._map_groups = {}
         self._region_groups = {}
         combo_items = ["全部目标"]
-        for t in targets:
+        for t in self._targets:
             map_name = t.get("map_name") or "未分组"
             region = t.get("room") or t.get("region") or "未知区域"
             if map_name not in self._map_groups:
@@ -323,47 +283,45 @@ class CommandDeck(QWidget):
                 combo_items.append(f"    〔区域〕{region}")
             self._region_groups[key].append(t)
         self.target_combo.addItems(combo_items)
-        self.start_btn = PrimaryPushButton("开始收集")
-        from qfluentwidgets import ComboBox as _Combo
-        self.mode_combo = _Combo()
+
+        self.mode_combo = ComboBox()
         self.mode_combo.addItems(["模拟执行", "真机执行"])
-        # 默认模式跟随设置页（QSettings）
         try:
             from PySide6.QtCore import QSettings
             if QSettings("WorldExecutor", "Studio").value("default_mode") == "real":
                 self.mode_combo.setCurrentIndex(1)
         except Exception:
             pass
+
         self.start_btn = PrimaryPushButton("开始任务")
         self.start_btn.setFixedWidth(120)
         self.stop_btn = PushButton("停止")
         self.stop_btn.setEnabled(False)
-        control_bar.addWidget(QLabel("目标:"))
-        control_bar.addWidget(self.target_combo)
-        control_bar.addStretch(1)
-        control_bar.addWidget(self.mode_combo)
-        control_bar.addWidget(self.stop_btn)
-        control_bar.addWidget(self.start_btn)
-        layout.addLayout(control_bar)
 
-        # 运行状态行（当前目标/进度主视觉）
+        control_layout.addWidget(QLabel("目标:"))
+        control_layout.addWidget(self.target_combo)
+        control_layout.addStretch(1)
+        control_layout.addWidget(self.mode_combo)
+        control_layout.addWidget(self.stop_btn)
+        control_layout.addWidget(self.start_btn)
+        self.content_layout.addWidget(control_card)
+
+        # 运行状态行
         self.run_status = QLabel("● 空闲 — 选择目标后开始")
         self.run_status.setStyleSheet("font-size: 15px; font-weight: 700; color: #7A90B0;")
-        layout.addWidget(self.run_status)
+        self.content_layout.addWidget(self.run_status)
 
-
+        # ---- Content 主体：队列 / 观测 ----
         bottom = QHBoxLayout()
         queue_card = CardWidget()
         card_title(queue_card, "任务队列")
-        # 地图→区域→点位 树：占满卡片（无 stretch 空洞）
         self.target_tree = QTreeWidget()
         self.target_tree.setHeaderLabels(["目标", "状态"])
         self.target_tree.setAlternatingRowColors(True)
         self.rows = {}
         self._map_nodes = {}
         self._region_nodes = {}
-        from collections import OrderedDict
-        for t in targets:
+        for t in self._targets:
             map_name = t.get("map_name") or "未分组"
             region = t.get("room") or t.get("region") or "未知区域"
             if map_name not in self._map_nodes:
@@ -380,46 +338,50 @@ class CommandDeck(QWidget):
             self._region_nodes[rkey].addChild(leaf)
             self.rows[t["id"]] = leaf
             leaf.setData(0, Qt.UserRole, t["id"])
-        self.target_tree.expandToDepth(1)  # 展开到区域级（点位折叠）
+        self.target_tree.expandToDepth(1)
         card_layout(queue_card).addWidget(self.target_tree)
-        bottom.addWidget(queue_card, 2)      # 队列 40%
+        bottom.addWidget(queue_card, 2)
 
         self.snapshot = ObservationSnapshot()
-        bottom.addWidget(self.snapshot, 3)   # 观测 60%（核心）
-        layout.addLayout(bottom, 1)
+        bottom.addWidget(self.snapshot, 3)
+        self.content_layout.addLayout(bottom, 1)
 
-        # 健康栏折叠（工程信息不占主界面）
-        self.health_bar = RuntimeHealthBar()
+        # 失败检查器
+        self.inspector = FailureInspector()
+        self.content_layout.addWidget(self.inspector)
+
+        # ---- Footer：健康栏折叠 ----
+        footer_widget = QWidget()
+        footer_layout = QVBoxLayout(footer_widget)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setSpacing(6)
+        hrow = QHBoxLayout()
         self.health_toggle = PushButton("系统状态 ▼")
         self.health_toggle.setFixedWidth(110)
         self.health_toggle.clicked.connect(self._toggle_health)
-        hrow = QHBoxLayout()
         hrow.addWidget(self.health_toggle)
         hrow.addStretch(1)
-        layout.addLayout(hrow)
-        layout.addWidget(self.health_bar)
+        footer_layout.addLayout(hrow)
+        self.health_bar = RuntimeHealthBar()
+        footer_layout.addWidget(self.health_bar)
+        self.add_footer(footer_widget)
 
-        self.inspector = FailureInspector()
-        layout.addWidget(self.inspector)
-
+        # 信号
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self.stop_requested)
 
     def set_starting(self):
-        # Bug 30：启动瞬间双按钮禁用 + 初始化提示（不依赖事件到达）
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.led.setText("● 初始化")
         self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
 
     def set_stopping(self):
-        # Bug 31：停止反馈（不等 run_finished 才知道生效）
         self.stop_btn.setEnabled(False)
         self.led.setText("● 停止中")
         self.led.setStyleSheet("color: #FFB020; font-size: 12px;")
 
     def set_health_status(self, text, busy=False):
-        """Bug 22：环境检测状态提示（busy 时禁用开始）。"""
         self.led.setText("● " + text)
         self.led.setStyleSheet("color: #FFB020;" if busy else "color: #7A90B0;")
         self.start_btn.setEnabled(not busy)
@@ -433,7 +395,6 @@ class CommandDeck(QWidget):
         self.health_toggle.setText("系统状态 ▲" if vis else "系统状态 ▼")
 
     def set_run_status(self, text, busy=False):
-        """主视觉状态行（空闲/搜索中/完成）。"""
         self.run_status.setText(text)
         color = "#4FD1C5" if busy else ("#7A90B0" if "空闲" in text else "#FFB020")
         self.run_status.setStyleSheet(
@@ -443,7 +404,6 @@ class CommandDeck(QWidget):
         return "real" if self.mode_combo.currentIndex() == 1 else "dry"
 
     def _resolve_selection(self, sel):
-        """选择 → 点位 id 列表（地图/区域级自动展开为点位）。"""
         if sel == "全部目标":
             return [t["id"] for t in self._targets]
         if sel.startswith("〔地图〕"):
@@ -462,7 +422,6 @@ class CommandDeck(QWidget):
         sel = self.target_combo.currentText()
         targets = self._resolve_selection(sel)
         if not targets:
-            # Bug 100：未知目标（配置删除/残留）——不启动，明确提示
             self.led.setText("● 目标不存在: " + sel)
             self.led.setStyleSheet("color: #E64545; font-size: 12px;")
             return
@@ -478,7 +437,6 @@ class CommandDeck(QWidget):
             self.stop_btn.setEnabled(True)
         elif event.type == "run_finished":
             result = event.context.get("result", "")
-            # Bug 28：启动/执行失败有明确反馈（invalid/crashed/gate_blocked）
             if result in ("invalid", "crashed", "gate_blocked"):
                 err = event.context.get("error") or event.context.get("fails")
                 self.led.setText("● 失败: " + result + (f" ({err})" if err else ""))
@@ -536,13 +494,11 @@ class CommandDeck(QWidget):
                 reason=f"人工介入: {ctx.get('reason')} {ctx.get('detail', '')}",
                 category="EMERGENCY")
         else:
-            # Bug 39：未知事件至少日志可追踪（不静默忽略）
             import logging
             logging.getLogger("gui.command_deck").warning(
                 "未处理事件: %s", event.type)
 
     def reset(self):
-        # Bug 36：完整重置（LED/按钮/状态）
         for leaf in self.rows.values():
             leaf.setText(1, "待命")
             leaf.setForeground(1, _status_color("pending"))

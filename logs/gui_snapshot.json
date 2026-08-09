@@ -1,7 +1,5 @@
 {
   "api_state": "stopped",
-  "threads": [
-    "Dummy-1"
-  ],
+  "threads": [],
   "execution_id": null
 }
