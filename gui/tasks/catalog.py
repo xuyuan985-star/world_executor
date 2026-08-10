@@ -17,14 +17,24 @@ _FROZEN = getattr(sys, "frozen", False)
 if _FROZEN:
     # exe 场景：便携 Python 与 m7 源码在 exe 目录（同分发）
     _EXE_DIR = Path(sys.executable).resolve().parent
-    # m7 仓库根：源码版 = world_executor 兄弟目录；exe 版 = exe 目录内
+    # m7 仓库根：exe 目录内优先，同级兜底（客户可能两种摆放）
     M7_ROOT = _EXE_DIR / "March7thAssistant"
+    if not (M7_ROOT / "main.py").exists():
+        _alt = _EXE_DIR.parent / "March7thAssistant"
+        if (_alt / "main.py").exists():
+            M7_ROOT = _alt
     # m7 子进程便携 Python（PyInstaller 自带解释器不跑外部 .py——
     # 任务子进程用便携 python314）
     M7_PYTHON = _EXE_DIR / "python314" / "python.exe"
 else:
-    # m7 仓库根（相对本文件：world_executor/gui/tasks -> world_executor -> March7thAssistant）
-    M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "March7thAssistant"
+    # m7 仓库根：源码版 = world_executor 同级（Desktop/March7thAssistant）；
+    # 兜底：WorldExecutor/March7thAssistant（用户可能把 m7 解压进程序目录）
+    _WE_ROOT = Path(__file__).resolve().parent.parent.parent
+    M7_ROOT = _WE_ROOT.parent / "March7thAssistant"
+    if not (M7_ROOT / "main.py").exists():
+        _alt = _WE_ROOT / "March7thAssistant"
+        if (_alt / "main.py").exists():
+            M7_ROOT = _alt
     # m7 子进程专用 venv（Python 3.14——m7 官方要求 >=3.12，PEP 701 f-string 语法；
     # 本项目主 venv 是 3.11 不够）。依赖 = m7 requirements 除投毒包 pylnk3
     # （quarantine stub 已在 launcher 注入）
