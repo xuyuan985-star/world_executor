@@ -32,10 +32,12 @@ class GameHudOverlay(QWidget):
             "border-top-left-radius: 6px; border-top-right-radius: 6px;")
         lay.addWidget(tip)
 
-        # 日志区
+        # 日志区（隐藏滚动条——只滚最新几行，滚动条在悬浮层无意义）
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(200)
+        self.log_view.setMaximumBlockCount(100)
+        self.log_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.log_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.log_view.setStyleSheet(
             "background: rgba(16,24,38,200); color: #B0C4DE;"
             "font-size: 11px; border: none;"
@@ -44,6 +46,9 @@ class GameHudOverlay(QWidget):
 
     def append(self, text):
         self.log_view.appendPlainText(text)
+        # 自动滚到最新
+        sb = self.log_view.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
     def set_emergency(self):
         """紧急停止时置顶提示（红色横幅）。"""
@@ -54,11 +59,10 @@ class GameHudOverlay(QWidget):
 class GameHudController(QObject):
     """HUD 生命周期：跟随游戏窗口（位置/可见性），绑定事件流。
 
-    审查 P0-7：EventBus.publish 在发布线程同步调订阅者——回调里绝不能
-    直接操作 Qt 控件。改用 Qt 信号（QueuedConnection）桥到主线程。
+    审查根因（多轮实测）：本环境 QThread/Qt 跨线程信号 → QObject 槽不投递
+    （dict/str 均失效）——日志入 _lines 队列（跨线程 append 原子），主线程
+    QTimer 轮询消费（与 HealthWorker/TaskProcess 同款轮询模式）。
     """
-
-    log_line = Signal(str)
 
     def __init__(self, bus, game_hwnd, log_lines=100, parent=None):
         super().__init__(parent)
@@ -67,39 +71,48 @@ class GameHudController(QObject):
         self.log_lines = log_lines
         self.overlay = GameHudOverlay()
         self._lines = []
-        # 信号 → 主线程（overlay 在 GUI 线程创建，跨线程安全）
-        self.log_line.connect(self._append_line)
         self.bus.subscribe(self._on_event)
+        # 主线程轮询消费（跨线程信号不可靠——轮询兜底）
+        from PySide6.QtCore import QTimer
+        self._poll = QTimer(self)
+        self._poll.setInterval(200)
+        self._poll.timeout.connect(self._flush)
+        self._poll.start()
 
     def _on_event(self, event):
-        # 发布线程（Runner）回调——只入队 + emit 信号，不碰 Qt 控件
+        # 发布线程（Runner）回调——只入队，不碰 Qt 控件
         line = f"[{event.type}] {event.detail or ''}".strip()
-        if len(line) > 90:
-            line = line[:90] + "…"
-        self._lines.append(line)
-        self._lines = self._lines[-self.log_lines:]
-        self.log_line.emit(line)
+        self._enqueue(line)
 
     def append_external(self, line):
         """外部日志入口（m7 任务子进程 stdout——不经 EventBus）。
 
-        与 _on_event 同语义：任意线程可调，只入队 + emit 信号（主线程显示）。
+        与 _on_event 同语义：任意线程可调，只入队（主线程轮询消费）。
         """
+        self._enqueue(line)
+
+    def _enqueue(self, line):
+        if not line:
+            return
         if len(line) > 90:
             line = line[:90] + "…"
         self._lines.append(line)
-        self._lines = self._lines[-self.log_lines:]
-        self.log_line.emit(line)
+        if len(self._lines) > self.log_lines:
+            self._lines = self._lines[-self.log_lines:]
 
-    def _append_line(self, line):
-        # 主线程：Qt 控件操作
-        if self.overlay.isVisible():
-            self.overlay.append(line)
+    def _flush(self):
+        """主线程轮询消费队列 → overlay（隐藏时丢弃——恢复后只显历史）。"""
+        if not self.overlay.isVisible():
+            return
+        while self._lines:
+            self.overlay.append(self._lines.pop(0))
 
     def show(self):
         self.overlay.show()
         for line in self._lines[-20:]:
             self.overlay.log_view.appendPlainText(line)
+        sb = self.overlay.log_view.verticalScrollBar()
+        sb.setValue(sb.maximum())
         self.reposition()
 
     def reposition(self):
