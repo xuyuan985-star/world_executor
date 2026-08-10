@@ -54,7 +54,9 @@ class TaskCenterPage(BasePage):
                     cfg_btn = QPushButton("⚙")
                     cfg_btn.setToolTip(f"{name} 配置")
                     cfg_btn.setFixedWidth(30)
-                    cfg_btn.setFixedHeight(btn.height() or 30)
+                    # 高度固定（不依赖 btn.height()——布局激活后被行内
+                    # 拉伸的返回值会撑爆卡片：实测 480px 全页拉伸根因）
+                    cfg_btn.setFixedHeight(26)
                     cfg_btn.setStyleSheet(
                         "font-size: 12px; color: #7A90B0;"
                         "border: 1px solid #24405F; border-radius: 4px;"
