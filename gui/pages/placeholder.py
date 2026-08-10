@@ -41,12 +41,28 @@ class TaskCenterPage(BasePage):
             row = QHBoxLayout()
             row.setSpacing(8)
             for tid, name, desc in items:
+                sub = QVBoxLayout()
+                sub.setSpacing(2)
                 btn = QPushButton(name)
                 btn.setToolTip(desc)
                 btn.setFixedWidth(110)
                 btn.clicked.connect(lambda _, t=tid: self._start_task(t))
                 self._buttons[tid] = btn
-                row.addWidget(btn)
+                sub.addWidget(btn)
+                # 任务配置入口（m7 各任务自定义配置——读写 m7 config.yaml）
+                from gui.tasks.config import schema_for_task
+                if schema_for_task(tid) is not None:
+                    cfg_btn = QPushButton("配置")
+                    cfg_btn.setFixedWidth(110)
+                    cfg_btn.setFixedHeight(24)
+                    cfg_btn.setStyleSheet(
+                        "font-size: 11px; color: #7A90B0;"
+                        "border: 1px solid #24405F; border-radius: 4px;"
+                        "background: transparent;")
+                    cfg_btn.clicked.connect(
+                        lambda _, t=tid: self._open_config(t))
+                    sub.addWidget(cfg_btn)
+                row.addLayout(sub)
             row.addStretch(1)
             card_layout(card).addLayout(row)
             self.content_layout.addWidget(card)
@@ -78,6 +94,13 @@ class TaskCenterPage(BasePage):
         self.add_footer(footer)
 
     # ---------- 任务控制 ----------
+
+    def _open_config(self, task_id):
+        """任务配置对话框（m7 config.yaml 读写）。"""
+        from gui.tasks.catalog import task_name
+        from gui.tasks.config_dialog import TaskConfigDialog
+        dlg = TaskConfigDialog(task_id, task_name(task_id), self)
+        dlg.exec()
 
     def _start_task(self, task_id):
         from gui.tasks.catalog import task_name
