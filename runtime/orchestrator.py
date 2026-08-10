@@ -615,6 +615,11 @@ class WorkflowOrchestrator:
             # 开始即激活游戏窗口（自主锁定窗口——不再"检测到失焦才处理"）
             self._foreground_retried = False
             self._ensure_foreground()
+            # 借鉴 March7th Screen._handle_autotry：任务开始前界面归一化——
+            # 用户在战斗/菜单/弹窗/剧情中开始任务时，先 ESC/点弹窗退出到
+            # 可执行画面（m7"识别不到界面就 ESC 重试"的适配版）。失败抛异常
+            # → crashed（诚实；空结果返回会误报 all_done——已知坑）。
+            self._ensure_game_ready()
             # Bug 533：目标去重（同目标不重复执行——保持输入顺序）
             target_ids = list(dict.fromkeys(target_ids))
             results = {}
@@ -651,6 +656,71 @@ class WorkflowOrchestrator:
         return {tid: r.to_dict() for tid, r in self._records.items()}
 
     # ---------- 系统状态（S9/S10） ----------
+
+    # 借鉴 March7th Screen._handle_autotry 的界面归一化关键词（OCR 命中即处理）：
+    # 弹窗（前情提要→稍后再看）、断线/异常（点确定重连）、战斗/结算（ESC 退出）、
+    # 菜单/设置（ESC 关闭）。关键词保守——宁可漏判（下轮 ESC 兜底）不可误点。
+    _READY_POPUP = ("稍后再看", "前情提要", "跳过剧情")
+    _READY_EXCEPTION = ("重新连接", "连接失败", "连接中断", "重试")
+    _READY_BATTLE = ("波次", "回合", "胜利", "失败", "挑战者")
+    _READY_MENU = ("设置", "返回标题", "退出游戏")
+
+    def _ensure_game_ready(self, max_rounds=6):
+        """任务开始前界面归一化（m7 _handle_autotry 适配版）：
+
+        战斗/菜单/弹窗/剧情等非可执行界面 → ESC 或点弹窗按钮退出，直到
+        OCR 无可执行信号。m7 语义："识别不到目标界面就 ESC 重试 + 弹窗
+        处理"；我们用 OCR 关键词判"非可执行状态"（无界面图资产）。
+        每轮 2s 等待画面变化；超轮次/无 OCR 能力 → 抛 RuntimeError 或
+        放行（mock 环境无 ocr_lines → 放行，真实链路自然验证）。
+        """
+        executor = self.executor
+        try:
+            for i in range(max_rounds):
+                if self._stop_check is not None and self._stop_check():
+                    raise RuntimeError("任务开始前被停止（界面归一化中）")
+                try:
+                    texts = [t for t, _ in executor.driver.vision.ocr_lines()]
+                except AttributeError:
+                    return  # mock/无 OCR 能力 → 放行（不阻断测试与降级链路）
+                except Exception:
+                    return  # OCR 异常 → 放行（后面观察链会自然失败，不在此误拦）
+                joined = "".join(texts)
+                if any(k in joined for k in self._READY_POPUP):
+                    self._emit("state_changed", detail="ready:popup_dismissed",
+                               context={"action": "ready_popup"})
+                    executor.click_text("稍后再看", max_retries=1)
+                    self._interruptible_wait(2)
+                    continue
+                if any(k in joined for k in self._READY_EXCEPTION):
+                    self._emit("state_changed", detail="ready:relogin",
+                               context={"action": "ready_relogin"})
+                    executor.click_text("确定", max_retries=1)
+                    self._interruptible_wait(20)  # 重连等待（m7 同款 20s）
+                    continue
+                if any(k in joined for k in self._READY_BATTLE):
+                    self._emit("state_changed", detail="ready:battle_exit",
+                               context={"action": "ready_battle"})
+                    executor.input.press_key("esc", wait_time=2)
+                    continue
+                if any(k in joined for k in self._READY_MENU):
+                    self._emit("state_changed", detail="ready:menu_exit",
+                               context={"action": "ready_menu"})
+                    executor.input.press_key("esc", wait_time=2)
+                    continue
+                # 无任何"非可执行"信号 → 画面就绪
+                self._emit("state_changed", detail="ready:ok",
+                           context={"action": "ready_ok", "rounds": i + 1})
+                return
+            raise RuntimeError(
+                "游戏画面未就绪：战斗/菜单/弹窗多次尝试未能退出（" 
+                f"{max_rounds} 轮）——请手动回到主城后重试")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            import logging
+            logging.getLogger("runtime.orchestrator").warning(
+                "界面归一化异常（按就绪处理）: %s", e)
 
     def _window_lost(self):
         """S9：窗口消失/尺寸异常/失焦 → 返回原因，正常返回 None。
