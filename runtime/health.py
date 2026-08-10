@@ -115,20 +115,25 @@ def check_health(verbose=False, game_required=True, input_probe=False,
         user32.SetProcessDPIAware()
 
         # L0: 光标移动回读（GUI-2：探测后必须恢复原位——否则启动 GUI 鼠标跳左上角）
-        try:
-            saved_pt = wintypes.POINT()
-            user32.GetCursorPos(ctypes.byref(saved_pt))
-            r = user32.SetCursorPos(100, 100)
-            pt = wintypes.POINT()
-            time.sleep(0.1)
-            user32.GetCursorPos(ctypes.byref(pt))
-            result["input_l0"] = bool(r) and abs(pt.x - 100) < 50 and abs(pt.y - 100) < 50
-            if not result["input_l0"]:
-                errors["input_l0"] = "光标回读不一致（注入通道异常）"
-            # 恢复原鼠标位置（探测副作用最小化）
-            user32.SetCursorPos(saved_pt.x, saved_pt.y)
-        except Exception as e:
-            errors["input_l0"] = f"{type(e).__name__}: {e}"
+        # 审查：L0 会移动鼠标（SetCursorPos）——与 L2 按 ESC 同理，GUI 轮询
+        # 健康检查必须零副作用（用户"光打开程序鼠标就跳来跳去"根因——
+        # 每 5s 刷新一次就抢一次鼠标）。仅 input_probe（真机 gate）时探测。
+        result["input_l0"] = None  # 未测
+        if input_probe:
+            try:
+                saved_pt = wintypes.POINT()
+                user32.GetCursorPos(ctypes.byref(saved_pt))
+                r = user32.SetCursorPos(100, 100)
+                pt = wintypes.POINT()
+                time.sleep(0.1)
+                user32.GetCursorPos(ctypes.byref(pt))
+                result["input_l0"] = bool(r) and abs(pt.x - 100) < 50 and abs(pt.y - 100) < 50
+                if not result["input_l0"]:
+                    errors["input_l0"] = "光标回读不一致（注入通道异常）"
+                # 恢复原鼠标位置（探测副作用最小化）
+                user32.SetCursorPos(saved_pt.x, saved_pt.y)
+            except Exception as e:
+                errors["input_l0"] = f"{type(e).__name__}: {e}"
 
         # L1: SendInput 事件注入（UIPI 拦截时 ret=0）
         try:
@@ -169,8 +174,10 @@ def check_health(verbose=False, game_required=True, input_probe=False,
                 result["input_l2"] = False
                 errors["input_l2"] = f"{type(e).__name__}: {e}"
 
-        result["input"] = bool(result["input_l0"] and result["input_l1"] and
-                               (result["input_l2"] is None or result["input_l2"]))
+        # 汇总：未测（None）不算失败——GUI 轮询（L0/L2 未测）显示绿，
+        # 真机 gate（全测）显示真实结果
+        result["input"] = all(result.get(k) is not False
+                              for k in ("input_l0", "input_l1", "input_l2"))
     except Exception as e:
         errors["input"] = f"{type(e).__name__}: {e}"
 
