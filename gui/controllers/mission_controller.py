@@ -103,12 +103,11 @@ class MissionController(QObject):
 
     # ---------- 任务控制 ----------
 
-    def start(self, targets, mode="dry"):
-        """GUI 语义化启动（路径/规格封装在 controller 内）。"""
-        self._audit(f"start mode={mode} targets={len(targets or [])}")
+    def start(self, targets):
+        """GUI 语义化启动（路径/规格封装在 controller 内；真机唯一路径）。"""
+        self._audit(f"start mode=real targets={len(targets or [])}")
         spec = MissionSpec(knowledge_dir=self.knowledge_dir,
-                           target_ids=targets or None,
-                           mode=mode)
+                           target_ids=targets or None)
         self.runtime.start_mission(spec)
 
     def stop(self):

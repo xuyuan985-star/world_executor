@@ -122,7 +122,7 @@ class MainWindow(FluentWindow):
         # Bug 59：信号→GUI 线程槽（跨线程安全链）
         self.event_received.connect(self._on_event_delivered)
         self.command_deck.run_requested.connect(
-            lambda targets: self._start_run(targets, self.command_deck.mode()))
+            lambda targets: self._start_run(targets))
         self.command_deck.stop_requested.connect(self._stop_run)
 
         from PySide6.QtCore import QThread, Signal
@@ -427,7 +427,7 @@ class MainWindow(FluentWindow):
         event.accept()
 
     @gui_safe
-    def _start_run(self, targets, mode="dry"):
+    def _start_run(self, targets):
         # Bug 21：防重复启动（连点/事件未达窗口期）
         # 审查 P0-6：stopped（手动停止）/gate_blocked（G3 拦截）也可重启——
         # 原集合缺这两态导致停止后按钮恢复但点击永久静默
@@ -435,8 +435,8 @@ class MainWindow(FluentWindow):
                 "idle", "done", "crashed", "invalid",
                 "stopped", "gate_blocked"):
             return
-        # 真机模式前置校验（G3 会拦，但提前告知更好）
-        if mode == "real" and getattr(self, "_health", None):
+        # 真机前置校验（G3 会拦，但提前告知更好）
+        if getattr(self, "_health", None):
             h = self._health
             warns = []
             if h.get("admin") is False:
@@ -455,7 +455,7 @@ class MainWindow(FluentWindow):
         self.start_foreground_watch()
         try:
             # 第 62 轮：业务细节封装在 controller（路径/规格不再裸露在 GUI）
-            self.mission_controller.start(targets, mode=mode)
+            self.mission_controller.start(targets)
         except Exception as e:
             # Bug 30：同步异常直接反馈（按钮不永久卡死）
             self.command_deck.led.setText("● 启动失败: " + str(e)[:100])

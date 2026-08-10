@@ -453,23 +453,14 @@ class StudioPage(BasePage):
 
 
 class SettingsPage(BasePage):
-    """设置页：可交互配置（默认执行模式保存到 QSettings）。"""
+    """设置页：可交互配置（VLM 模型保存到 QSettings）。"""
 
     def __init__(self, parent=None):
         super().__init__("设置", parent)
-        self.set_status("执行模式与环境信息")
+        self.set_status("模型与环境信息")
 
         card = CardWidget()
         cl = card_layout(card)
-
-        # 默认执行模式
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("默认执行模式:"))
-        self.mode_combo = ComboBox()
-        self.mode_combo.addItems(["模拟执行", "真机执行"])
-        row1.addWidget(self.mode_combo)
-        row1.addStretch(1)
-        cl.addLayout(row1)
 
         # 模型配置（可改——不再只读）
         row2 = QHBoxLayout()
@@ -530,8 +521,6 @@ class SettingsPage(BasePage):
     def _load(self):
         from PySide6.QtCore import QSettings
         s = QSettings("WorldExecutor", "Studio")
-        mode = s.value("default_mode", "dry")
-        self.mode_combo.setCurrentIndex(1 if mode == "real" else 0)
         saved_model = s.value("vlm_model", "")
         if saved_model:
             self.model_combo.setCurrentText(str(saved_model))
@@ -540,7 +529,6 @@ class SettingsPage(BasePage):
         from PySide6.QtCore import QSettings
         from config import settings as _s
         s = QSettings("WorldExecutor", "Studio")
-        s.setValue("default_mode", "real" if self.mode_combo.currentIndex() == 1 else "dry")
         # 模型保存：运行时覆盖（当前进程立即生效，不写 .env）
         model = self.model_combo.currentText().strip()
         if model:
@@ -549,10 +537,4 @@ class SettingsPage(BasePage):
         self._env_label.setText(self._env_info())
         QMessageBox.information(
             self, "设置",
-            f"已保存：默认模式={'真机' if self.mode_combo.currentIndex() == 1 else '模拟'}"
-            + (f"，VLM 模型={model}" if model else ""))
-
-    def default_mode(self):
-        from PySide6.QtCore import QSettings
-        s = QSettings("WorldExecutor", "Studio")
-        return s.value("default_mode", "dry")
+            f"已保存：VLM 模型={model}" if model else "已保存")

@@ -11,7 +11,6 @@ from runtime.events.schema import WorldEvent, make_event
 class MissionSpec:
     knowledge_dir: str
     target_ids: Optional[list] = None
-    mode: str = "dry"  # dry | real（企划 v0.12.2 门槛 G3 前置）
     natural_mode: bool = True  # #44：False → 确定性执行（delay=0，可复现测试）
     requires: Optional[list] = None  # S15：任务必需能力（缺则拒绝启动），默认 G3 critical 集
 
@@ -45,7 +44,6 @@ class RuntimeAPI:
         self._state = new_state
 
     def start_mission(self, spec: MissionSpec, runner_factory=None):
-        from runtime import dry_run
         self._pending_requires = spec.requires
         self._stop_event.clear()  # #6
 
@@ -67,20 +65,19 @@ class RuntimeAPI:
                 self._thread = None
                 return "invalid"
 
-            if spec.mode == "real":
-                # 自动置顶：gate 检查前先激活游戏窗口（否则 foreground=False
-                # 永远拦——激活发生在 orchestrator.run_mission 太晚）
-                try:
-                    from runtime.drivers.march7th.window import find_game_window
-                    from runtime.win_capture import set_foreground_with_retry
-                    game = find_game_window()
-                    if game:
-                        set_foreground_with_retry(game["hwnd"])
-                except Exception:
-                    pass
-                gate = self._gate_check(bus, execution_id, pkg)
-                if gate is not None:
-                    return gate
+            # 自动置顶：gate 检查前先激活游戏窗口（否则 foreground=False
+            # 永远拦——激活发生在 orchestrator.run_mission 太晚）
+            try:
+                from runtime.drivers.march7th.window import find_game_window
+                from runtime.win_capture import set_foreground_with_retry
+                game = find_game_window()
+                if game:
+                    set_foreground_with_retry(game["hwnd"])
+            except Exception:
+                pass
+            gate = self._gate_check(bus, execution_id, pkg)
+            if gate is not None:
+                return gate
 
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             # 7×24 防御：空目标 → 明确 no_targets（不能空跑后误报 all_done——
@@ -93,34 +90,27 @@ class RuntimeAPI:
                 self._thread = None
                 return "no_targets"
             self._set_state("running")
-            # 审查 P1：`"orch" in dir()` 恒 False（orch 首次定义在 line 98）——
-            # input_mode 恒为 "dry"。改为按 mode 判定 + 运行后补正
-            input_mode = "real" if spec.mode == "real" else "dry"
             bus.publish(make_event("run_started", execution_id,
                                    context={"knowledge": knowledge_dir,
-                                            "targets": targets, "mode": spec.mode,
-                                            "input_mode": input_mode,  # Bug 8：observe_only 可见
+                                            "targets": targets, "mode": "real",
+                                            "input_mode": "real",  # Bug 8：observe_only 可见
                                             "knowledge_hash": pkg.package_hash()}))
             try:
                 if self._stop_event.is_set():
                     return "stopped"
-                if spec.mode == "real":
-                    from runtime.orchestrator import WorkflowOrchestrator
-                    orch = WorkflowOrchestrator(pkg, bus=bus,
-                                                execution_id=execution_id,
-                                                use_vlm=True,
-                                                stop_check=self._stop_event.is_set)
-                    results, completed = orch.run_mission(targets)
-                    result = ("stopped" if self._stop_event.is_set()
-                              else ("all_done" if all(results.values())
-                                    else "some_failed"))
-                    bus.publish(make_event("mission_summary", execution_id,
-                                           context={"results": results,
-                                                    "completed_targets": completed,
-                                                    "records": orch.session_summary()}))
-                else:
-                    result = dry_run.dry_run(knowledge_dir, targets, bus=bus,
-                                             execution_id=execution_id)
+                from runtime.orchestrator import WorkflowOrchestrator
+                orch = WorkflowOrchestrator(pkg, bus=bus,
+                                            execution_id=execution_id,
+                                            use_vlm=True,
+                                            stop_check=self._stop_event.is_set)
+                results, completed = orch.run_mission(targets)
+                result = ("stopped" if self._stop_event.is_set()
+                          else ("all_done" if all(results.values())
+                                else "some_failed"))
+                bus.publish(make_event("mission_summary", execution_id,
+                                       context={"results": results,
+                                                "completed_targets": completed,
+                                                "records": orch.session_summary()}))
                 self._set_state("done")
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": result}))

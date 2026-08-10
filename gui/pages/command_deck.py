@@ -307,15 +307,6 @@ class CommandDeck(BasePage):
             self._region_groups[key].append(t)
         self.target_combo.addItems(combo_items)
 
-        self.mode_combo = ComboBox()
-        self.mode_combo.addItems(["模拟执行", "真机执行"])
-        try:
-            from PySide6.QtCore import QSettings
-            if QSettings("WorldExecutor", "Studio").value("default_mode") == "real":
-                self.mode_combo.setCurrentIndex(1)
-        except Exception:
-            pass
-
         self.start_btn = PrimaryPushButton("开始任务")
         self.start_btn.setFixedWidth(120)
         self.stop_btn = PushButton("停止")
@@ -324,7 +315,6 @@ class CommandDeck(BasePage):
         control_layout.addWidget(QLabel("目标:"))
         control_layout.addWidget(self.target_combo)
         control_layout.addStretch(1)
-        control_layout.addWidget(self.mode_combo)
         control_layout.addWidget(self.stop_btn)
         control_layout.addWidget(self.start_btn)
         self.content_layout.addWidget(control_card)
@@ -457,9 +447,6 @@ class CommandDeck(BasePage):
         color = "#4FD1C5" if busy else ("#7A90B0" if "空闲" in text else "#FFB020")
         self.run_status.setStyleSheet(
             f"font-size: 15px; font-weight: 700; color: {color};")
-
-    def mode(self):
-        return "real" if self.mode_combo.currentIndex() == 1 else "dry"
 
     def _resolve_selection(self, idx):
         """按 itemData 精确解析（地图/区域同名不串区）。"""
