@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
                                QListWidgetItem, QPushButton, QSplitter,
                                QVBoxLayout, QWidget)
@@ -23,6 +23,9 @@ POINT_FILES = {
 
 class GuidesView(BasePage):
     """攻略体系：左侧大地图 → 右侧区域卡片（点位合并展示，不看细节）。"""
+
+    # 区域执行请求（map_dir, region）——由主窗口接线到知识包执行
+    run_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__("攻略体系", parent)
@@ -76,8 +79,10 @@ class GuidesView(BasePage):
                 map_doc = json.loads((md / "map.json").read_text(encoding="utf-8"))
             except Exception:
                 continue
-            # 区域 → 点位类型计数（合并展示）
+            # 区域 → 点位类型计数（合并展示）+ 可执行/待采集区分
             region_pts = defaultdict(lambda: defaultdict(int))
+            region_ready = defaultdict(int)   # 真点位（有坐标可执行）
+            region_pending = defaultdict(int)  # 骨架（待采集）
             for f, zh in POINT_FILES.items():
                 pf = md / "points" / f
                 if not pf.exists():
@@ -88,6 +93,10 @@ class GuidesView(BasePage):
                     continue
                 for pt in pts:
                     region_pts[pt.get("region", "?")][zh] += 1
+                    if pt.get("status") == "empty" or pt.get("x") is None:
+                        region_pending[pt.get("region", "?")] += 1
+                    else:
+                        region_ready[pt.get("region", "?")] += 1
             regions = {}
             for a in (md / "areas").glob("*.json"):
                 try:
@@ -95,7 +104,9 @@ class GuidesView(BasePage):
                 except Exception:
                     continue
                 regions[a.stem] = {"name": adoc.get("name", a.stem),
-                                   "points": dict(region_pts.get(a.stem, {}))}
+                                   "points": dict(region_pts.get(a.stem, {})),
+                                   "ready": region_ready.get(a.stem, 0),
+                                   "pending": region_pending.get(a.stem, 0)}
             total = sum(sum(v.values()) for v in region_pts.values())
             self._maps[md.name] = {"map_name": map_doc.get("name", md.name),
                                    "regions": regions}
@@ -130,12 +141,20 @@ class GuidesView(BasePage):
             card_title(card, rinfo["name"])
             pts = rinfo["points"]
             desc = "、".join(f"{zh}×{n}" for zh, n in pts.items()) or "无点位"
+            # 可执行/待采集区分（骨架空位不可执行——避免"数量对但跑不动"误导）
+            ready = rinfo["ready"]
+            pending = rinfo["pending"]
+            if ready or pending:
+                desc += f"（可执行 {ready} / 待采集 {pending}）"
             body = QLabel(f"{desc}")
             body.setStyleSheet("color: #7A90B0; font-size: 13px;")
             row = QHBoxLayout()
             row.addWidget(body)
             row.addStretch(1)
             btn = QPushButton("执行此区域")
+            btn.setEnabled(ready > 0)  # 无可执行点位（纯骨架）→ 灰置
+            btn.setToolTip("执行该区域已采集（有坐标）的宝箱点位"
+                           if ready > 0 else "该区域点位尚未采集（骨架空位）")
             btn.clicked.connect(lambda _=False, r=rid, m=mdir:
                                 self._on_run(m, r))
             row.addWidget(btn)
@@ -145,4 +164,4 @@ class GuidesView(BasePage):
         self.region_layout.addStretch(1)
 
     def _on_run(self, mdir, region):
-        self.set_status(f"已选择 {mdir}/{region} — 执行接入中", busy=True)
+        self.run_requested.emit(mdir, region)

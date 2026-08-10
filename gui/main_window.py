@@ -82,6 +82,14 @@ class MainWindow(FluentWindow):
         self.command_deck = self._safe_page(CommandDeck, targets or [])
         # 页面构造异常隔离——单页失败不拖垮主窗口
         self.world_graph = self._safe_page(WorldGraphPage)
+        # 攻略体系"执行此区域"→ 知识包匹配 → 指挥台执行（接线）
+        try:
+            view = self.world_graph._view if hasattr(
+                self.world_graph, "_view") else None
+            if view is not None and hasattr(view, "run_requested"):
+                view.run_requested.connect(self._on_guide_run)
+        except Exception:
+            pass
         self.observation = self._safe_page(ObservationPage)
         self.knowledge = self._safe_page(KnowledgePage)
         self.studio = self._safe_page(TaskCenterPage)
@@ -480,6 +488,39 @@ class MainWindow(FluentWindow):
             logging.getLogger("gui.main_window").exception("任务中心关闭失败")
         self.shutdown()
         event.accept()
+
+    def _on_guide_run(self, mdir, region):
+        """攻略体系"执行此区域"：匹配知识包该区域的已采集目标 → 指挥台执行。
+
+        知识包（black_tower_test）workflow 的 room 与地图集 region 同名；
+        无匹配（骨架/其他地图）→ 明确提示。"""
+        try:
+            from runtime.knowledge_loader import KnowledgePackage
+            from config.settings import ROOT
+            pkg = KnowledgePackage(ROOT / "knowledge" / "source" / "black_tower_test")
+            matched = []
+            for c in pkg.chests:
+                wf = pkg.workflow(c["id"])
+                room = (wf or {}).get("room") if wf else None
+                if room == region:
+                    matched.append(c["id"])
+            if not matched:
+                self.command_deck.led.setText(
+                    f"● 区域 {region} 暂无已采集点位（知识包无匹配 workflow）")
+                self.command_deck.led.setStyleSheet(
+                    "color: #FFB454; font-size: 12px;")
+                return
+            # 切到指挥台并选中该区域 → 开始
+            self.navigationInterface.setCurrentWidget(self.command_deck)
+            deck = self.command_deck
+            for i, (kind, payload) in enumerate(deck._combo_data):
+                if kind == "region" and payload and payload[1] == region:
+                    deck.target_combo.setCurrentIndex(i)
+                    break
+            deck._on_start()
+        except Exception:
+            import logging
+            logging.getLogger("gui.main_window").exception("攻略区域执行接线失败")
 
     @gui_safe
     def _start_run(self, targets):
