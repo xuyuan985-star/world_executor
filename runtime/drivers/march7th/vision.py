@@ -113,6 +113,53 @@ def normalize_image(img, target="RGB"):
     return img
 
 
+def merge_ocr_lines(results, y_tol=16.0):
+    """行级合并：y 中心相近的碎片按 x 排序水平拼接（m7 块合并适配版）。
+
+    输入 [(text, box)] → 输出 [(merged_text, merged_box)]，box 为碎片
+    并集（min/max 四点）。合并规则：box 中心 y 差 < y_tol 视为同行。
+    直接拼接不补空格——关键词包含匹配要求连续无间隙（汉字间距本就大）。
+    模块级函数：driver.ocr_lines 与观察者 OCRAdapter 共用。
+    """
+    if not results:
+        return []
+    parsed = []
+    for text, box in results:
+        if not box:
+            parsed.append({"text": text, "x": 0, "x_max": 0, "y": 0,
+                           "min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0})
+            continue
+        xs = [c[0] for c in box]
+        ys = [c[1] for c in box]
+        parsed.append({"text": text,
+                       "x": min(xs), "x_max": max(xs),
+                       "y": (min(ys) + max(ys)) / 2,
+                       "min_x": min(xs), "max_x": max(xs),
+                       "min_y": min(ys), "max_y": max(ys)})
+    parsed.sort(key=lambda p: (p["y"], p["x"]))
+    lines = []  # 每行: {y, items}
+    for p in parsed:
+        placed = False
+        for line in lines:
+            if abs(line["y"] - p["y"]) <= y_tol:
+                line["items"].append(p)
+                line["y"] = (line["y"] + p["y"]) / 2
+                placed = True
+                break
+        if not placed:
+            lines.append({"y": p["y"], "items": [p]})
+    out = []
+    for line in lines:
+        items = sorted(line["items"], key=lambda it: it["x"])
+        text = "".join(it["text"] for it in items)
+        box = [(min(it["min_x"] for it in items), min(it["min_y"] for it in items)),
+               (max(it["max_x"] for it in items), min(it["min_y"] for it in items)),
+               (max(it["max_x"] for it in items), max(it["max_y"] for it in items)),
+               (min(it["min_x"] for it in items), max(it["max_y"] for it in items))]
+        out.append((text, box))
+    return out
+
+
 class March7thVision(VisionInterface):
     name = "march7th"
 
@@ -199,15 +246,18 @@ class March7thVision(VisionInterface):
         """OCR 返回 [(text, box), ...]，box 为四点 [(x,y),...] 截图内坐标。
 
         Bug 155：文本经 normalize_ocr 清洗（全角/形近字归一）。
+        借鉴 March7th Tasks._merge_ocr_blocks：同一行被 OCR 切碎的碎片
+        （"宝""箱"两段）按 y 同行合并——否则 join 匹配时关键词断列
+        （verify/ready 关键词命中率低）。
         """
         import numpy as np
         # crop 仅对 March7th 后台截图有效（前台 mss 降级路径不支持裁剪）
         img, _, _ = self.take_screenshot(crop=crop)
-        out = []
+        raw = []
         for t in self.ocr.run(np.asarray(img)) or []:
             if isinstance(t, dict) and t.get("txt"):
-                out.append((normalize_ocr(t["txt"]), t["box"]))
-        return out
+                raw.append((normalize_ocr(t["txt"]), t["box"]))
+        return merge_ocr_lines(raw)
 
     def find_text(self, text, include=True, max_retries=1, crop=None):
         """find_element("文字", "text") → ((left,top),(right,bottom)) 绝对坐标或 None。"""

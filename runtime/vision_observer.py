@@ -22,14 +22,18 @@ class OCRAdapter:
 
     def detect(self, screenshot):
         import numpy as np
+        from runtime.drivers.march7th.vision import merge_ocr_lines, normalize_ocr
         raw = np.asarray(screenshot)
-        out = []
-        boxes = []
+        results = []
         for t in self.ocr.run(raw) or []:
             if isinstance(t, dict) and t.get("txt"):
-                out.append(str(t["txt"]))
                 box = t.get("box")
-                boxes.append(list(box) if box is not None else None)
+                results.append((normalize_ocr(str(t["txt"])),
+                                list(box) if box is not None else None))
+        # 行级合并（m7 块合并适配）：碎片拼行 → join 关键词匹配不断列
+        merged = merge_ocr_lines(results)
+        out = [m[0] for m in merged]
+        boxes = [m[1] for m in merged]
         return {"text": out, "boxes": boxes}
 
 
