@@ -785,3 +785,109 @@ class RealExecutor:
         if self.pkg.templates_dir.resolve() not in candidate.parents:
             return None
         return candidate
+
+    # ---------- 地图传送（抄 Fhoe-Rail 传送链） ----------
+
+    def map_transfer(self, portal, abort_check=None):
+        """地图传送：打开地图 → 模板序列点击（传送点）→ 点传送 → 等加载。
+
+        portal 定义（portals.json，kind=map_transfer）：
+          steps: [{"template": "Fhoe:map_index_0.png", "threshold": 0.9}, ...]
+            "Fhoe:" 前缀 = m7 的 Fhoe-Rail/picture 资产（地图索引/传送点/transfer）；
+            无前缀 = 知识包 templates 目录。
+          load_wait: 传送后等待秒数（地图加载）。
+        返回 bool。任何一步模板未命中 → 失败（可重试）。
+        """
+        import time
+        steps = portal.get("steps") or []
+        if not steps:
+            return False
+        # 1. 打开地图（m7 config hotkey_map，默认 M）
+        hotkey = self._hotkey_map()
+        r = self.input.press_key(hotkey, wait_time=1.2)
+        if not r.success:
+            return False
+        if abort_check and abort_check():
+            return False
+        # 2. 依次点击模板（传送点/索引/transfer）
+        for step in steps:
+            tpl_ref = step.get("template", "")
+            threshold = step.get("threshold", 0.9)
+            path = self._resolve_fhoe_template(tpl_ref)
+            if path is None:
+                return False
+            hit = self._click_template_hit(path, threshold)
+            if not hit:
+                return False
+            time.sleep(0.8)
+            if abort_check and abort_check():
+                return False
+        # 3. 等加载（固定等待 + 画面稳定）
+        load_wait = float(portal.get("load_wait", 8))
+        self._wait_loading(load_wait, abort_check)
+        return True
+
+    def _hotkey_map(self):
+        """m7 config.yaml 的 hotkey_map（打开地图键，默认 m）。"""
+        try:
+            from runtime.platform.windows.game_launcher import m7_config_value
+            v = m7_config_value("hotkey_map")
+            if v:
+                return str(v)
+        except Exception:
+            pass
+        return "m"
+
+    def _resolve_fhoe_template(self, template_ref):
+        """模板引用解析："Fhoe:xxx.png" → m7 Fhoe-Rail/picture；否则知识包。"""
+        if template_ref.startswith("Fhoe:"):
+            name = template_ref[len("Fhoe:"):]
+            pic = (Path(__file__).resolve().parent.parent.parent
+                   / "March7thAssistant" / "3rdparty" / "Fhoe-Rail"
+                   / "picture" / name)
+            return str(pic) if pic.exists() else None
+        return self._resolve_template_path(template_ref)
+
+    def _click_template_hit(self, path, threshold=0.9):
+        """模板命中即点击（Fhoe 语义：找到目标点一下）。返回是否成功。"""
+        from runtime.input.template_backend import TemplateMatcher
+        try:
+            tm = TemplateMatcher(threshold=threshold)
+            hit = tm.locate(path)
+        except Exception:
+            return False
+        if hit is None:
+            return False
+        _, cx, cy = hit
+        r = self.input.click(cx, cy)
+        return bool(r.success)
+
+    def _wait_loading(self, seconds, abort_check=None):
+        """传送后等待：固定秒 + 期间画面逐步稳定（简易加载等待）。"""
+        import time
+        from runtime.pixel_diff import images_different
+        vision = getattr(getattr(self, "driver", None), "vision", None)
+        deadline = time.time() + seconds
+        last = None
+        stable_rounds = 0
+        while time.time() < deadline:
+            if abort_check and abort_check():
+                return
+            time.sleep(1.5)
+            if vision is None:
+                continue
+            try:
+                shot = vision.take_screenshot()
+                cur = shot[0] if shot else None
+            except Exception:
+                cur = None
+            if cur is not None and last is not None:
+                changed, _ = images_different(last, cur)
+                if not changed:
+                    stable_rounds += 1
+                    if stable_rounds >= 2:
+                        return  # 画面稳定 → 加载完成
+                else:
+                    stable_rounds = 0
+            if cur is not None:
+                last = cur

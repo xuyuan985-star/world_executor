@@ -7,8 +7,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from runtime.knowledge_loader import KnowledgePackage
 
 # 审查 P1：白名单与执行器 STEP_TYPES（orchestrator.py）对齐——
-# portal/wait/state_check 执行器不支持，保留在白名单会放行必然失败的 workflow
-ALLOWED_STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
+# portal 已由执行器支持（地图传送/门传送），可放行；未知类型会放行必然
+# 失败的 workflow
+ALLOWED_STEP_TYPES = {"move", "visual_guided_move", "interact", "verify",
+                      "portal"}
 
 
 def validate(pkg: KnowledgePackage, verbose=True):
@@ -126,6 +128,11 @@ def validate(pkg: KnowledgePackage, verbose=True):
                 if sig and not pkg.template_exists(f"{sig}.png"):
                     errors.append(
                         f"{c['id']} verify 信号模板缺失: templates/{sig}.png")
+            if step.get("type") == "portal":
+                pid = step.get("portal_id")
+                if not pid or pkg.portal(pid) is None:
+                    errors.append(
+                        f"{c['id']} workflow 引用不存在的传送门: {pid}")
             if step.get("type") == "portal" and step.get("portal_id"):
                 if pkg.portal(step["portal_id"]) is None:
                     errors.append(f"{c['id']} workflow 引用不存在的传送门: {step['portal_id']}")

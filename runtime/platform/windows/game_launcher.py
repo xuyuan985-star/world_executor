@@ -13,6 +13,24 @@ from pathlib import Path
 from runtime.win_capture import GAME_TITLE, find_game_window
 
 
+def m7_config_value(key, default=None, m7_root=None):
+    """读 m7 config.yaml 任意键（ruamel 保类型；失败返回 default）。"""
+    if m7_root is None:
+        m7_root = (Path(__file__).resolve().parent.parent.parent.parent.parent
+                   / "March7thAssistant")
+    cfg_path = Path(m7_root) / "config.yaml"
+    if not cfg_path.exists():
+        return default
+    try:
+        import yaml
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+    if not isinstance(data, dict):
+        return default
+    return data.get(key, default)
+
+
 def game_executable(m7_root=None):
     """m7 config.yaml 的 game_path（本地游戏可执行文件路径）。"""
     if m7_root is None:

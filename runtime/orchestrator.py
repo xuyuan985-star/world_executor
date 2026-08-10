@@ -24,7 +24,7 @@ TARGET_ALIVE = ("running", "succeeded", "failed")
 
 # #44：workflow 步骤类型白名单——未知类型 fail-fast（F3），
 # 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，无其他执行语义
-STEP_TYPES = {"move", "visual_guided_move", "interact", "verify"}
+STEP_TYPES = {"move", "visual_guided_move", "interact", "verify", "portal"}
 # Bug 83：单目标恢复/重试尝试硬上限（防 recover→retry 无限循环）
 MAX_TARGET_ATTEMPTS = 3
 
@@ -387,6 +387,8 @@ class WorkflowOrchestrator:
                                    retryable=False, category="F3")
         if step_type == "move":
             return self._step_move(step)
+        if step_type == "portal":
+            return self._step_portal(step)
         if step_type == "visual_guided_move":
             return self._step_vgm(step, wf)
         if step_type == "interact":
@@ -403,6 +405,30 @@ class WorkflowOrchestrator:
                                    retryable=False, category="F3")
         # 纯移动步骤不推进状态机：TARGET_VISIBLE 语义由 interact 步骤确认（#36 严格迁移）
         return self.executor.interact_template(lm_id, threshold=0.8)
+
+    def _step_portal(self, step):
+        """地图传送步骤（抄 Fhoe-Rail 传送链：打开地图→点传送点→点传送→等加载）。
+
+        workflow: {"type": "portal", "portal_id": "tp_xxx"}
+        portal 定义在 portals.json：kind=map_transfer 时走地图传送
+        （steps 模板序列 + load_wait），kind=loading 时走原有门传送。
+        """
+        pid = step.get("portal_id")
+        portal = self.pkg.portal(pid) if pid else None
+        if portal is None:
+            return ExecutionResult(success=False, error=f"portal_not_found:{pid}",
+                                   retryable=False, category="F3")
+        if portal.get("kind") == "map_transfer":
+            ok = self.executor.map_transfer(
+                portal, abort_check=lambda: self._emergency_paused()
+                or self._stall_detected())
+        else:
+            ok = self.executor.portal_transition(
+                portal, wait_base=portal.get("load_wait", 8))
+        if ok is True:
+            return ExecutionResult(success=True, category="F2")
+        return ExecutionResult(success=False, error="portal_failed",
+                               retryable=True, category="F2_VERIFY")
 
     def _step_vgm(self, step, wf):
         ticks = step.get("ticks", 3)
