@@ -268,6 +268,11 @@ class MainWindow(FluentWindow):
             game = find_game_window()
             if game is None:
                 return  # 游戏没开——不打扰
+            # HUD 补启：_start_hud 在窗口缺失时会直接跳过——游戏被自动拉起
+            # 后此处补启（否则"开始任务后 HUD 不存在"）
+            if getattr(self, "_hud", None) is None:
+                self._start_hud()
+                return
             fg = ctypes.windll.user32.GetForegroundWindow()
             if fg != game["hwnd"]:
                 from runtime.win_capture import set_foreground_with_retry

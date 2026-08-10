@@ -59,6 +59,10 @@ class TaskProcess(QObject):
         env = QProcess.systemEnvironment()
         # 跳过 m7 first_run 检查（auto_update=false 会直接退出）与结束 pause
         env.append("MARCH7TH_DOCKER_STARTED=true")
+        # 强制 UTF-8 模式：m7 console StreamHandler 无编码参数→管道下继承
+        # locale 编码（GBK）→ 我们的 UTF-8 解码出乱码（实测 m7 日志乱码根因）
+        env.append("PYTHONUTF8=1")
+        env.append("PYTHONIOENCODING=utf-8")
         proc.setEnvironment(env)
         proc.setProcessChannelMode(QProcess.SeparateChannels)
         proc.readyReadStandardOutput.connect(self._on_stdout)

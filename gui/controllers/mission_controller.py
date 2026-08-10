@@ -46,24 +46,30 @@ class MissionController(QObject):
         return f"mission_state:{self._pkg_key()}"
 
     def _load_state(self):
-        """读取完成状态；损坏 → StateCorruptionError（BUG-054）。"""
+        """读取完成状态；损坏 → 备份原值 + 重置干净状态（自愈）——否则
+        损坏值让 record_completed 永久失败（完成状态永不保存，每次 done
+        刷错误日志）。损坏原因（版本不匹配/类型错误/结构损坏）留审计日志。
+        """
         from PySide6.QtCore import QSettings
         s = QSettings("WorldExecutor", "Studio")
         raw = s.value(self._state_key())
         if raw is None:
             return {"version": self.STATE_VERSION, "completed": [],
                     "saved_at": None}
-        if not isinstance(raw, dict):
-            raise StateCorruptionError(
-                f"完成状态损坏（类型 {type(raw).__name__}）：{str(raw)[:80]}")
-        if raw.get("version") != self.STATE_VERSION:
-            raise StateCorruptionError(
-                f"完成状态版本不匹配（{raw.get('version')} != {self.STATE_VERSION}）")
-        completed = raw.get("completed", [])
-        if not isinstance(completed, list) or \
-                not all(isinstance(c, str) for c in completed):
-            raise StateCorruptionError("完成列表结构损坏（非字符串列表）")
-        return raw
+        if isinstance(raw, dict) and raw.get("version") == self.STATE_VERSION \
+                and isinstance(raw.get("completed", []), list) \
+                and all(isinstance(c, str) for c in raw.get("completed", [])):
+            return raw
+        # 损坏：备份到 sidecar key（审计可查），重置为干净状态
+        import logging
+        logging.getLogger("gui.mission_controller").warning(
+            "完成状态损坏已自愈（原值备份到 %s_backup）: %s",
+            self._state_key(), str(raw)[:80])
+        s.setValue(self._state_key() + "_backup", raw)
+        state = {"version": self.STATE_VERSION, "completed": [],
+                 "saved_at": None}
+        s.setValue(self._state_key(), state)
+        return state
 
     def completed_targets(self):
         with self._persist_lock:
