@@ -34,7 +34,20 @@ if not exist ".venv\Scripts\python.exe" (
     echo [完成] 依赖安装完成
 )
 
-REM ============ 3. 提权启动 GUI ============
+REM ============ 3. 准备 m7 环境（任务中心依赖——首次自动 clone + 3.12+ venv） ============
+if not exist "m7_venv\Scripts\python.exe" (
+    echo.
+    echo [首次启动] 准备 m7 环境（拉取 March7thAssistant + 创建 3.12+ venv）...
+    ".venv\Scripts\python.exe" tools\setup_m7.py
+    if errorlevel 1 (
+        echo [警告] m7 环境准备失败——任务中心不可用，其余功能不受影响
+        echo        可稍后手动运行：.venv\Scripts\python.exe tools\setup_m7.py
+    ) else (
+        echo [完成] m7 环境就绪
+    )
+)
+
+REM ============ 4. 提权启动 GUI ============
 powershell -NoProfile -Command "Start-Process -FilePath '.\.venv\Scripts\pythonw.exe' -ArgumentList '-m','app','--no-elevate' -WorkingDirectory '%~dp0' -Verb RunAs"
 
 echo 启动中（管理员权限确认后窗口出现）...
