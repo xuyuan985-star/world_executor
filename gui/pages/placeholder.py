@@ -116,6 +116,18 @@ class TaskCenterPage(BasePage):
         proc = TaskProcess(task_id, self)
         proc.log_line.connect(self._append)
         proc.task_finished.connect(self._on_finished)
+        # m7 子进程任务同样显示游戏内 HUD（复用主窗口 HUD——日志实时转发）
+        self._hud = None
+        mw = self.window()
+        if mw is not None and hasattr(mw, "ensure_hud"):
+            try:
+                hud = mw.ensure_hud()
+                if hud is not None:
+                    self._hud = hud
+                    hud.show()
+                    proc.log_line.connect(hud.append_external)
+            except Exception:
+                self._hud = None
         proc.start()
         self._proc = proc
 
@@ -129,6 +141,13 @@ class TaskCenterPage(BasePage):
         name = task_name(self._current) if self._current else "任务"
         self._append(f"[完成] {name} 退出码 {exit_code}"
                      + ("（成功）" if exit_code == 0 else "（失败/被停止）"))
+        # 任务结束 → HUD 收起（与宝箱任务 run_finished 同行为）
+        if getattr(self, "_hud", None) is not None:
+            try:
+                self._hud.hide()
+            except Exception:
+                pass
+            self._hud = None
         self._current = None
         self._proc = None
         self._set_running(False)

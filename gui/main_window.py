@@ -197,6 +197,31 @@ class MainWindow(FluentWindow):
         # 同时开启 HUD（对齐 M7：游戏窗口左下角日志层）
         self._start_hud()
 
+    def ensure_hud(self):
+        """HUD 控制器（无则创建）——任务中心子进程任务复用同一 HUD。
+
+        返回 GameHudController 或 None（游戏窗口不存在时）。"""
+        try:
+            if getattr(self, "_hud", None) is not None:
+                return self._hud
+            from runtime.drivers.march7th.window import find_game_window
+            game = find_game_window()
+            if game is None:
+                return None
+            from gui.hotkey import GlobalHotkey
+            if getattr(self, "_hotkeys", None) is None:
+                self._hotkeys = GlobalHotkey(self)
+                self._hotkeys.pressed.connect(self._on_hotkey)
+                self._hotkeys.register("f10", None)
+            from gui.overlay import GameHudController
+            self._hud = GameHudController(self.event_bus, game["hwnd"])
+            self._hud.show()
+            return self._hud
+        except Exception:
+            import logging
+            logging.getLogger("gui.main_window").exception("ensure_hud 失败")
+            return None
+
     def _start_hud(self):
         """F10 全局热键 + 游戏窗口 HUD 日志层（对齐 M7）。"""
         try:
@@ -233,6 +258,14 @@ class MainWindow(FluentWindow):
             mc = self.mission_controller
             if mc is not None:
                 mc.stop()
+        except Exception:
+            pass
+        try:
+            # 任务中心子进程任务同样停止（F10 对任何任务都生效）
+            if getattr(self, "studio", None) is not None \
+                    and getattr(self.studio, "_proc", None) is not None \
+                    and self.studio._proc.running:
+                self.studio._stop_task()
         except Exception:
             pass
         try:

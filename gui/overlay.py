@@ -80,6 +80,17 @@ class GameHudController(QObject):
         self._lines = self._lines[-self.log_lines:]
         self.log_line.emit(line)
 
+    def append_external(self, line):
+        """外部日志入口（m7 任务子进程 stdout——不经 EventBus）。
+
+        与 _on_event 同语义：任意线程可调，只入队 + emit 信号（主线程显示）。
+        """
+        if len(line) > 90:
+            line = line[:90] + "…"
+        self._lines.append(line)
+        self._lines = self._lines[-self.log_lines:]
+        self.log_line.emit(line)
+
     def _append_line(self, line):
         # 主线程：Qt 控件操作
         if self.overlay.isVisible():
