@@ -1,1 +1,7 @@
-{"name": "\u652f\u63f4\u8231\u6bb5", "aliases": ["supply zone"]}
+{
+  "name": "支援舱段",
+  "aliases": [
+    "supply zone"
+  ],
+  "id": "supply_zone"
+}
