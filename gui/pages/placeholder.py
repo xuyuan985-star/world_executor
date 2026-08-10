@@ -182,6 +182,13 @@ class TaskCenterPage(BasePage):
         proc = TaskProcess(task_id, self)
         proc.log_line.connect(self._append)
         proc.task_finished.connect(self._on_finished)
+        # 进程内线程任务：结果/日志经轮询消费（本环境 QThread 信号不可靠）
+        if getattr(self, "_task_poll", None) is None:
+            from PySide6.QtCore import QTimer
+            self._task_poll = QTimer(self)
+            self._task_poll.setInterval(200)
+            self._task_poll.timeout.connect(self._poll_task)
+            self._task_poll.start()
         # m7 子进程任务同样显示游戏内 HUD（复用主窗口 HUD——日志实时转发）
         self._hud = None
         mw = self.window()
@@ -201,6 +208,18 @@ class TaskCenterPage(BasePage):
         if self._proc is not None:
             self._append("[停止] 正在终止任务进程…")
             self._proc.stop()
+
+    def _poll_task(self):
+        """轮询消费进程内任务结果/日志。"""
+        proc = getattr(self, "_proc", None)
+        if proc is not None and hasattr(proc, "poll"):
+            try:
+                proc.poll()
+            except Exception:
+                pass
+        # 任务结束后停止轮询（_proc 置 None 后）
+        if self._proc is None and getattr(self, "_task_poll", None) is not None:
+            self._task_poll.stop()
 
     def _on_finished(self, exit_code):
         from gui.tasks.catalog import task_name

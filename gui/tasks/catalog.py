@@ -11,12 +11,24 @@
 
 from pathlib import Path
 
-# m7 仓库根（相对本文件：world_executor/gui/tasks -> world_executor -> March7thAssistant）
-M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "March7thAssistant"
-# m7 子进程专用 venv（Python 3.14——m7 官方要求 >=3.12，PEP 701 f-string 语法；
-# 本项目主 venv 是 3.11 不够）。依赖 = m7 requirements 除投毒包 pylnk3
-# （quarantine stub 已在 launcher 注入）
-M7_PYTHON = Path(__file__).resolve().parent.parent.parent / "m7_venv" / "Scripts" / "python.exe"
+import sys
+
+_FROZEN = getattr(sys, "frozen", False)
+if _FROZEN:
+    # exe 场景：便携 Python 与 m7 源码在 exe 目录（同分发）
+    _EXE_DIR = Path(sys.executable).resolve().parent
+    # m7 仓库根：源码版 = world_executor 兄弟目录；exe 版 = exe 目录内
+    M7_ROOT = _EXE_DIR / "March7thAssistant"
+    # m7 子进程便携 Python（PyInstaller 自带解释器不跑外部 .py——
+    # 任务子进程用便携 python314）
+    M7_PYTHON = _EXE_DIR / "python314" / "python.exe"
+else:
+    # m7 仓库根（相对本文件：world_executor/gui/tasks -> world_executor -> March7thAssistant）
+    M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "March7thAssistant"
+    # m7 子进程专用 venv（Python 3.14——m7 官方要求 >=3.12，PEP 701 f-string 语法；
+    # 本项目主 venv 是 3.11 不够）。依赖 = m7 requirements 除投毒包 pylnk3
+    # （quarantine stub 已在 launcher 注入）
+    M7_PYTHON = Path(__file__).resolve().parent.parent.parent / "m7_venv" / "Scripts" / "python.exe"
 
 # 任务分组定义（id 对齐 m7 main.py run_sub_task 的 action 白名单）
 TASK_GROUPS = [
