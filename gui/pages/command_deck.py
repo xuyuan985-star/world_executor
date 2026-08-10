@@ -111,15 +111,17 @@ class TargetRow(QFrame):
 # ---- 实时观测卡片 ----
 
 class ObservationSnapshot(CardWidget):
+    _FRAME_STYLE = (
+        "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
+        "color: #7A90B0;")
+
     def __init__(self, parent=None):
         super().__init__(parent)
         card_title(self, "实时观测")
         self._shot = QLabel("游戏画面（待真机接入）")
         self._shot.setAlignment(Qt.AlignCenter)
         self._shot.setMinimumHeight(180)
-        self._shot.setStyleSheet(
-            "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
-            "color: #7A90B0;")
+        self._shot.setStyleSheet(self._FRAME_STYLE)
         card_layout(self).addWidget(self._shot)
         self._body = QLabel("—")
         self._body.setWordWrap(True)
@@ -129,11 +131,23 @@ class ObservationSnapshot(CardWidget):
         self._history = []
 
     def set_frame(self, pixmap_or_none):
-        # Bug 6：先 clear 再 set——防旧 pixmap 残留（setPixmap 不保证清理）
+        # 审查根因：本环境 QLabel.setPixmap 实测失效（pixmap() 返回 null）——
+        # 统一走样式 background-image（pixmap 存临时文件，与观察中心共用）。
         self._shot.clear()
         if pixmap_or_none is not None:
-            self._shot.setPixmap(pixmap_or_none)
+            try:
+                from pathlib import Path
+                tmp = Path(__file__).resolve().parent.parent.parent / "logs" / "live_frame.png"
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                pixmap_or_none.save(str(tmp))
+                self._shot.setStyleSheet(
+                    f"background-image: url({tmp.as_posix()}); background-repeat: no-repeat;"
+                    f"background-position: center; background-color: #101826;")
+            except Exception:
+                self._shot.setStyleSheet(self._FRAME_STYLE)
+                self._shot.setPixmap(pixmap_or_none)  # 兜底
         else:
+            self._shot.setStyleSheet(self._FRAME_STYLE)
             self._shot.setText("游戏画面（待真机接入）")
 
     def update_snapshot(self, observer, target, confidence, room):
@@ -378,6 +392,41 @@ class CommandDeck(BasePage):
         # 信号
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self.stop_requested)
+
+        # 实时观测：主线程同步抓帧（截图仅 0.12s），3s 周期，仅页面可见时
+        from PySide6.QtCore import QTimer
+        self._snapshot_refresh = QTimer(self)
+        self._snapshot_refresh.setInterval(3000)
+        self._snapshot_refresh.timeout.connect(self._refresh_snapshot)
+        self._snapshot_refresh.start()
+        QTimer.singleShot(800, self._refresh_snapshot)
+
+    def _refresh_snapshot(self):
+        """抓一帧并送到实时观测卡片（同步，见 ObservationPage._capture 同款根因）。"""
+        if not self.isVisible():
+            return
+        try:
+            import numpy as np
+            from PIL import Image as PILImage
+            from PIL.ImageQt import ImageQt
+            from PySide6.QtGui import QPixmap
+            from runtime.drivers.march7th.vision import March7thVision
+            vision = March7thVision()
+            shot = vision.take_screenshot()
+            if shot is None:
+                self.snapshot.set_frame(None)
+                return
+            img = shot[0]
+            arr = np.asarray(img).copy()
+            pil = PILImage.fromarray(arr, "RGB") \
+                if arr.ndim == 3 and arr.shape[2] == 3 else PILImage.fromarray(arr)
+            pix = QPixmap.fromImage(ImageQt(pil))
+            w = self.snapshot._shot.width() or 400
+            h = self.snapshot._shot.height() or 180
+            self.snapshot.set_frame(pix.scaled(
+                w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except Exception:
+            self.snapshot.set_frame(None)
 
     def set_starting(self):
         self.start_btn.setEnabled(False)
