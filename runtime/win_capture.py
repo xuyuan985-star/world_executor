@@ -53,8 +53,10 @@ def find_game_window(title=GAME_TITLE):
         try:
             # 审查 P1：win32gui 无 GetWindowProcess——GetModuleFileNameEx 需要
             # 进程句柄（OpenProcess）或直接用 GetWindowThreadProcessId 的 pid
+            # 审查：collect 内不得再 import ctypes——函数内 import 使名字
+            # 局部化，第 46 行 IsWindowVisible 先引用 → UnboundLocalError
+            # （fallback 路径从未触发所以一直未暴露——game_launcher 首炸）
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            import ctypes
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             handle = ctypes.windll.kernel32.OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION, False, pid)

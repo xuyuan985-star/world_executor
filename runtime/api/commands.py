@@ -65,12 +65,26 @@ class RuntimeAPI:
                 self._thread = None
                 return "invalid"
 
-            # 自动置顶：gate 检查前先激活游戏窗口（否则 foreground=False
-            # 永远拦——激活发生在 orchestrator.run_mission 太晚）
+            # 自动置顶/拉起：gate 检查前先激活游戏窗口（否则 foreground=False
+            # 永远拦——激活发生在 orchestrator.run_mission 太晚）。
+            # 窗口不存在 → 自动启动游戏（借鉴 m7 LocalGameController：
+            # cmd start → 等窗口 360s → 点"点击进入"）。
             try:
                 from runtime.drivers.march7th.window import find_game_window
                 from runtime.win_capture import set_foreground_with_retry
+                from runtime.platform.windows.game_launcher import ensure_game_launched
                 game = find_game_window()
+                if game is None:
+                    bus.publish(make_event("state_changed", execution_id,
+                                           detail="launching_game",
+                                           context={"action": "launch_game"}))
+                    ok, reason = ensure_game_launched()
+                    if not ok:
+                        bus.publish(make_event("state_changed", execution_id,
+                                               detail=f"launch_failed:{reason}",
+                                               context={"action": "launch_failed",
+                                                        "reason": reason}))
+                    game = find_game_window()
                 if game:
                     set_foreground_with_retry(game["hwnd"])
             except Exception:
