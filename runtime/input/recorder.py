@@ -29,10 +29,27 @@ class TrajectoryRecorder:
         self._keyboard_listener = None
         self._mouse_listener = None
         self._started_at = None
+        self._client_size = None  # 录制时游戏客户区 (w, h)——分辨率归一化基准
 
     @property
     def recording(self):
         return self._recording
+
+    def _client_rect(self):
+        """游戏客户区（GetClientRect——不含边框，全屏=显示器客户区）。"""
+        if not self.game_hwnd:
+            return None
+        import ctypes
+        import ctypes.wintypes
+        rect = ctypes.wintypes.RECT()
+        if not ctypes.windll.user32.GetClientRect(self.game_hwnd,
+                                                  ctypes.byref(rect)):
+            return None
+        w = rect.right - rect.left
+        h = rect.bottom - rect.top
+        if w <= 0 or h <= 0:
+            return None
+        return (w, h)
 
     def start(self):
         """开始录制（3 秒后正式计数——给玩家切窗口时间）。"""
@@ -44,6 +61,9 @@ class TrajectoryRecorder:
         self._mouse_pos = None
         self._started_at = time.time() + 3.0
         self._last_time = self._started_at
+        # 记录录制时的客户区尺寸——回放按当前尺寸归一化换算
+        # （分辨率/全屏变化自适应——否则点击/视角全部偏移）
+        self._client_size = self._client_rect()
 
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -110,8 +130,10 @@ class TrajectoryRecorder:
         # 视角移动：小位移忽略（抖动），聚合到显著位移
         if abs(dx) < 3 and abs(dy) < 3:
             return
+        # 归一化位移（相对客户区宽高）——分辨率/全屏变化时回放按当前尺寸换算
+        w, h = self._client_size or (1, 1)
         self.events.append({
-            "mouse_dx": dx, "mouse_dy": dy,
+            "view_dx": round(dx / w, 4), "view_dy": round(dy / h, 4),
             "time_sleep": round(t - self._last_time, 2),
         })
         self._last_time = t
@@ -124,18 +146,25 @@ class TrajectoryRecorder:
             return
         if str(button) != "Button.left":
             return
-        # 游戏窗口内相对坐标（供回放换算）
-        rx, ry = x, y
+        # 归一化点击（客户区 0-1）——回放按当前客户区换算，分辨率自适应
+        w, h = self._client_size or (1, 1)
+        ox, oy = 0, 0
         if self.game_hwnd:
             import ctypes
             import ctypes.wintypes
+            import win32gui
+            # 客户区原点（屏幕绝对坐标）——鼠标 x 是屏幕坐标，须先减原点
+            ox, oy = win32gui.ClientToScreen(self.game_hwnd, (0, 0))
             rect = ctypes.wintypes.RECT()
-            if ctypes.windll.user32.GetWindowRect(self.game_hwnd,
+            if ctypes.windll.user32.GetClientRect(self.game_hwnd,
                                                   ctypes.byref(rect)):
-                rx = x - rect.left
-                ry = y - rect.top
+                cw = rect.right - rect.left
+                ch = rect.bottom - rect.top
+                if cw > 0 and ch > 0:
+                    w, h = cw, ch
         self.events.append({
-            "click": True, "x": rx, "y": ry,
+            "click": True,
+            "nx": round((x - ox) / w, 4), "ny": round((y - oy) / h, 4),
             "time_sleep": round(t - self._last_time, 2),
         })
         self._last_time = t
@@ -173,6 +202,8 @@ class TrajectoryRecorder:
         payload = {
             "version": 1,
             "recorded_at": time.time(),
+            "client_w": (self._client_size or (1920, 1080))[0],
+            "client_h": (self._client_size or (1920, 1080))[1],
             "events": self.events,
             "count": len(self.events),
         }
