@@ -133,6 +133,10 @@ def try_capture_window(info, flags=3):
         bmp = win32ui.CreateBitmap()
         bmp.CreateCompatibleBitmap(mfcDC, w, h)
         saveDC.SelectObject(bmp)
+        # 借鉴 March7th screenshot.capture_window_background：
+        # PrintWindow 前先 WM_PAINT 触发重绘——部分游戏（尤其 D3D 交换链
+        # 停止时）不重绘则 PrintWindow 抓到陈旧/空白画面
+        win32gui.SendMessage(hwnd, win32con.WM_PAINT, 0, 0)
         result = ctypes.windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), flags)
         from PIL import Image
         bmpinfo = bmp.GetInfo()

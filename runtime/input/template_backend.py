@@ -23,6 +23,9 @@ class TemplateMatcher:
         self.threshold = threshold
         self.backend = backend or Win32Backend()
         self.last_match_ms = None  # Bug 157：最近一次匹配耗时（ms）
+        # 借鉴 March7th ImageUtils/img_cache：模板按路径缓存（含 mtime 校验）——
+        # 避免每次 locate 重复读盘+全文件 sha256；文件变更自动重读重校验
+        self._template_cache = {}
 
     def _screenshot(self):
         import mss
@@ -32,15 +35,36 @@ class TemplateMatcher:
         return np.frombuffer(shot.rgb, dtype=np.uint8).reshape(
             shot.height, shot.width, 3)[:, :, ::-1]
 
+    def _read_template(self, template_path):
+        """借鉴 March7th ImageUtils.read_image：np.fromfile+imdecode——
+        cv2.imread 不支持非 ASCII 路径（中文目录实测返回 None 且仅告警），
+        imdecode 全路径可靠。返回 (数组, mtime)；文件不可读抛 ValueError。
+        """
+        import os
+        try:
+            mtime = os.path.getmtime(template_path)
+        except OSError as e:
+            raise ValueError(f"模板不可访问: {template_path} ({e})")
+        cached = self._template_cache.get(template_path)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        data = np.fromfile(template_path, dtype=np.uint8)
+        if data.size == 0:
+            raise ValueError(f"模板读取失败(空文件): {template_path}")
+        t = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if t is None:
+            raise ValueError(f"模板解码失败(损坏?): {template_path}")
+        self._template_cache[template_path] = (mtime, t)
+        return t
+
     def _load_template(self, template_path):
         """Bug 336：模板加载校验（空图/损坏 → 明确错误，不崩 matcher）。
 
         BUG-077：语义完整性——若知识包带 templates_manifest.json（sha256 清单），
         校验模板未被替换/篡改（文件被换内容但保留文件名 → false positive 源）。
+        缓存命中（mtime 未变）跳过重读重校验。
         """
-        t = cv2.imread(template_path)
-        if t is None:
-            raise ValueError(f"模板读取失败: {template_path}")
+        t = self._read_template(template_path)
         h, w = t.shape[:2]
         if h < 10 or w < 10:
             raise ValueError(f"模板尺寸过小 {w}x{h}: {template_path}")
