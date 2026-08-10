@@ -16,7 +16,8 @@ sys.path.insert(0, str(WORLD_ROOT))
 
 from security.quarantine import install_pylnk3_stub, require_m7_path
 
-M7 = r"C:\Users\xuyua\Desktop\Open Code\March7thAssistant"
+# m7 是 world_executor 的兄弟目录——相对推导（禁止硬编码——同事/新环境路径不同）
+M7 = str(WORLD_ROOT.parent / "March7thAssistant")
 
 require_m7_path(M7)
 install_pylnk3_stub(verbose=False)

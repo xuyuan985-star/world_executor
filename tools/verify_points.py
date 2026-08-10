@@ -155,8 +155,9 @@ def main():
     if not target:
         out += (f"\n\n=== 汇总: 真实{total_real} 已有真点位{total_have} "
                 f"(覆盖率{total_have/total_real*100:.0f}%) 骨架{total_empty} ===")
-    open("C:/Users/xuyua/AppData/Local/Temp/opencode/verify_report.txt", "w",
-         encoding="utf-8").write(out)
+    report_path = ROOT / "logs" / "verify_report.txt"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(out, encoding="utf-8")
     print(out)
 
 

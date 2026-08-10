@@ -19,9 +19,11 @@ try:
 except Exception:
     pass
 
-M7 = Path(r"C:\Users\xuyua\Desktop\Open Code\March7thAssistant")
-VENV_PY = Path(r"C:\Users\xuyua\Desktop\Open Code\world_executor\m7_venv\Scripts\python.exe")
-REQ_FILTERED = Path(r"C:\Users\xuyua\AppData\Local\Temp\opencode\m7_req_filtered.txt")
+# 路径相对推导（禁止硬编码——同事/新环境路径不同）
+WORLD_ROOT = Path(__file__).resolve().parent.parent.parent
+M7 = WORLD_ROOT.parent / "March7thAssistant"
+VENV_PY = WORLD_ROOT / "m7_venv" / "Scripts" / "python.exe"
+REQ_FILTERED = WORLD_ROOT / "logs" / "m7_req_filtered.txt"
 
 
 def log(msg):
