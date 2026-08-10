@@ -38,7 +38,11 @@ class GuidesView(BasePage):
         self.map_list.currentItemChanged.connect(self._on_map_selected)
         split.addWidget(self.map_list)
 
-        # 右侧：区域卡片容器
+        # 右侧：区域卡片容器（QScrollArea——多区域/多宝箱时不挤在同一屏）
+        from PySide6.QtWidgets import QFrame, QScrollArea
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)  # 无边框（与页面风格一致）
         self.region_box = QWidget()
         self.region_layout = QVBoxLayout(self.region_box)
         self.region_layout.setContentsMargins(0, 0, 0, 0)
@@ -47,7 +51,8 @@ class GuidesView(BasePage):
         self.empty_label.setStyleSheet("color: #7A90B0;")
         self.region_layout.addWidget(self.empty_label)
         self.region_layout.addStretch(1)
-        split.addWidget(self.region_box)
+        self._scroll.setWidget(self.region_box)
+        split.addWidget(self._scroll)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setSizes([350, 650])
