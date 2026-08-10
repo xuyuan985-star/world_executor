@@ -1,5 +1,6 @@
 """m7 任务子进程封装（QProcess：启动/日志管道/停止/退出信号）。"""
 import os
+from pathlib import Path
 
 from PySide6.QtCore import QProcess, QObject, Signal
 
@@ -26,7 +27,7 @@ class TaskProcess(QObject):
         return self._proc is not None and self._proc.state() == QProcess.Running
 
     def start(self):
-        from gui.tasks.catalog import M7_ROOT, PYTHON_EXE
+        from gui.tasks.catalog import M7_ROOT, M7_PYTHON
 
         if self.running:
             return False
@@ -51,7 +52,7 @@ class TaskProcess(QObject):
             self.log_line.emit(f"[错误] March7thAssistant 缺 main.py: {M7_ROOT}")
             self.task_finished.emit(1)
             return False
-        python = str(PYTHON_EXE) if PYTHON_EXE.exists() else "python"
+        python = str(M7_PYTHON) if M7_PYTHON.exists() else "python"
 
         proc = QProcess(self)
         proc.setWorkingDirectory(str(M7_ROOT))
@@ -64,7 +65,12 @@ class TaskProcess(QObject):
         proc.readyReadStandardError.connect(self._on_stderr)
         proc.finished.connect(self._on_finished)
         proc.errorOccurred.connect(self._on_error)
-        proc.start(python, ["main.py", self.task_id])
+        # 经 launcher 启动：注入 pylnk3 stub（m7 module/config 混入 payload，
+        # 不注入则 import 崩）+ runpy 跑 main.py。
+        # -u：QProcess 管道下 stdout 全缓冲——m7 logger 输出不 flush 就不出，
+        # 实时日志会"消失"到缓冲满/退出（实测链路验证发现的坑）
+        launcher = Path(__file__).resolve().parent / "m7_launcher.py"
+        proc.start(python, ["-u", str(launcher), self.task_id])
         self._proc = proc
         self.task_started.emit()
         return True
