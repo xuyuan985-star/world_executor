@@ -109,15 +109,6 @@ class ActionIntent:
             object.__setattr__(self, "idempotent", False)
         object.__setattr__(self, "params", _deep_freeze(self.params))
 
-    @classmethod
-    def create_verified(cls, action, target, method, confidence, evidence_id,
-                        **kw):
-        """BUG-063：已验证意图显式构造入口——视觉证明必须走这里，
-        与未验证意图（普通构造）在创建阶段即区分。"""
-        return cls(action=action, target=target, method=method,
-                   vision_verified=True, vision_confidence=confidence,
-                   evidence_id=evidence_id, **kw)
-
     def to_context(self):
         method = self.method.value if isinstance(self.method, ActionMethod) \
             else self.method  # Bug 7：枚举归一化为字符串（防 JSON 序列化崩）

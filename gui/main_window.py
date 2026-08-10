@@ -422,6 +422,14 @@ class MainWindow(FluentWindow):
                 self.event_bus.close()
         except Exception:
             pass
+        # 审查：HUD 订阅泄漏——GUI 关闭必须 unsubscribe（bus 强引用
+        # 阻止 GameHudController 释放，publish 会持续调已关闭的 _on_event）
+        try:
+            if getattr(self, "_hud", None) is not None:
+                self._hud.destroy()
+                self._hud = None
+        except Exception:
+            pass
         self._save_diag_snapshot()
 
     def _save_diag_snapshot(self):

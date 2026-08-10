@@ -12,55 +12,15 @@ M7_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent / "March7t
 
 
 def find_game_window():
-    import win32gui
-    best = None
-    def cb(hwnd, _):
-        nonlocal best
-        if not win32gui.IsWindowVisible(hwnd):
-            return True
-        title = win32gui.GetWindowText(hwnd)
-        if not title or "星穹铁道" not in title:
-            return True
-        rect = win32gui.GetWindowRect(hwnd)
-        w, h = rect[2] - rect[0], rect[3] - rect[1]
-        # #22 增强：过滤 0x0/极小窗口（游戏标题的托盘/隐藏变体）
-        if w < 500 or h < 500:
-            return True
-        if best is None or w * h > best[1]:
-            best = (hwnd, w * h, (w, h))
-        return True
-    win32gui.EnumWindows(cb, None)
-    if best is None:
-        return None
-    hwnd, _, (w, h) = best
-    return {"hwnd": hwnd, "client": (w, h)}
+    """窗口查找（统一实现见 runtime/win_capture——客户区+进程名过滤更强）。"""
+    from runtime.win_capture import find_game_window as _fg
+    return _fg()
 
 
 def set_foreground_with_retry(hwnd, attempts=3):
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    for _ in range(attempts):
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)
-            time.sleep(0.1)
-        user32.SetForegroundWindow(hwnd)
-        time.sleep(0.15)
-        fg = user32.GetForegroundWindow()
-        if fg == hwnd:
-            return True
-        if user32.IsWindowVisible(hwnd):
-            # 审查 P1：AttachThreadInput 应 attach【前台窗口】线程与目标窗口线程——
-            # 原代码 attach 调用线程自身 id（Python 线程）导致回退路径无效
-            fg = user32.GetForegroundWindow()
-            fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
-            win_thread = user32.GetWindowThreadProcessId(hwnd, None)
-            if fg_thread and fg_thread != win_thread:
-                user32.AttachThreadInput(fg_thread, win_thread, True)
-            user32.BringWindowToTop(hwnd)
-            user32.SetForegroundWindow(hwnd)
-            if fg_thread and fg_thread != win_thread:
-                user32.AttachThreadInput(fg_thread, win_thread, False)
-    return False
+    """前台激活（统一实现见 runtime/win_capture——m7 参考三级回退）。"""
+    from runtime.win_capture import set_foreground_with_retry as _sf
+    return _sf(hwnd)
 
 
 def ensure_march7th_env():

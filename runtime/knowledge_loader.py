@@ -85,11 +85,6 @@ class KnowledgePackage:
         for r in rooms:
             if isinstance(r, dict) and r.get("id"):
                 self._index_rooms_by_id[r["id"]] = r
-
-    def chests_by_room(self, room_id):
-        """O(1) 查询：指定房间的全部点位（替代逐条扫描）。"""
-        return list(self._index_chests_by_room.get(room_id, []))
-
     def portal_by_id(self, portal_id):
         """O(1) 查询：传送门 by id。"""
         return self._index_portals_by_id.get(portal_id)

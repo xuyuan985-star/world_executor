@@ -84,36 +84,6 @@ def find_game_window(title=GAME_TITLE):
         "client": (cl[2], cl[3]),
         "visible": True,
     }
-
-
-class WindowStateMonitor:
-    """#19：监测游戏窗口状态变化（旧名 WindowLock 误导——它不 lock，只 detect）。
-
-    客户区尺寸变化 = 状态变化（resize/遮挡/最小化恢复），供调用方决策。
-    #17-F：身份三元组（hwnd + pid + 进程创建时间）——HWND 可被系统复用
-    （游戏重启/更新后旧句柄可能指向新窗口），仅靠 hwnd 会错绑。
-    """
-
-    def __init__(self, title=GAME_TITLE):
-        self.title = title
-        self._last_rect = None
-        self._identity = None  # (hwnd, pid, create_time)
-
-    def acquire(self):
-        info = find_game_window(self.title)
-        if info is None:
-            raise RuntimeError("未找到可见的游戏窗口")
-        rect = info["client"]
-        changed = self._last_rect is not None and self._last_rect != rect
-        identity = process_identity(info["hwnd"])
-        if identity != self._identity:
-            changed = True  # 窗口句柄/进程变化（重启、复用）→ 视为窗口更换
-        self._last_rect = rect
-        self._identity = identity
-        info["pid"] = identity[1] if identity else None
-        return {**info, "changed": changed}
-
-
 def try_capture_window(info, flags=3):
     """#21：尝试经 PrintWindow 捕获窗口（旧名 capture_game_background 误导）。
 

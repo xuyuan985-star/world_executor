@@ -70,31 +70,6 @@ def validate_vlm_output(data, kind="room"):
         if v is not None and not isinstance(v, str):
             return False, f"vlm_{k}_type:{type(v).__name__}"
     return True, "ok"
-
-
-class VLMAdapter:
-    """VLM 观察适配：observe(screenshot) → {"room", "ui_state", "confidence"}。
-
-    包装 VLMVisionObserver.observe_room（房间判定 + UI 状态 + 置信度）。
-    BUG-34：输出过 schema 校验，非法 → 空结果（走 VLM 弱分支）。
-    """
-
-    def __init__(self, vlm, room_ids=None):
-        self.vlm = vlm
-        self.room_ids = room_ids or []
-
-    def observe(self, screenshot):
-        data = self.vlm.observe_room(screenshot, self.room_ids) or {}
-        ok, reason = validate_vlm_output(data)
-        if not ok:
-            data = {"room": None, "ui_state": None, "confidence": 0.0,
-                    "schema_error": reason}
-        return {"room": data.get("room"),
-                "ui_state": data.get("ui_state"),
-                "confidence": data.get("confidence", 0.0),
-                "schema_error": data.get("schema_error")}
-
-
 class VisionObserver:
     """统一视觉入口：双通道各自 try 隔离（单通道故障不拖垮观察）。"""
 

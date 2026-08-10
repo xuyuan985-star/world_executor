@@ -17,21 +17,6 @@ else:
 def resource_path(rel):
     """Bug 206：资源文件统一入口（打包/源码环境都正确）。"""
     return ROOT / rel
-
-
-def data_root():
-    """P0-003：用户数据目录（logs/db/快照）——打包环境不写入临时目录。
-
-    优先级：WORLD_EXECUTOR_DATA env > ~/.world_executor > 仓库 logs。
-    """
-    override = os.environ.get("WORLD_EXECUTOR_DATA")
-    if override:
-        return Path(override)
-    if _MEIPASS:  # 打包环境：用户目录（_MEIPASS 是临时解包目录，会消失）
-        return Path.home() / ".world_executor"
-    return ROOT / "logs"
-
-
 def _load_env():
     env = {}
     env_file = ROOT / ".env"

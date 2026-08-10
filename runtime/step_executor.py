@@ -570,15 +570,6 @@ class RealExecutor:
             params={"include": include, "max_retries": max_retries, "crop": crop},
             reason="objective_ui", execution_id=self.execution_id))
 
-    def click_vlm_entity(self, entity_id):
-        """按世界实体 id 点击：位置取自该实体的最近观测记录。"""
-        if not entity_id:
-            return ExecutionResult(success=False, error="click_vlm:no_entity",
-                                   retryable=False, category="F3")
-        return self.execute(ActionIntent(
-            action="interact", target=entity_id, method=ActionMethod.VLM_BBOX.value,
-            reason="objective_interact_vlm", execution_id=self.execution_id))
-
     def move_visual_guided(self, target_desc, ticks, step_seconds, threshold=0.8,
                            abort_check=None) -> ExecutionResult:
         """VLM 短步移动：#14 方向修正（目标在左 → 左转 a），#15 收敛判断。

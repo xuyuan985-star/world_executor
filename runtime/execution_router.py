@@ -46,12 +46,6 @@ class ExecutionRouter:
             from runtime.input.base import InputResult
             return InputResult(success=False, action=method, backend=backend.name,
                                error=f"{type(e).__name__}: {e}")
-
-    def capability_input(self):
-        """cap.input 语义：是否存在真实输入 driver 可用。"""
-        return any(getattr(d, "available", False) and d.name != "observe"
-                   for d in self.drivers)
-
     @staticmethod
     def from_capability(cap_report, real=None):
         """按 CapabilityReport 构造驱动栈：

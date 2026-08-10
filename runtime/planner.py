@@ -144,11 +144,3 @@ class Planner:
             source="planner",
             idempotent=False,
         )
-
-    @staticmethod
-    def action_of(intent: ActionIntent) -> ActionType:
-        """ActionIntent.action 字符串 → ActionType（未知兜底 NONE）。"""
-        try:
-            return ActionType(intent.action)
-        except ValueError:
-            return ActionType.NONE
