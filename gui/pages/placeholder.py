@@ -86,15 +86,49 @@ class TaskCenterPage(BasePage):
         self._stop_btn.clicked.connect(self._stop_task)
         self._clear_btn = QPushButton("清空日志")
         self._clear_btn.clicked.connect(self._log.clear)
+        self._update_btn = QPushButton("更新 m7 模块")
+        self._update_btn.setToolTip("从官方仓库更新迁移的 m7（git pull + 依赖同步）")
+        self._update_btn.clicked.connect(self._update_m7)
         footer = QWidget()
         fl = QHBoxLayout(footer)
         fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(self._stop_btn)
         fl.addWidget(self._clear_btn)
         fl.addStretch(1)
+        fl.addWidget(self._update_btn)
         self.add_footer(footer)
 
     # ---------- 任务控制 ----------
+
+    def _update_m7(self):
+        """更新迁移的 m7 模块（git pull + 依赖同步，日志实时显示）。"""
+        if self._proc is not None and self._proc.running:
+            self._append("[提示] 任务运行中——请先停止任务再更新 m7")
+            return
+        from PySide6.QtWidgets import QMessageBox
+        r = QMessageBox.question(
+            self, "更新 m7 模块",
+            "将从官方仓库拉取 m7 最新版本（git pull + m7_venv 依赖同步）。\n"
+            "更新期间请勿关闭程序。继续？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if r != QMessageBox.Yes:
+            return
+        from gui.tasks.update_runner import UpdateProcess
+        self._log.clear()
+        self._append("[更新] 开始更新 m7 模块…")
+        proc = UpdateProcess(self)
+        proc.log_line.connect(self._append)
+        proc.update_finished.connect(self._on_update_finished)
+        self._update_proc = proc
+        self._update_btn.setEnabled(False)
+        self._stop_btn.setEnabled(False)
+        proc.start()
+
+    def _on_update_finished(self, code):
+        self._append(f"[更新] 完成（退出码 {code}）"
+                     + ("——请重启程序后使用" if code == 0 else ""))
+        self._update_proc = None
+        self._update_btn.setEnabled(True)
 
     def _open_config(self, task_id):
         """任务配置对话框（m7 config.yaml 读写）。"""
