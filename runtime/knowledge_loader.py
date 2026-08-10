@@ -231,6 +231,9 @@ class KnowledgePackage:
         x, y = c.get("x"), c.get("y")
         if x is None or y is None:
             return None
+        # 只认归一化坐标（0-1）——absolute/未知类型拒绝兜底（防坐标语义错乱）
+        if c.get("coordinate_type", "normalized") != "normalized":
+            return None
         try:
             return (float(x), float(y))
         except (TypeError, ValueError):

@@ -22,6 +22,7 @@ EVENT_TYPES = {
     "resume_checked",
     "human_intervention",
     "deadlock_detected",  # S10：watchdog 发现执行卡死
+    "verify_degraded",   # 验证降级：vanished 判定时信号模板从未命中（证据留档）
     "mission_summary",   # 审查 P0：real 任务结束发 mission_summary——未注册导致
     # make_event 抛 ValueError → 每次 real 任务都被误判 crashed
 }

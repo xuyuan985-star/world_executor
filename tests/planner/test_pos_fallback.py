@@ -60,7 +60,12 @@ def main():
     assert fallback, f"无坐标兜底点击: {r1['clicks']}"
     x, y = fallback[0]
     assert abs(x - 0.451 * 1920) <= 1 and abs(y - 0.562 * 1080) <= 1, (x, y)
-    print(f"[pos-fallback] Test 1 PASS（模板失败→坐标点击 ({x},{y})→目标成功）")
+    # 帧模板 verify 恒不中 → 应留 verify_degraded 证据（不假成功不静默）
+    deg = [c for t, c in r1["events"] if t == "verify_degraded"]
+    assert deg, r1["events"]
+    assert deg[0]["template"] == "herta_space_station_base_zone_0006_87d3.png", deg
+    print(f"[pos-fallback] Test 1 PASS（模板失败→坐标点击 ({x},{y})→目标成功，"
+          f"verify 降级证据留档 {len(deg)} 条）")
 
     # Test 2：chest_A 无坐标 → 无兜底 → 失败（F1_TEMPLATE 分类）
     r2 = run_target("chest_A", [])

@@ -29,16 +29,6 @@ def make_scene():
     return scene
 
 
-def run(template_pixels, scene, threshold=0.7):
-    from unittest import mock
-    from runtime.input.template_backend import TemplateMatcher
-
-    tm = TemplateMatcher(threshold=threshold)
-    # _screenshot 换成合成场景（全屏坐标 200x200 直接返回）
-    with mock.patch.object(tm, "_screenshot", return_value=scene):
-        return tm.locate(path="C:/fake/tpl.png") if False else None
-
-
 def main():
     from runtime.input.template_backend import TemplateMatcher
     from unittest import mock
