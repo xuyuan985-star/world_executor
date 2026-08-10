@@ -104,13 +104,16 @@ class TemplateMatcher:
         except Exception:
             pass  # 清单损坏/不可读——不阻断匹配（降级为无校验）
 
-    def locate(self, template_path):
+    def locate(self, template_path, scale_range=None):
         """返回 (best_val, cx, cy) 屏幕绝对中心坐标；未命中返回 None。
 
         Bug 156：多尺度结果即隐式 NMS——只取全局最高分单点（同一目标不重复框）。
         审查 P0：中心偏移用【命中尺度的缩放尺寸】算。
         隐藏 Bug 审查：1440p 全屏 × 43 级多尺度实测 15.7s——每点击前卡 16 秒。
         降采样到 1280 宽工作空间匹配（坐标换算回全屏）——耗时 <1.5s。
+        scale_range（workflow 知识声明，如 [0.9, 1.1]）：限制扫描尺度空间——
+        模板源分辨率已知时只扫声明区间（更快 + 防大尺度误匹配）；
+        None 时扫全 SCALES（兼容无声明模板）。
         """
         import time
         t0 = time.time()
@@ -125,9 +128,26 @@ class TemplateMatcher:
         else:
             work = screen
         wh, ww = work.shape[:2]
+        # scale_range（workflow 知识声明）：优先扫声明区间（外扩 40%——
+        # 实测数据声明与命中尺度有偏差，如 chest_A 声明 [0.9,1.1] 实际命中 0.55），
+        # 区间内未命中再回退全 SCALES（保证 M1-A 已验证匹配不破坏）。
+        scales = self.SCALES
+        fallback_scales = None
+        if scale_range:
+            try:
+                lo, hi = float(scale_range[0]) * 0.6, float(scale_range[1]) * 1.4
+                s = self.SCALES[(self.SCALES >= lo) & (self.SCALES <= hi)]
+                if s.size:
+                    scales = s
+                    fallback_scales = self.SCALES
+                else:
+                    scales = np.round(np.array([(lo + hi) / 2]), 2)
+                    fallback_scales = self.SCALES
+            except (TypeError, ValueError):
+                pass  # 声明损坏 → 全量（与无声明一致）
         best = (0.0, 0, 0, 0.0)  # (val, x, y, scale)
         try:
-            for scale in self.SCALES:
+            for scale in scales:
                 th = cv2.resize(t, None, fx=scale, fy=scale,
                                 interpolation=cv2.INTER_AREA)
                 if th.shape[0] >= wh or th.shape[1] >= ww:
@@ -147,6 +167,24 @@ class TemplateMatcher:
                 _, mv, _, ml = cv2.minMaxLoc(res)
                 if mv > best[0]:
                     best = (mv, ml[0], ml[1], scale)
+            # 受限区间未达阈值 → 回退全 SCALES（数据声明尺度偏差兜底）
+            if fallback_scales is not None and best[0] < self.threshold:
+                for scale in fallback_scales:
+                    th = cv2.resize(t, None, fx=scale, fy=scale,
+                                    interpolation=cv2.INTER_AREA)
+                    if th.shape[0] >= wh or th.shape[1] >= ww:
+                        continue
+                    if mask is not None:
+                        m = cv2.resize(mask, th.shape[1::-1],
+                                       interpolation=cv2.INTER_AREA)
+                        res = cv2.matchTemplate(
+                            work, th, cv2.TM_CCORR_NORMED,
+                            mask=np.where(m > 127, 255, 0).astype(np.uint8))
+                    else:
+                        res = cv2.matchTemplate(work, th, cv2.TM_CCOEFF_NORMED)
+                    _, mv, _, ml = cv2.minMaxLoc(res)
+                    if mv > best[0]:
+                        best = (mv, ml[0], ml[1], scale)
         except cv2.error as e:
             # Bug 337：OpenCV 失败显式处理（不静默吞/不裸崩）
             raise RuntimeError(f"模板匹配 OpenCV 错误: {e}") from e
@@ -168,7 +206,7 @@ class TemplateMatcher:
                        scale_range=None):
         th = threshold or self.threshold
         for attempt in range(max_retries):
-            hit = self.locate(path)
+            hit = self.locate(path, scale_range=scale_range)
             if hit is None:
                 time.sleep(0.8)
                 continue

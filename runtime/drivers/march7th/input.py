@@ -97,7 +97,8 @@ class March7thInputBackend(InputBackend):
         from runtime.input.template_backend import TemplateMatcher
         try:
             result = TemplateMatcher(threshold=threshold).click_template(
-                path, threshold=threshold, max_retries=max_retries)
+                path, threshold=threshold, max_retries=max_retries,
+                scale_range=scale_range)
         except Exception as e:
             return InputResult(success=False, action="click_template", backend=self.name,
                                error=f"template_backend:{type(e).__name__}: {e}")

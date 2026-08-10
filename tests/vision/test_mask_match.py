@@ -29,6 +29,15 @@ def make_scene():
     return scene
 
 
+def make_scene_with_size(scale=1.0):
+    """200x200 噪声场景 + 按 scale 缩放放置的模板内容（圆心始终 100,100）。"""
+    rng = np.random.default_rng(7)
+    scene = rng.integers(0, 255, (200, 200, 3), dtype=np.uint8)
+    r = int(10 * scale)
+    cv2.circle(scene, (100, 100), max(r, 2), (200, 30, 30), -1)
+    return scene
+
+
 def main():
     from runtime.input.template_backend import TemplateMatcher
     from unittest import mock
@@ -66,9 +75,23 @@ def main():
     assert len(cached) == 3 and cached[2] is not None, cached
     print("[mask] Test 3 PASS（缓存 (mtime, t, mask) 结构）")
 
+    # ---- Test 4：scale_range 区间命中（1:1 → scale≈1.0 在声明区间内）----
+    tm4 = TemplateMatcher(threshold=0.5)
+    with mock.patch.object(tm4, "_screenshot", return_value=make_scene_with_size(1.0)):
+        hit4 = tm4.locate(str(tpl_path), scale_range=[0.9, 1.1])
+    assert hit4 is not None and abs(hit4[1] - 100) <= 2, hit4
+    print(f"[mask] Test 4 PASS（scale_range [0.9,1.1] 区间内命中 @({hit4[1]},{hit4[2]})）")
+
+    # ---- Test 5：scale_range 区间外 → 回退全 SCALES 命中（声明偏差兜底）----
+    tm5 = TemplateMatcher(threshold=0.5)
+    with mock.patch.object(tm5, "_screenshot", return_value=make_scene_with_size(2.2)):
+        hit5 = tm5.locate(str(tpl_path), scale_range=[0.9, 1.1])
+    assert hit5 is not None and abs(hit5[1] - 100) <= 2, hit5
+    print(f"[mask] Test 5 PASS（声明区间外命中 → 回退全量兜底 @({hit5[1]},{hit5[2]})）")
+
     tpl_path.unlink(missing_ok=True)
     rgb.unlink(missing_ok=True)
-    print("[mask] Test 1-3 全部 PASS")
+    print("[mask] Test 1-5 全部 PASS")
 
 
 if __name__ == "__main__":

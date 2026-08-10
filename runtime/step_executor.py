@@ -447,6 +447,13 @@ class RealExecutor:
                              "nx": pos[0], "ny": pos[1],
                              "template": str(path)})
                         return r2
+                    # 坐标兜底也失败：失败上下文留档（复盘可区分
+                    # "模板失败"与"坐标兜底也失败"两条独立失败链）
+                    r2.detail.update(
+                        {"fallback_attempted": "entity_position",
+                         "nx": pos[0], "ny": pos[1],
+                         "template": str(path)})
+                    return r2
         return result
 
     def _execute_text(self, intent):
@@ -681,28 +688,40 @@ class RealExecutor:
         if tpl is None:
             return False
         vision = self.driver.vision
+        if vision is None:
+            # 无视觉通道（observe_only 注入路径）→ 无法验证 = fail-closed
+            return False
         deadline = time.time() + timeout
         delay = 0.2
         # 假阳性防御（视频帧整帧模板）：vanished 判定前先建立"命中基线"——
-        # 帧模板恒不中 → vanished 恒真（无验证价值）。首个 tick 记录模板
-        # 是否可见：一次都没见过却判 vanished → degraded（诚实标记，证据留档）。
-        baseline_seen = None
-        degraded = False
+        # 帧模板恒不中 → vanished 恒真（无验证价值）。基线用探测窗口
+        # （2s 内见过即真验证；窗口结束仍未见过 → 降级放行 + 证据留档）——
+        # 避免"点击后画面立即变化"被首个 tick 误判为从未见过。
+        baseline_seen = None  # None=探测中, True/False=定案
+        baseline_deadline = time.time() + min(2.0, timeout / 3)
         while time.time() < deadline:
             if abort_check and abort_check():
                 return False
             # #17：阈值参数化（默认 0.8，后续可配置化），不硬编码
             found = vision.find_template(str(tpl), threshold) is not None
             if baseline_seen is None:
-                baseline_seen = found
-            if (expected == "vanished" and not found) or (expected == "present" and found):
-                if expected == "vanished" and not baseline_seen:
-                    degraded = True
-                    self._emit("verify_degraded",
-                               detail=f"verify:{template}:never_seen",
-                               context={"template": template,
-                                        "reason": "signal never matched before vanish"
-                                                  "（视频帧模板恒不中——验证降级）"})
+                if found:
+                    baseline_seen = True
+                elif time.time() > baseline_deadline:
+                    baseline_seen = False
+            if expected == "vanished":
+                # 基线定案前不得判 vanished（防"点击后立即变化"误判降级/放行）
+                if baseline_seen is None:
+                    pass
+                elif not found:
+                    if baseline_seen is False:
+                        self._emit("verify_degraded",
+                                   detail=f"verify:{template}:never_seen",
+                                   context={"template": template,
+                                            "reason": "signal never matched before vanish"
+                                                      "（视频帧模板恒不中——验证降级）"})
+                    return True
+            elif expected == "present" and found:
                 return True
             time.sleep(delay)
             delay = min(delay * 1.5, 1.5)

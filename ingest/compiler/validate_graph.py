@@ -117,6 +117,15 @@ def validate(pkg: KnowledgePackage, verbose=True):
                 continue
             if step.get("type") not in ALLOWED_STEP_TYPES:
                 errors.append(f"{c['id']} workflow 第 {i} 步类型非法: {step.get('type')}")
+            # 静态校验步骤模板存在性（运行时才失败会浪费一次真机点击）
+            if step.get("template") and not pkg.template_exists(step["template"]):
+                errors.append(
+                    f"{c['id']} 第 {i} 步模板缺失: templates/{step['template']}")
+            if step.get("type") == "verify":
+                sig = step.get("signal")
+                if sig and not pkg.template_exists(f"{sig}.png"):
+                    errors.append(
+                        f"{c['id']} verify 信号模板缺失: templates/{sig}.png")
             if step.get("type") == "portal" and step.get("portal_id"):
                 if pkg.portal(step["portal_id"]) is None:
                     errors.append(f"{c['id']} workflow 引用不存在的传送门: {step['portal_id']}")
