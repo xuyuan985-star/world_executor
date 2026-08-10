@@ -440,7 +440,7 @@ class RealExecutor:
                 except Exception:
                     px = py = None
                 if px and py and px > 0 and py > 0:
-                    r2 = self.input.click(px, py)
+                    r2 = self._click_with_diff_verify(px, py, intent.target, str(path))
                     if r2.success:
                         r2.detail.update(
                             {"fallback": "entity_position",
@@ -455,6 +455,64 @@ class RealExecutor:
                          "template": str(path)})
                     return r2
         return result
+
+    def _click_with_diff_verify(self, cx, cy, target, template, max_rounds=3,
+                                wait_seconds=0.8):
+        """点击 + 像素差分验证（借鉴 GameCLI-Agent：点击后画面变化检测 +
+        nudge 微调重试）。
+
+        SendInput 成功 ≠ 游戏响应——星铁动画多/反馈延迟，点偏/被挡时
+        画面不变。点击前截图 → 点击 → 等待 → 差分：变化 → 成功；
+        未变化 → nudge 偏移坐标重试（最多 max_rounds 轮）。
+        返回 InputResult。
+        """
+        from runtime.input.base import InputResult
+        from runtime.pixel_diff import images_different, nudge_offsets
+        vision = getattr(getattr(self, "driver", None), "vision", None)
+        if vision is None:
+            return self.input.click(cx, cy)  # 无视觉 → 退化为普通点击
+        try:
+            shot0 = vision.take_screenshot()
+            before = shot0[0] if shot0 else None
+        except Exception:
+            before = None
+        if before is None:
+            return self.input.click(cx, cy)
+        r = self.input.click(cx, cy)
+        if not r.success:
+            return r
+        import time
+        time.sleep(wait_seconds)
+        try:
+            shot1 = vision.take_screenshot()
+            after = shot1[0] if shot1 else None
+        except Exception:
+            after = None
+        changed, ratio = images_different(before, after) if after else (False, 0.0)
+        if changed:
+            r.detail.update({"diff_verified": True, "diff_ratio": ratio})
+            return r
+        # 未变化 → nudge 微调重试（8 方向递增偏移）
+        for dx, dy in nudge_offsets():
+            if dx == 0 and dy == 0:
+                continue
+            r2 = self.input.click(cx + dx, cy + dy)
+            if not r2.success:
+                continue
+            time.sleep(wait_seconds)
+            try:
+                shot2 = vision.take_screenshot()
+                after2 = shot2[0] if shot2 else None
+            except Exception:
+                after2 = None
+            changed2, ratio2 = images_different(before, after2) if after2 else (False, 0.0)
+            if changed2:
+                r2.detail.update({"diff_verified": True, "diff_ratio": ratio2,
+                                  "nudged": (dx, dy)})
+                return r2
+        r.detail.update({"diff_verified": False, "diff_ratio": ratio,
+                         "nudge_exhausted": True})
+        return r
 
     def _execute_text(self, intent):
         """text 定位专用路径（与 template/vlm_bbox 对称，不依赖 backend 自定义 execute）。"""
