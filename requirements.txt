@@ -17,3 +17,4 @@ ruamel.yaml==0.18.10
 PySide6==6.8.1.2
 PySide6-Fluent-Widgets==1.7.0
 keyboard==0.13.5
+pynput==1.8.2
