@@ -3,21 +3,34 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title WorldExecutor 启动器
 
-REM ============ 1. 检查 Python ============
-where python >nul 2>nul
-if errorlevel 1 (
-    echo [错误] 未找到 Python。
-    echo 请先安装 Python 3.11+（勾选 Add Python to PATH）：
+REM ============ 1. 找 Python 3.12+（m7 官方要求 >=3.12——PEP 701） ============
+set "PY_CMD="
+for %%V in (3.14 3.13 3.12) do (
+    if not defined PY_CMD (
+        py -%%V --version >nul 2>nul && set "PY_CMD=py -%%V"
+    )
+)
+if not defined PY_CMD (
+    python --version >nul 2>nul
+    if not errorlevel 1 (
+        python -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" >nul 2>nul
+        if not errorlevel 1 set "PY_CMD=python"
+    )
+)
+if not defined PY_CMD (
+    echo [错误] 未找到 Python 3.12+。
+    echo 请安装 Python 3.12 或更高版本（勾选 Add to PATH）：
     echo   https://www.python.org/downloads/
     pause
     exit /b 1
 )
+echo [环境] 使用 Python：%PY_CMD%
 
 REM ============ 2. 自举虚拟环境（首次自动创建 + 装依赖） ============
 if not exist ".venv\Scripts\python.exe" (
     echo.
     echo [首次启动] 创建虚拟环境...
-    python -m venv .venv
+    %PY_CMD% -m venv .venv
     if errorlevel 1 (
         echo [错误] 虚拟环境创建失败——请检查 Python 安装
         pause
@@ -34,20 +47,7 @@ if not exist ".venv\Scripts\python.exe" (
     echo [完成] 依赖安装完成
 )
 
-REM ============ 3. 准备 m7 环境（任务中心依赖——首次自动 clone + 3.12+ venv） ============
-if not exist "m7_venv\Scripts\python.exe" (
-    echo.
-    echo [首次启动] 准备 m7 环境（拉取 March7thAssistant + 创建 3.12+ venv）...
-    ".venv\Scripts\python.exe" tools\setup_m7.py
-    if errorlevel 1 (
-        echo [警告] m7 环境准备失败——任务中心不可用，其余功能不受影响
-        echo        可稍后手动运行：.venv\Scripts\python.exe tools\setup_m7.py
-    ) else (
-        echo [完成] m7 环境就绪
-    )
-)
-
-REM ============ 4. 提权启动 GUI ============
+REM ============ 3. 提权启动 GUI ============
 powershell -NoProfile -Command "Start-Process -FilePath '.\.venv\Scripts\pythonw.exe' -ArgumentList '-m','app','--no-elevate' -WorkingDirectory '%~dp0' -Verb RunAs"
 
 echo 启动中（管理员权限确认后窗口出现）...

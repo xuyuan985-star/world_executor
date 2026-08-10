@@ -14,7 +14,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-M7 = ROOT.parent / "March7thAssistant"
+# m7：优先同级（Desktop/March7thAssistant），兜底 WorldExecutor 内
+M7_SIBLING = ROOT.parent / "March7thAssistant"
+M7_INNER = ROOT / "March7thAssistant"
+M7 = M7_SIBLING if (M7_SIBLING / "main.py").exists() else M7_INNER
 M7_VENV = ROOT / "m7_venv"
 
 REQUIREMENTS = M7 / "requirements.txt"
@@ -57,11 +60,21 @@ def ensure_m7_repo():
     if not shutil.which("git"):
         log("[错误] 未找到 git——无法拉取 March7thAssistant（请安装 git 后重试）")
         return False
+    # 目标目录：同级优先，失败再 WorldExecutor 内
+    target = M7_SIBLING
     log("克隆 March7thAssistant（官方仓库）…")
     r = run(["git", "clone", "--depth", "1",
-             "https://github.com/moesnow/March7thAssistant.git", str(M7)],
+             "https://github.com/moesnow/March7thAssistant.git", str(target)],
             ROOT, timeout=1800)
-    return r.returncode == 0 and (M7 / "main.py").exists()
+    if r.returncode == 0 and (target / "main.py").exists():
+        return True
+    # 同级失败（权限/路径）→ WorldExecutor 内
+    log("同级克隆失败——尝试克隆到程序目录内…")
+    target = M7_INNER
+    r = run(["git", "clone", "--depth", "1",
+             "https://github.com/moesnow/March7thAssistant.git", str(target)],
+            ROOT, timeout=1800)
+    return r.returncode == 0 and (target / "main.py").exists()
 
 
 def ensure_m7_venv():
