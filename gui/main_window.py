@@ -130,6 +130,14 @@ class MainWindow(FluentWindow):
         self.command_deck.set_health_status("正在检测环境...", busy=True)
         self._health_worker.done.connect(self._on_health_done)
         self._health_worker.start()
+        # 系统状态实时刷新：每 5 秒重新检测（健康栏急速响应——
+        # 游戏窗口出现/消失、前台变化、输入可用性变化都快速反映）。
+        # 检测无副作用（L2 按键注入/前台激活已改为 gate 专用——此刷新安全）
+        from PySide6.QtCore import QTimer
+        self._health_timer = QTimer(self)
+        self._health_timer.setInterval(5000)
+        self._health_timer.timeout.connect(self._refresh_health)
+        self._health_timer.start()
         # Bug 257：监听 IPC 唤醒（第二实例激活本窗口）
         # BUG-010：不无条件 removeServer（会删掉并发实例刚建的 server）——
         # 仅 listen 失败（残留）时才清理重试一次
@@ -232,6 +240,12 @@ class MainWindow(FluentWindow):
             self._hud.overlay.set_emergency()
         self.command_deck.led.setText("⚠ F10 紧急停止（按键已释放）")
         self.command_deck.led.setStyleSheet("color: #E64545; font-size: 12px;")
+
+    def _refresh_health(self):
+        """系统状态周期刷新：检测进行中跳过（防重入），完成后回调更新。"""
+        if self._health_worker.isRunning():
+            return
+        self._health_worker.start()
 
     def _ensure_game_foreground(self):
         """检测游戏前台——不在则自动激活（用户要求：开始后持续拉置顶）。"""
