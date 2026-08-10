@@ -140,6 +140,8 @@ class WorkflowOrchestrator:
         # BUG-36：视觉稳定窗口——N 帧连续 PASS 才执行（UI 动画/残影防误点）
         self.stable_required = 1
         self._stable = None
+        # 三大策略配置：遇怪处理（auto=自动战斗 / kill=秒杀角色战技键）
+        self.battle_strategy = "auto"
 
     @property
     def executor(self):
@@ -291,6 +293,15 @@ class WorkflowOrchestrator:
             if self._stall_detected():
                 self._stall_abort(target_id)
                 return False
+            # 遇怪策略（三大策略之一）：每步前检测战斗界面——秒杀角色按
+            # 战技键（kill）或开自动战斗（auto）→ 等结算回大地图
+            if not self._handle_battle_if_needed():
+                self._emit("target_progress",
+                           context={"target": target_id, "status": "failed",
+                                    "reason": "battle_unresolved",
+                                    "category": "F4_VISION"})
+                self._interrupted(target_id)
+                return False
             # S9：窗口消失/丢失 → 系统不可用，停止执行（不再黑屏点击）
             window_problem = self._window_lost()
             if window_problem == "window_not_foreground" and not self._foreground_retried:
@@ -360,6 +371,96 @@ class WorkflowOrchestrator:
             time.sleep(0.1)
         return True
 
+    # ---------- 三大策略（遇怪/未解锁/机关） ----------
+
+    def _handle_battle_if_needed(self, max_rounds=6):
+        """遇怪策略：检测战斗界面 → 秒杀或自动战斗 → 等结算回大地图。
+
+        有秒杀角色（config battle_strategy=kill）：按战技键（m7
+        hotkey_technique，默认 e）秒杀大地图怪；
+        无秒杀角色：按自动战斗键（m7 hotkey_auto_battle，默认 v）
+        挂机等结算。检测词与 _ensure_game_ready 共用（回合/波次/胜利/失败）。
+        """
+        executor = self.executor
+        try:
+            vision = executor.driver.vision
+            for i in range(max_rounds):
+                texts = []
+                try:
+                    for t, _ in vision.ocr_lines():
+                        texts.append(t)
+                except Exception:
+                    return True  # 无 OCR 能力 → 不干预
+                joined = "".join(texts)
+                in_battle = any(k in joined for k in
+                                ("回合", "波次", "战斗"))
+                settled = any(k in joined for k in ("胜利", "失败", "挑战完成"))
+                if not in_battle and not settled:
+                    return True  # 不在战斗
+                if in_battle:
+                    strategy = self.battle_strategy
+                    if strategy == "kill":
+                        # 秒杀角色：战技键
+                        key = self._m7_key("hotkey_technique", "e")
+                        executor.input.press_key(key, wait_time=0.6)
+                    else:
+                        # 自动战斗
+                        key = self._m7_key("hotkey_auto_battle", "v")
+                        executor.input.press_key(key, wait_time=0.6)
+                    self._emit("state_changed", detail="battle:engage",
+                               context={"action": "battle",
+                                        "strategy": strategy, "key": key})
+                self._interruptible_wait(3)
+                if not self._interruptible_wait(0):
+                    return False
+            return False  # 超轮次未结算
+        except Exception:
+            return True  # 异常不阻断（保守放行）
+
+    def _m7_key(self, key_name, default):
+        """读 m7 config 的按键配置（hotkey_technique/auto_battle 等）。"""
+        try:
+            from runtime.platform.windows.game_launcher import m7_config_value
+            v = m7_config_value(key_name)
+            if v:
+                return str(v)
+        except Exception:
+            pass
+        return default
+
+    def _check_map_locked(self):
+        """未解锁检测：OCR 提示词 → 该地图未解锁（跳过而非反复失败）。"""
+        executor = self.executor
+        try:
+            vision = executor.driver.vision
+            texts = []
+            for t, _ in vision.ocr_lines():
+                texts.append(t)
+            joined = "".join(texts)
+            for k in ("尚未解锁", "未解锁", "需完成", "解锁该区域",
+                      "暂时无法", "无法传送"):
+                if k in joined:
+                    return k
+        except Exception:
+            pass
+        return None
+
+    def _check_mechanism(self):
+        """机关检测：交互提示含机关类词 → 该目标需机关操作（回放/人工）。"""
+        executor = self.executor
+        try:
+            vision = executor.driver.vision
+            texts = []
+            for t, _ in vision.ocr_lines():
+                texts.append(t)
+            joined = "".join(texts)
+            for k in ("机关", "开关", "启动装置", "压力板", "解谜"):
+                if k in joined:
+                    return k
+        except Exception:
+            pass
+        return None
+
     def _retry_transition(self):
         """失败重试的状态机迁移：只走当前状态合法的事件。"""
         st = self._machine.state
@@ -426,6 +527,15 @@ class WorkflowOrchestrator:
             ok = self.executor.portal_transition(
                 portal, wait_base=portal.get("load_wait", 8))
         if ok is True:
+            # 未解锁检测：传送后画面出现解锁提示词 → 标记该地图 locked
+            locked = self._check_map_locked()
+            if locked:
+                self._emit("state_changed", detail=f"map_locked:{locked}",
+                           context={"action": "map_locked",
+                                    "portal": pid, "hint": locked})
+                return ExecutionResult(
+                    success=False, error=f"map_locked:{locked}",
+                    retryable=False, category="F3")
             return ExecutionResult(success=True, category="F2")
         return ExecutionResult(success=False, error="portal_failed",
                                retryable=True, category="F2_VERIFY")
@@ -441,6 +551,16 @@ class WorkflowOrchestrator:
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")
+        # 机关检测（三大策略之一）：交互提示含机关词 → 该目标需机关操作
+        # （当前自动处理不可行——回放路线/人工）→ 明确标记跳过
+        mech = self._check_mechanism()
+        if mech:
+            self._emit("state_changed", detail=f"mechanism:{mech}",
+                       context={"action": "mechanism", "target": tid,
+                                "hint": mech})
+            return ExecutionResult(
+                success=False, error=f"requires_mechanism:{mech}",
+                retryable=False, category="F3")
         # BUG-15：backend 层 max_retries 固定 1（单次查找）——动作重试由
         # orchestrator 唯一控制（双层 retry 会放大物理点击次数）
         result = self.executor.interact_template(
