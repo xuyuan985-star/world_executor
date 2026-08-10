@@ -428,6 +428,25 @@ class RealExecutor:
             scale_range=params.get("scale_range"))
         result.detail.update({"template": str(path),
                               "threshold": params.get("threshold", 0.60)})
+        # 借鉴 March7th 路线机制：模板未命中（视频帧整帧模板对当前画面
+        # 实测全部 <0.54）→ 按知识包实体点位归一化坐标兜底点击——
+        # 宝箱是固定地图点位，坐标点击即 m7 的"界面图+固定坐标"路线。
+        # 仅"未命中"走兜底（点击失败/权限问题不兜底——换坐标无意义）。
+        if not result.success and result.error == "click_element_failed":
+            pos = self.pkg.entity_position(intent.target)
+            if pos is not None:
+                try:
+                    px, py = self.driver.vision.to_absolute(*pos)
+                except Exception:
+                    px = py = None
+                if px and py and px > 0 and py > 0:
+                    r2 = self.input.click(px, py)
+                    if r2.success:
+                        r2.detail.update(
+                            {"fallback": "entity_position",
+                             "nx": pos[0], "ny": pos[1],
+                             "template": str(path)})
+                        return r2
         return result
 
     def _execute_text(self, intent):

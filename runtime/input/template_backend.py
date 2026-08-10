@@ -36,9 +36,11 @@ class TemplateMatcher:
             shot.height, shot.width, 3)[:, :, ::-1]
 
     def _read_template(self, template_path):
-        """借鉴 March7th ImageUtils.read_image：np.fromfile+imdecode——
-        cv2.imread 不支持非 ASCII 路径（中文目录实测返回 None 且仅告警），
-        imdecode 全路径可靠。返回 (数组, mtime)；文件不可读抛 ValueError。
+        """借鉴 March7th ImageUtils.read_image/read_template_with_mask：
+        np.fromfile+imdecode（cv2.imread 不支持非 ASCII 路径——中文目录
+        实测返回 None 且仅告警）；IMREAD_UNCHANGED 保留 alpha 通道，
+        模板带透明区域时生成 mask（m7 机制——透明区不参与匹配，防背景干扰）。
+        返回 (RGB 数组, mask 或 None)；文件不可读抛 ValueError。
         """
         import os
         try:
@@ -47,15 +49,23 @@ class TemplateMatcher:
             raise ValueError(f"模板不可访问: {template_path} ({e})")
         cached = self._template_cache.get(template_path)
         if cached is not None and cached[0] == mtime:
-            return cached[1]
+            return cached[1], cached[2]
         data = np.fromfile(template_path, dtype=np.uint8)
         if data.size == 0:
             raise ValueError(f"模板读取失败(空文件): {template_path}")
-        t = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        t = cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
         if t is None:
             raise ValueError(f"模板解码失败(损坏?): {template_path}")
-        self._template_cache[template_path] = (mtime, t)
-        return t
+        mask = None
+        if t.ndim == 3 and t.shape[2] == 4:
+            alpha = t[:, :, 3]
+            if np.any(alpha < 255):  # 存在非全透明像素 → mask 才有效
+                mask = np.where(alpha > 0, 255, 0).astype(np.uint8)
+            t = t[:, :, :3]  # 匹配只用 RGB
+        elif t.ndim == 2:
+            t = cv2.cvtColor(t, cv2.COLOR_GRAY2BGR)
+        self._template_cache[template_path] = (mtime, t, mask)
+        return t, mask
 
     def _load_template(self, template_path):
         """Bug 336：模板加载校验（空图/损坏 → 明确错误，不崩 matcher）。
@@ -64,12 +74,12 @@ class TemplateMatcher:
         校验模板未被替换/篡改（文件被换内容但保留文件名 → false positive 源）。
         缓存命中（mtime 未变）跳过重读重校验。
         """
-        t = self._read_template(template_path)
+        t, mask = self._read_template(template_path)
         h, w = t.shape[:2]
         if h < 10 or w < 10:
             raise ValueError(f"模板尺寸过小 {w}x{h}: {template_path}")
         self._verify_manifest_hash(template_path)
-        return t
+        return t, mask
 
     def _verify_manifest_hash(self, template_path):
         """BUG-077：对照 templates_manifest.json 校验 sha256（manifest 存在时）。"""
@@ -104,7 +114,7 @@ class TemplateMatcher:
         """
         import time
         t0 = time.time()
-        t = self._load_template(template_path)
+        t, mask = self._load_template(template_path)
         screen = self._screenshot()
         sh, sw = screen.shape[:2]
         # 降采样：工作空间固定 1280 宽（模板源自 1280 帧——1:1 尺度空间）
@@ -122,7 +132,18 @@ class TemplateMatcher:
                                 interpolation=cv2.INTER_AREA)
                 if th.shape[0] >= wh or th.shape[1] >= ww:
                     continue
-                res = cv2.matchTemplate(work, th, cv2.TM_CCOEFF_NORMED)
+                if mask is not None:
+                    # 借鉴 March7th：透明模板用 mask 匹配——透明区不参与，
+                    # 防模板背景/异形区域干扰匹配。m7 用 TM_SQDIFF（分数语义
+                    # 反转且作者自己备注混乱）——改 TM_CCORR_NORMED+mask：
+                    # 分数 0-1 越高越好，阈值语义与无 mask 路径一致。
+                    m = cv2.resize(mask, th.shape[1::-1],
+                                   interpolation=cv2.INTER_AREA)
+                    res = cv2.matchTemplate(work, th, cv2.TM_CCORR_NORMED,
+                                            mask=np.where(m > 127, 255, 0)
+                                            .astype(np.uint8))
+                else:
+                    res = cv2.matchTemplate(work, th, cv2.TM_CCOEFF_NORMED)
                 _, mv, _, ml = cv2.minMaxLoc(res)
                 if mv > best[0]:
                     best = (mv, ml[0], ml[1], scale)

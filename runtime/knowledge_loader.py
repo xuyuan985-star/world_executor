@@ -218,6 +218,24 @@ class KnowledgePackage:
     def chest(self, chest_id):
         return self._index_chests_by_id.get(chest_id)
 
+    def entity_position(self, entity_id):
+        """实体固定点位坐标（chests.json 的 x/y 归一化坐标）。
+
+        借鉴 March7th 路线机制：界面图匹配 + 固定相对坐标点击——视频预处理
+        已把宝箱位置归一化入库（0-1），模板匹配失败时按点位坐标兜底点击。
+        无坐标（如 chest_A 纯模板目标）→ None。
+        """
+        c = self._index_chests_by_id.get(entity_id)
+        if not c:
+            return None
+        x, y = c.get("x"), c.get("y")
+        if x is None or y is None:
+            return None
+        try:
+            return (float(x), float(y))
+        except (TypeError, ValueError):
+            return None
+
     def portal(self, portal_id):
         return self._index_portals_by_id.get(portal_id)
 
