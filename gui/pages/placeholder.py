@@ -11,6 +11,35 @@ from qfluentwidgets import BodyLabel, CardWidget, ComboBox, StrongBodyLabel
 from gui.pages.base_page import BasePage, card_layout, card_title
 
 
+class ArchiveWorker(QThread):
+    """模块级归档线程（同 FrameWorker——QThread 信号跨线程投递失效，
+    结果写 self._result 由页面轮询消费）。"""
+
+    log = Signal(str)
+    done = Signal(bool, str)
+
+    def __init__(self, video):
+        super().__init__()
+        self.video = video
+        self._result = None
+
+    def run(self):
+        import subprocess
+        import sys
+        root = Path(__file__).resolve().parent.parent.parent
+        try:
+            r = subprocess.run(
+                [sys.executable, str(root / "ingest" / "archive_video.py"),
+                 str(self.video), "--max-frames", "12"],
+                capture_output=True, text=True, cwd=str(root),
+                timeout=600)
+        except Exception as e:
+            self._result = (False, f"归档进程异常: {type(e).__name__}: {e}")
+            return
+        out = (r.stdout + r.stderr)
+        self._result = (r.returncode == 0, out[-300:])
+
+
 def error_page(source, error):
     """Bug 53：页面构造失败兜底页（显示错误而非空白/崩溃）。"""
     return placeholder_page(f"{source} 初始化失败", f"错误: {error}")
@@ -70,13 +99,13 @@ class ObservationPage(BasePage):
         card_layout(frame_card).addLayout(cap_row)
         self.content_layout.addWidget(frame_card, 1)
 
-        # 实时自动刷新（每 5 秒抓一帧——页面可见时）
+        # 实时自动刷新：抓帧周期 3s（页面可见时）
         from PySide6.QtCore import QTimer
         self._auto_refresh = QTimer(self)
-        self._auto_refresh.setInterval(5000)
+        self._auto_refresh.setInterval(3000)
         self._auto_refresh.timeout.connect(self._capture_if_visible)
         self._auto_refresh.start()
-        QTimer.singleShot(1000, self._capture_if_visible)
+        QTimer.singleShot(800, self._capture_if_visible)
 
         # 统计卡片
         stats_card = CardWidget()
@@ -97,62 +126,74 @@ class ObservationPage(BasePage):
         card_layout(timeline_card).addWidget(self.timeline)
         self.content_layout.addWidget(timeline_card)
 
-        self._worker = None
-
     def _capture_if_visible(self):
-        """实时自动刷新——仅页面可见（isVisibleTo 主窗口）时抓帧，防后台空转。"""
+        """实时自动刷新——仅页面可见时抓帧（同步抓帧仅 0.12s，3s 周期可接受）。"""
         if not self.isVisible():
             return
-        if getattr(self, "_worker", None) is not None and self._worker.isRunning():
-            return  # 上一帧还在抓——跳过（防队列堆积）
         self._capture()
 
+    _FRAME_STYLE = (
+        "background: #101826; border: 1px dashed #24405F; border-radius: 8px;"
+        "color: #7A90B0;")
+
+    def _show_pix(self, pix):
+        """显示画面：pixmap 存临时文件 + 样式 background-image 显示——
+        审查根因：本环境 QLabel.setPixmap 多次实测失效（pixmap() 返回 null）。
+        """
+        self.frame_label.clear()  # 清占位文本/旧 pixmap（防文字叠在图上）
+        try:
+            from pathlib import Path
+            tmp = Path(__file__).resolve().parent.parent.parent / "logs" / "live_frame.png"
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            pix.save(str(tmp))
+            self.frame_label.setStyleSheet(
+                f"background-image: url({tmp.as_posix()}); background-repeat: no-repeat;"
+                f"background-position: center; background-color: #101826;")
+        except Exception:
+            self.frame_label.setPixmap(pix)  # 兜底
+
+    def _show_text(self, text):
+        """显示文本：恢复样式表（先清 pixmap）。"""
+        self.frame_label.clear()
+        self.frame_label.setStyleSheet(self._FRAME_STYLE)
+        self.frame_label.setText(text)
+
     def _capture(self):
-        """后台线程抓帧 → 主线程显示（Qt 跨线程安全链）。"""
+        """抓帧并显示——主线程同步（截图仅 0.12s，3 秒一帧可接受）。
+
+        审查根因（多轮实测）：① QThread 跨线程信号/QPixmap 链路不可靠；
+        ② QLabel.setPixmap 后 pixmap() 返回 null 显示不出——改样式
+        background-image 显示（pixmap 存临时文件）。
+        """
         self.capture_btn.setEnabled(False)
         self.capture_btn.setText("抓取中…")
-
-        class FrameWorker(QThread):
-            done = Signal(object)   # QPixmap or None
-            err = Signal(str)
-
-            def run(self):
-                try:
-                    from runtime.drivers.march7th.vision import March7thVision
-                    vision = March7thVision()
-                    shot = vision.take_screenshot()
-                    if shot is None:
-                        self.done.emit(None)
-                        return
-                    img = shot[0]
-                    from PySide6.QtGui import QPixmap
-                    from PIL.ImageQt import ImageQt
-                    pix = QPixmap.fromImage(ImageQt(img))
-                    self.done.emit(pix)
-                except Exception as e:
-                    self.err.emit(f"{type(e).__name__}: {e}")
-
-        self._worker = FrameWorker(self)
-        self._worker.done.connect(self._on_frame)
-        self._worker.err.connect(self._on_frame_err)
-        # Bug 95：线程完成即回收（页面销毁后 worker 不再 emit 到已删对象）
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.start()
-
-    def _on_frame(self, pix):
-        self.capture_btn.setEnabled(True)
-        self.capture_btn.setText("抓取画面")
-        if pix is None:
-            self.frame_label.setText("未获取到画面（游戏未启动或截图失败）")
-        else:
-            self.frame_label.setPixmap(pix.scaled(
-                self.frame_label.width(), self.frame_label.height(),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation))
-
-    def _on_frame_err(self, msg):
-        self.capture_btn.setEnabled(True)
-        self.capture_btn.setText("抓取画面")
-        self.frame_label.setText(f"截图失败: {msg}")
+        try:
+            import numpy as np
+            from PIL import Image as PILImage
+            from PIL.ImageQt import ImageQt
+            from PySide6.QtGui import QPixmap
+            from runtime.drivers.march7th.vision import March7thVision
+            vision = March7thVision()
+            shot = vision.take_screenshot()
+            if shot is None:
+                self._show_text("未获取到画面（游戏未启动或截图失败）")
+                return
+            img = shot[0]
+            # 审查根因：March7th 截图 PIL 共享 numpy/mss buffer——
+            # numpy 深拷贝成独立数组再转 PIL/QPixmap（实测该路径有效）
+            arr = np.asarray(img).copy()
+            pil = PILImage.fromarray(arr, "RGB") \
+                if arr.ndim == 3 and arr.shape[2] == 3 else PILImage.fromarray(arr)
+            pix = QPixmap.fromImage(ImageQt(pil))
+            w = self.frame_label.width() or 800
+            h = self.frame_label.height() or 400
+            self._show_pix(pix.scaled(
+                w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except Exception as e:
+            self._show_text(f"截图失败: {type(e).__name__}: {e}")
+        finally:
+            self.capture_btn.setEnabled(True)
+            self.capture_btn.setText("抓取画面")
 
     def on_event(self, event):
         self._counts[event.type] = self._counts.get(event.type, 0) + 1
@@ -330,35 +371,7 @@ class StudioPage(BasePage):
         QTimer.singleShot(0, self._refresh)
 
         self._worker = None
-
-    class ArchiveWorker(QThread):
-        log = Signal(str)
-        done = Signal(bool, str)
-
-        def __init__(self, video):
-            super().__init__()
-            self.video = video
-
-        def run(self):
-            import subprocess
-            import sys
-            from pathlib import Path
-            root = Path(__file__).resolve().parent.parent.parent
-            # Bug 10：subprocess 异常（python/路径问题）不吞——done 必须发出，
-            # 否则按钮永久卡"归档中"
-            try:
-                r = subprocess.run(
-                    [sys.executable, str(root / "ingest" / "archive_video.py"),
-                     str(self.video), "--max-frames", "12"],
-                    capture_output=True, text=True, cwd=str(root),
-                    timeout=600)
-            except Exception as e:
-                self.done.emit(False, f"归档进程异常: {type(e).__name__}: {e}")
-                return
-            out = (r.stdout + r.stderr)
-            for line in out.splitlines():
-                self.log.emit(line)
-            self.done.emit(r.returncode == 0, out[-300:])
+        self._archive_poll_timer = None
 
     def _refresh(self):
         root = Path(__file__).resolve().parent.parent.parent
@@ -398,10 +411,13 @@ class StudioPage(BasePage):
         return _handler
 
     def _archive(self, video):
-        self._worker = self.ArchiveWorker(video)
-        self._worker.done.connect(self._on_done)
-        # Bug 11：线程完成即回收（防旧线程对象残留）
-        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker = ArchiveWorker(video)  # 审查根因：模块级类（嵌套类信号失效）
+        # 结果经 self._result 属性 + _poll_archive 轮询消费（QThread 信号不投递）
+        self._archive_poll_timer = self._archive_poll_timer or \
+            __import__("PySide6.QtCore", fromlist=["QTimer"]).QTimer(self)
+        self._archive_poll_timer.setInterval(300)
+        self._archive_poll_timer.setSingleShot(True)
+        self._archive_poll_timer.timeout.connect(self._poll_archive)
         # 禁用所有归档按钮
         for i in range(self.cards_layout.count()):
             w = self.cards_layout.itemAt(i).widget()
@@ -409,6 +425,19 @@ class StudioPage(BasePage):
                 w.archive_btn.setEnabled(False)
                 w.archive_btn.setText("归档中…")
         self._worker.start()
+        self._archive_poll_timer.start()
+
+    def _poll_archive(self):
+        """轮询消费归档结果（本环境 QThread 信号→QObject 槽不投递）。"""
+        w = getattr(self, "_worker", None)
+        if w is None or w.isRunning():
+            self._archive_poll_timer.start()  # 还在跑——继续轮询
+            return
+        result = getattr(w, "_result", None)
+        if result is None:
+            return
+        w._result = None
+        self._on_done(*result)
 
     def _on_done(self, ok, tail):
         for i in range(self.cards_layout.count()):

@@ -11,27 +11,28 @@ from gui.safe import gui_safe
 
 
 class HealthWorker(QThread):
-    """Bug 623：模块级 HealthWorker（可测试/可复用——不再嵌套在 __init__ 内）。
+    """模块级 HealthWorker（可测试/可复用——不再嵌套在 __init__ 内）。
 
     Bug 23：done 携带 capability + 错误信息（不再吞异常）。
+    审查根因：本环境 PySide6 QThread 跨线程信号 → QObject 槽不投递
+    （实测 dict/str/QPixmap 均失效）——结果改写入 self._result，
+    由主线程定时轮询消费（见 MainWindow._poll_health）。
     """
 
     done = Signal(dict, str)
 
     def run(self):
-        # Bug 5：cwd 切换逻辑已移除——March7thVision 锁内构造并立即恢复
-        # （线程安全由 runtime/drivers/march7th/vision.py 保证）
         try:
             from runtime.health import check_health
             result = check_health()
             # Bug 632：health 结果必须 dict（None/False → 明确错误，不静默卡界面）
             if not isinstance(result, dict):
                 raise RuntimeError(f"check_health 返回非法类型: {type(result).__name__}")
-            self.done.emit(result.get("capability", {}), "")
+            self._result = (result.get("capability", {}), "")
         except Exception:
             # Bug 633：完整 traceback 回传（GUI 可定位，非只 str(e)）
             import traceback
-            self.done.emit({}, traceback.format_exc())
+            self._result = ({}, traceback.format_exc())
 from gui.pages.placeholder import (KnowledgePage, ObservationPage, SettingsPage,
                                    StudioPage, WorldGraphPage)
 from qfluentwidgets import (FluentIcon, FluentWindow, NavigationItemPosition)
@@ -128,12 +129,15 @@ class MainWindow(FluentWindow):
 
         self._health_worker = HealthWorker(self)
         self.command_deck.set_health_status("正在检测环境...", busy=True)
-        self._health_worker.done.connect(self._on_health_done)
+        # 审查根因：本环境 QThread 信号 → QObject 槽不投递——结果经
+        # self._result 属性 + 主线程轮询消费（_poll_health）
         self._health_worker.start()
-        # 系统状态实时刷新：每 5 秒重新检测（健康栏急速响应——
-        # 游戏窗口出现/消失、前台变化、输入可用性变化都快速反映）。
-        # 检测无副作用（L2 按键注入/前台激活已改为 gate 专用——此刷新安全）
         from PySide6.QtCore import QTimer
+        # 结果消费轮询（500ms）+ 系统状态周期刷新（5s 重新检测）
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(500)
+        self._poll_timer.timeout.connect(self._poll_health)
+        self._poll_timer.start()
         self._health_timer = QTimer(self)
         self._health_timer.setInterval(5000)
         self._health_timer.timeout.connect(self._refresh_health)
@@ -241,8 +245,17 @@ class MainWindow(FluentWindow):
         self.command_deck.led.setText("⚠ F10 紧急停止（按键已释放）")
         self.command_deck.led.setStyleSheet("color: #E64545; font-size: 12px;")
 
+    def _poll_health(self):
+        """轮询消费 HealthWorker 结果（本环境 QThread 信号→QObject 槽不投递）。"""
+        w = self._health_worker
+        result = getattr(w, "_result", None)
+        if result is None:
+            return
+        w._result = None  # 消费
+        self._on_health_done(*result)
+
     def _refresh_health(self):
-        """系统状态周期刷新：检测进行中跳过（防重入），完成后回调更新。"""
+        """系统状态周期刷新：检测进行中跳过（防重入），完成后经轮询更新。"""
         if self._health_worker.isRunning():
             return
         self._health_worker.start()
