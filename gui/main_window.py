@@ -34,7 +34,7 @@ class HealthWorker(QThread):
             import traceback
             self._result = ({}, traceback.format_exc())
 from gui.pages.placeholder import (KnowledgePage, ObservationPage, SettingsPage,
-                                   StudioPage, WorldGraphPage)
+                                   TaskCenterPage, WorldGraphPage)
 from qfluentwidgets import (FluentIcon, FluentWindow, NavigationItemPosition)
 
 from gui.theme import apply_theme
@@ -84,7 +84,7 @@ class MainWindow(FluentWindow):
         self.world_graph = self._safe_page(WorldGraphPage)
         self.observation = self._safe_page(ObservationPage)
         self.knowledge = self._safe_page(KnowledgePage)
-        self.studio = self._safe_page(StudioPage)
+        self.studio = self._safe_page(TaskCenterPage)
         self.settings = self._safe_page(SettingsPage)
 
         for page, name in [
@@ -423,6 +423,13 @@ class MainWindow(FluentWindow):
         except Exception:
             import logging
             logging.getLogger("gui.main_window").exception("取消事件订阅失败")
+        # 任务中心：终止残留 m7 任务子进程（防孤儿进程继续点游戏）
+        try:
+            if getattr(self, "studio", None) is not None:
+                self.studio.shutdown()
+        except Exception:
+            import logging
+            logging.getLogger("gui.main_window").exception("任务中心关闭失败")
         self.shutdown()
         event.accept()
 

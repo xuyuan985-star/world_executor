@@ -4,40 +4,132 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+                               QMessageBox, QPlainTextEdit, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from qfluentwidgets import BodyLabel, CardWidget, ComboBox, StrongBodyLabel
 
 from gui.pages.base_page import BasePage, card_layout, card_title
 
 
-class ArchiveWorker(QThread):
-    """模块级归档线程（同 FrameWorker——QThread 信号跨线程投递失效，
-    结果写 self._result 由页面轮询消费）。"""
+class TaskCenterPage(BasePage):
+    """任务中心：March7th 任务模块全量迁移（子进程执行 + 日志实时显示）。
 
-    log = Signal(str)
-    done = Signal(bool, str)
+    设计（5 轮复盘）：m7 任务 = 长跑自动化（体力/挑战/宇宙）——
+    子进程隔离（cwd/单例/配置零冲突，m7 官方 GUI 同款模式）；
+    MARCH7TH_DOCKER_STARTED=true 跳过 first_run（auto_update=false 会直接
+    退出）与结束 pause（input 会挂住子进程）；停止 = TerminateProcess。
+    """
 
-    def __init__(self, video):
-        super().__init__()
-        self.video = video
-        self._result = None
+    def __init__(self, parent=None):
+        super().__init__("任务中心", parent)
+        self.set_status("March7th 任务模块（子进程执行）")
+        self._proc = None
+        self._current = None
 
-    def run(self):
-        import subprocess
-        import sys
-        root = Path(__file__).resolve().parent.parent.parent
-        try:
-            r = subprocess.run(
-                [sys.executable, str(root / "ingest" / "archive_video.py"),
-                 str(self.video), "--max-frames", "12"],
-                capture_output=True, text=True, cwd=str(root),
-                timeout=600)
-        except Exception as e:
-            self._result = (False, f"归档进程异常: {type(e).__name__}: {e}")
+        # 状态行
+        self._led = QLabel("● 空闲")
+        self._led.setStyleSheet("color: #7A90B0; font-size: 13px;")
+        self._header.layout().addWidget(self._led)
+
+        # 任务分组
+        from gui.tasks.catalog import TASK_GROUPS
+        self._buttons = {}
+        for group, items in TASK_GROUPS:
+            card = CardWidget()
+            card_title(card, group)
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            for tid, name, desc in items:
+                btn = QPushButton(name)
+                btn.setToolTip(desc)
+                btn.setFixedWidth(110)
+                btn.clicked.connect(lambda _, t=tid: self._start_task(t))
+                self._buttons[tid] = btn
+                row.addWidget(btn)
+            row.addStretch(1)
+            card_layout(card).addLayout(row)
+            self.content_layout.addWidget(card)
+
+        # 日志区
+        log_card = CardWidget()
+        card_title(log_card, "任务日志")
+        self._log = QPlainTextEdit()
+        self._log.setReadOnly(True)
+        self._log.setMaximumBlockCount(2000)
+        self._log.setStyleSheet(
+            "background: #0D1520; color: #B0C4DE; font-size: 12px;"
+            "border: 1px solid #24405F; border-radius: 6px;")
+        card_layout(log_card).addWidget(self._log)
+        self.content_layout.addWidget(log_card, 1)
+
+        # 底部控制
+        self._stop_btn = QPushButton("停止任务")
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.clicked.connect(self._stop_task)
+        self._clear_btn = QPushButton("清空日志")
+        self._clear_btn.clicked.connect(self._log.clear)
+        footer = QWidget()
+        fl = QHBoxLayout(footer)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.addWidget(self._stop_btn)
+        fl.addWidget(self._clear_btn)
+        fl.addStretch(1)
+        self.add_footer(footer)
+
+    # ---------- 任务控制 ----------
+
+    def _start_task(self, task_id):
+        from gui.tasks.catalog import task_name
+        if self._proc is not None and self._proc.running:
+            self._append(f"[提示] 已有任务运行中（{self._current}）——请先停止")
             return
-        out = (r.stdout + r.stderr)
-        self._result = (r.returncode == 0, out[-300:])
+        from gui.tasks.runner import TaskProcess
+        self._current = task_id
+        self._log.clear()
+        self._append(f"[开始] 任务：{task_name(task_id)}（{task_id}）")
+        self._set_running(True)
+        proc = TaskProcess(task_id, self)
+        proc.log_line.connect(self._append)
+        proc.task_finished.connect(self._on_finished)
+        proc.start()
+        self._proc = proc
+
+    def _stop_task(self):
+        if self._proc is not None:
+            self._append("[停止] 正在终止任务进程…")
+            self._proc.stop()
+
+    def _on_finished(self, exit_code):
+        from gui.tasks.catalog import task_name
+        name = task_name(self._current) if self._current else "任务"
+        self._append(f"[完成] {name} 退出码 {exit_code}"
+                     + ("（成功）" if exit_code == 0 else "（失败/被停止）"))
+        self._current = None
+        self._proc = None
+        self._set_running(False)
+
+    def _set_running(self, running):
+        self._led.setText("● 运行中" if running else "● 空闲")
+        self._led.setStyleSheet(
+            "color: #4FD1C5; font-size: 13px;" if running
+            else "color: #7A90B0; font-size: 13px;")
+        self._stop_btn.setEnabled(running)
+        for btn in self._buttons.values():
+            btn.setEnabled(not running)
+
+    def _append(self, line):
+        self._log.appendPlainText(line)
+
+    def shutdown(self):
+        """GUI 关闭时终止残留任务进程（防后台孤儿进程继续点游戏）。"""
+        if self._proc is not None:
+            try:
+                self._proc.stop()
+                self._proc.waitFinished(3000)
+            except Exception:
+                pass
+            self._proc = None
 
 
 def error_page(source, error):
@@ -289,167 +381,6 @@ class KnowledgePage(BasePage):
             f"地图 {map_count} 个 · 区域 {area_count} 个 · 点位 {point_count} 条")
         self.source_label.setText("\n\n".join(lines) or "暂无数据")
 
-
-class VideoCard(CardWidget):
-    """视频卡片：名称 + 大小 + 操作。"""
-
-    def __init__(self, video_path, parent=None):
-        super().__init__(parent)
-        self.video_path = video_path
-        self.setFixedHeight(90)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(16)
-
-        info = QVBoxLayout()
-        info.setSpacing(4)
-        self.name_label = StrongBodyLabel(video_path.name)
-        self.name_label.setStyleSheet("font-size: 13px;")
-        # Bug 9：文件可能在扫描后被删/移动——stat 异常不崩卡片
-        try:
-            mb = video_path.stat().st_size // 1024 // 1024
-        except (FileNotFoundError, OSError):
-            mb = 0
-        self.size_label = BodyLabel(f"{mb} MB")
-        self.size_label.setStyleSheet("color: #7A90B0; font-size: 12px;")
-        info.addWidget(self.name_label)
-        info.addWidget(self.size_label)
-        layout.addLayout(info)
-        layout.addStretch(1)
-
-        self.play_btn = QPushButton("播放")
-        self.play_btn.setFixedWidth(64)
-        self.play_btn.setProperty("video_path", str(video_path))
-        self.play_btn.clicked.connect(self._play)
-        layout.addWidget(self.play_btn)
-
-        self.archive_btn = QPushButton("归档")
-        self.archive_btn.setFixedWidth(80)
-        self.archive_btn.setProperty("video_path", str(video_path))
-        layout.addWidget(self.archive_btn)
-
-    def _play(self):
-        """系统默认播放器打开（os.startfile 支持视频文件）。"""
-        import os
-        p = self.play_btn.property("video_path")
-        if p and os.path.exists(p):
-            os.startfile(p)
-
-
-class StudioPage(BasePage):
-    """工作室：视频攻略卡片化列表 + 一键归档。"""
-
-    def __init__(self, parent=None):
-        super().__init__("视频攻略", parent)
-        self.set_status("视频归档管理")
-        self._videos = []
-
-        # 统计行
-        stats_card = CardWidget()
-        stats_layout = QHBoxLayout(stats_card)
-        stats_layout.setContentsMargins(16, 12, 16, 12)
-        self.video_stats = BodyLabel("正在扫描视频…")
-        self.video_stats.setStyleSheet("color: #7A90B0; font-size: 13px;")
-        self.refresh_btn = QPushButton("刷新")
-        self.refresh_btn.setFixedWidth(80)
-        self.refresh_btn.clicked.connect(self._refresh)
-        stats_layout.addWidget(self.video_stats)
-        stats_layout.addStretch(1)
-        stats_layout.addWidget(self.refresh_btn)
-        self.content_layout.addWidget(stats_card)
-
-        # 卡片网格容器
-        self.cards_container = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards_container)
-        self.cards_layout.setContentsMargins(0, 0, 0, 0)
-        self.cards_layout.setSpacing(10)
-        self.cards_layout.addStretch(1)
-        self.content_layout.addWidget(self.cards_container, 1)
-
-        # Bug 113：视频扫描延迟到事件循环（启动不阻塞主线程）
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, self._refresh)
-
-        self._worker = None
-        self._archive_poll_timer = None
-
-    def _refresh(self):
-        root = Path(__file__).resolve().parent.parent.parent
-        dirs = [root / "ingest" / "raw" / "videos",
-                root.parent / "攻略视频"]
-        self._videos = []
-        for d in dirs:
-            if d.exists():
-                self._videos.extend(sorted(d.glob("*.mp4")))
-
-        # 清空旧卡片（保留尾部 stretch 语义——刷新后恰一个撑开项，不累积）
-        while self.cards_layout.count():
-            item = self.cards_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-
-        total_mb = 0
-        for v in self._videos:
-            try:
-                total_mb += v.stat().st_size
-            except (FileNotFoundError, OSError):
-                continue
-        total_mb //= 1024 * 1024
-        self.video_stats.setText(
-            f"共 {len(self._videos)} 个视频 · {total_mb}MB · 已处理 → 攻略存档")
-
-        for v in self._videos:
-            card = VideoCard(v)
-            card.archive_btn.clicked.connect(self._make_archive_handler(v))
-            self.cards_layout.addWidget(card)
-        self.cards_layout.addStretch(1)
-
-    def _make_archive_handler(self, video_path):
-        def _handler():
-            self._archive(video_path)
-        return _handler
-
-    def _archive(self, video):
-        self._worker = ArchiveWorker(video)  # 审查根因：模块级类（嵌套类信号失效）
-        # 结果经 self._result 属性 + _poll_archive 轮询消费（QThread 信号不投递）
-        self._archive_poll_timer = self._archive_poll_timer or \
-            __import__("PySide6.QtCore", fromlist=["QTimer"]).QTimer(self)
-        self._archive_poll_timer.setInterval(300)
-        self._archive_poll_timer.setSingleShot(True)
-        self._archive_poll_timer.timeout.connect(self._poll_archive)
-        # 禁用所有归档按钮
-        for i in range(self.cards_layout.count()):
-            w = self.cards_layout.itemAt(i).widget()
-            if isinstance(w, VideoCard):
-                w.archive_btn.setEnabled(False)
-                w.archive_btn.setText("归档中…")
-        self._worker.start()
-        self._archive_poll_timer.start()
-
-    def _poll_archive(self):
-        """轮询消费归档结果（本环境 QThread 信号→QObject 槽不投递）。"""
-        w = getattr(self, "_worker", None)
-        if w is None or w.isRunning():
-            self._archive_poll_timer.start()  # 还在跑——继续轮询
-            return
-        result = getattr(w, "_result", None)
-        if result is None:
-            return
-        w._result = None
-        self._on_done(*result)
-
-    def _on_done(self, ok, tail):
-        for i in range(self.cards_layout.count()):
-            w = self.cards_layout.itemAt(i).widget()
-            if isinstance(w, VideoCard):
-                w.archive_btn.setEnabled(True)
-                w.archive_btn.setText("归档")
-        QMessageBox.information(self, "归档结果",
-                                "成功\n" if ok else "失败（见日志）\n" + tail[-200:])
-        from gui.pages.guides_view import GuidesView
-        for w in self.findChildren(GuidesView):
-            w.reload()
 
 
 class SettingsPage(BasePage):
