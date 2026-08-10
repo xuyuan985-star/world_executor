@@ -205,10 +205,12 @@ class MainWindow(FluentWindow):
             if game is None:
                 return
             # F10 全局热键：keyboard 库（M7 同款——RegisterHotKey 在此环境不可靠）
+            # 审查：热键只注册一次（补启/重试路径防重复钩子）
             from gui.hotkey import GlobalHotkey
-            self._hotkeys = GlobalHotkey(self)
-            self._hotkeys.pressed.connect(self._on_hotkey)
-            self._hotkeys.register("f10", None)
+            if getattr(self, "_hotkeys", None) is None:
+                self._hotkeys = GlobalHotkey(self)
+                self._hotkeys.pressed.connect(self._on_hotkey)
+                self._hotkeys.register("f10", None)
             # HUD
             from gui.overlay import GameHudController
             self._hud = GameHudController(self.event_bus, game["hwnd"])

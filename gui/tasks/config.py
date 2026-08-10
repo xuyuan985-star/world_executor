@@ -20,7 +20,12 @@ def load_config():
 
 
 def save_config(updates: dict):
-    """更新键值并写回（保注释）；写前备份 .bak。返回 (ok, 错误或None)。"""
+    """更新键值并写回（保注释）；写前备份 .bak。
+
+    防御：text 字段空值跳过写（保留原值）——关键路径（game_path 等）
+    被清空会让任务直接瘫痪。
+    返回 (ok, 错误或None)。
+    """
     import shutil
     import ruamel.yaml
     if not M7_CONFIG.exists():
@@ -30,6 +35,8 @@ def save_config(updates: dict):
         with open(M7_CONFIG, "r", encoding="utf-8") as f:
             data = yaml.load(f)
         for k, v in updates.items():
+            if isinstance(v, str) and not v.strip():
+                continue  # 空文本不写（防关键路径被清空）
             data[k] = v
         shutil.copy2(M7_CONFIG, str(M7_CONFIG) + ".bak")
         with open(M7_CONFIG, "w", encoding="utf-8") as f:
@@ -116,9 +123,9 @@ SCHEMA = {
     },
 }
 
-# 任务 → 配置分组映射
+# 任务 → 配置分组映射（只保留"需要额外配置"的任务——routine/daily 等
+# 一键流程不加配置按钮，避免界面冗余；用户明确：按需而非全加）
 TASK_GROUPS_MAP = {
-    "routine": "日常/奖励", "daily": "日常/奖励", "redemption": "日常/奖励",
     "power": "体力",
     "fight": "锄大地",
     "universe": "模拟宇宙",
