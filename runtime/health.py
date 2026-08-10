@@ -8,10 +8,10 @@
 
 
 def check_health(verbose=False, game_required=True, input_probe=False,
-                 auto_activate=False):
+                 auto_activate=True):
     """7×24 防御：input_probe 控制 L2 按键注入探测（默认关——会向游戏按 ESC）；
-    auto_activate 控制是否激活游戏窗口到前台（默认关——GUI 启动不抢用户前台，
-    仅真机任务 gate 时开启）。"""
+    auto_activate 默认开——游戏不在前台时检测直接拉置顶（用户要求"直接提游戏窗口"，
+    不提示不打扰）。"""
     result = {
         "window": False,
         "capture": False,
