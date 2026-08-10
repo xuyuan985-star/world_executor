@@ -86,6 +86,10 @@ class TaskCenterPage(BasePage):
         self._stop_btn.clicked.connect(self._stop_task)
         self._clear_btn = QPushButton("清空日志")
         self._clear_btn.clicked.connect(self._log.clear)
+        self._record_btn = QPushButton("● 录制轨迹")
+        self._record_btn.setToolTip("录制玩家手动操作（WASD/视角/点击）→ 保存为轨迹\n"
+                                    "用于回放复现——机关/复杂路径的唯一可靠方案")
+        self._record_btn.clicked.connect(self._toggle_record)
         self._update_btn = QPushButton("更新 m7 模块")
         self._update_btn.setToolTip("从官方仓库更新迁移的 m7（git pull + 依赖同步）")
         self._update_btn.clicked.connect(self._update_m7)
@@ -94,11 +98,39 @@ class TaskCenterPage(BasePage):
         fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(self._stop_btn)
         fl.addWidget(self._clear_btn)
+        fl.addWidget(self._record_btn)
         fl.addStretch(1)
         fl.addWidget(self._update_btn)
         self.add_footer(footer)
 
     # ---------- 任务控制 ----------
+
+    def _toggle_record(self):
+        """录制/停止轨迹（玩家手动操作记录——回放复现用）。"""
+        if getattr(self, "_recorder", None) is not None \
+                and self._recorder.recording:
+            events = self._recorder.stop()
+            path = self._recorder.save()
+            self._recorder = None
+            self._record_btn.setText("● 录制轨迹")
+            self._record_btn.setStyleSheet("")
+            if path:
+                self._append(f"[录制] 已保存 {len(events)} 事件 → {path.name}")
+            else:
+                self._append("[录制] 无事件（未录制到操作）")
+            return
+        # 开始录制
+        from runtime.input.recorder import TrajectoryRecorder
+        from runtime.drivers.march7th.window import find_game_window
+        game = find_game_window()
+        hwnd = game["hwnd"] if game else None
+        self._recorder = TrajectoryRecorder(game_hwnd=hwnd)
+        if not self._recorder.start():
+            self._append("[录制] 启动失败")
+            return
+        self._record_btn.setText("■ 停止录制")
+        self._record_btn.setStyleSheet("color: #E64545; font-weight: 700;")
+        self._append("[录制] 开始——3 秒后正式记录（请切到游戏窗口操作）")
 
     def _update_m7(self):
         """更新迁移的 m7 模块（git pull + 依赖同步，日志实时显示）。"""
