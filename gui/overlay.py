@@ -4,8 +4,8 @@
 - 顶部固定提示"F10 = 紧急停止"
 - 内容 = EventBus 事件流（滚动日志）
 """
-from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
+from PySide6.QtCore import QObject, QPoint, Qt
+from PySide6.QtWidgets import (QLabel, QPlainTextEdit,
                                QVBoxLayout, QWidget)
 
 
@@ -51,9 +51,12 @@ class GameHudOverlay(QWidget):
         sb.setValue(sb.maximum())
 
     def set_emergency(self):
-        """紧急停止时置顶提示（红色横幅）。"""
+        """紧急停止时提示（红色横幅）。"""
         self.log_view.appendPlainText("⚠ 已紧急停止（F10）——全部按键已释放")
-        self.show()
+        # 修复（0.6.0 审查）：不强制 show——HUD 已收起（任务结束）时
+        # F10 不应把它重新弹出（main_window._emergency_hotkey 调用点）
+        if not self.isVisible():
+            self.hide()
 
 
 class GameHudController(QObject):

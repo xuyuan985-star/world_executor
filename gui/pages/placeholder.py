@@ -86,10 +86,6 @@ class TaskCenterPage(BasePage):
         self._stop_btn.clicked.connect(self._stop_task)
         self._clear_btn = QPushButton("清空日志")
         self._clear_btn.clicked.connect(self._log.clear)
-        self._record_btn = QPushButton("● 录制轨迹")
-        self._record_btn.setToolTip("录制玩家手动操作（WASD/视角/点击）→ 保存为轨迹\n"
-                                    "用于回放复现——机关/复杂路径的唯一可靠方案")
-        self._record_btn.clicked.connect(self._toggle_record)
         self._update_btn = QPushButton("更新 m7 模块")
         self._update_btn.setToolTip("从官方仓库更新迁移的 m7（git pull + 依赖同步）")
         self._update_btn.clicked.connect(self._update_m7)
@@ -98,39 +94,11 @@ class TaskCenterPage(BasePage):
         fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(self._stop_btn)
         fl.addWidget(self._clear_btn)
-        fl.addWidget(self._record_btn)
         fl.addStretch(1)
         fl.addWidget(self._update_btn)
         self.add_footer(footer)
 
     # ---------- 任务控制 ----------
-
-    def _toggle_record(self):
-        """录制/停止轨迹（玩家手动操作记录——回放复现用）。"""
-        if getattr(self, "_recorder", None) is not None \
-                and self._recorder.recording:
-            events = self._recorder.stop()
-            path = self._recorder.save()
-            self._recorder = None
-            self._record_btn.setText("● 录制轨迹")
-            self._record_btn.setStyleSheet("")
-            if path:
-                self._append(f"[录制] 已保存 {len(events)} 事件 → {path.name}")
-            else:
-                self._append("[录制] 无事件（未录制到操作）")
-            return
-        # 开始录制
-        from runtime.input.recorder import TrajectoryRecorder
-        from runtime.drivers.march7th.window import find_game_window
-        game = find_game_window()
-        hwnd = game["hwnd"] if game else None
-        self._recorder = TrajectoryRecorder(game_hwnd=hwnd)
-        if not self._recorder.start():
-            self._append("[录制] 启动失败")
-            return
-        self._record_btn.setText("■ 停止录制")
-        self._record_btn.setStyleSheet("color: #E64545; font-weight: 700;")
-        self._append("[录制] 开始——3 秒后正式记录（请切到游戏窗口操作）")
 
     def _update_m7(self):
         """更新迁移的 m7 模块（git pull + 依赖同步，日志实时显示）。"""
@@ -182,13 +150,6 @@ class TaskCenterPage(BasePage):
         proc = TaskProcess(task_id, self)
         proc.log_line.connect(self._append)
         proc.task_finished.connect(self._on_finished)
-        # 进程内线程任务：结果/日志经轮询消费（本环境 QThread 信号不可靠）
-        if getattr(self, "_task_poll", None) is None:
-            from PySide6.QtCore import QTimer
-            self._task_poll = QTimer(self)
-            self._task_poll.setInterval(200)
-            self._task_poll.timeout.connect(self._poll_task)
-            self._task_poll.start()
         # m7 子进程任务同样显示游戏内 HUD（复用主窗口 HUD——日志实时转发）
         self._hud = None
         mw = self.window()
@@ -208,18 +169,6 @@ class TaskCenterPage(BasePage):
         if self._proc is not None:
             self._append("[停止] 正在终止任务进程…")
             self._proc.stop()
-
-    def _poll_task(self):
-        """轮询消费进程内任务结果/日志。"""
-        proc = getattr(self, "_proc", None)
-        if proc is not None and hasattr(proc, "poll"):
-            try:
-                proc.poll()
-            except Exception:
-                pass
-        # 任务结束后停止轮询（_proc 置 None 后）
-        if self._proc is None and getattr(self, "_task_poll", None) is not None:
-            self._task_poll.stop()
 
     def _on_finished(self, exit_code):
         from gui.tasks.catalog import task_name
@@ -254,7 +203,7 @@ class TaskCenterPage(BasePage):
         if self._proc is not None:
             try:
                 self._proc.stop()
-                self._proc.waitFinished(3000)
+                self._proc.waitForFinished(3000)
             except Exception:
                 pass
             self._proc = None
@@ -291,7 +240,207 @@ class WorldGraphPage(BasePage):
         from gui.pages.guides_view import GuidesView
         self._view = GuidesView(self).set_embedded()
         self.content_layout.addWidget(self._view)
+        # 轨迹录制（宝箱收集链自研组件——机关/复杂路径手动录一次，回放复现）
+        self._recorder = None
+        self._rec_hud = None  # 录制期间挂的 HUD（结束收起）
+        self._countdown_timer = None
+        self._record_btn = QPushButton("● 录制轨迹")
+        self._record_btn.setToolTip("录制玩家手动操作（WASD/视角/点击）→ 保存为轨迹\n"
+                                    "用于回放复现——机关/复杂路径的唯一可靠方案\n"
+                                    "F10 或再次点击停止并保存\n回放在指挥台")
+        self._record_btn.clicked.connect(self._toggle_record)
+        footer = QWidget()
+        fl = QHBoxLayout(footer)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.addWidget(self._record_btn)
+        fl.addStretch(1)
+        self.add_footer(footer)
 
+    def _rec_hud_append(self, line):
+        """录制相关 HUD 输出（存在才发）。"""
+        if self._rec_hud is not None:
+            try:
+                self._rec_hud.append_external(line)
+            except Exception:
+                pass
+
+    def _force_hud_cleanup(self):
+        """强制回收录制 HUD（F10/停止路径兜底——防卡桌面不消失）。
+
+        与 _toggle_record 停止分支的回收逻辑一致；单独抽出保证任何
+        停止路径（按钮/F10）都执行。"""
+        hud = getattr(self, "_rec_hud", None)
+        if hud is not None:
+            try:
+                hud.hide()
+            except Exception:
+                pass
+            if getattr(self, "_rec_hud_own", False):
+                try:
+                    hud.destroy()
+                    hud.deleteLater()
+                except Exception:
+                    pass
+            self._rec_hud = None
+        self._rec_hud_own = False
+        # 同时停掉倒计时（防止残留 QTimer 继续 append）
+        if getattr(self, "_countdown_timer", None) is not None:
+            try:
+                self._countdown_timer.stop()
+            except Exception:
+                pass
+            self._countdown_timer = None
+        # 保险丝：1s 后复查 overlay 是否仍可见——仍可见强制隐藏/销毁
+        #（某些路径 hide 后又被 show——兜底保证最终回收）
+        try:
+            from PySide6.QtCore import QTimer
+
+            def _recheck():
+                try:
+                    if hud is not None:
+                        try:
+                            if hud.overlay.isVisible():
+                                hud.overlay.hide()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            QTimer.singleShot(1000, _recheck)
+        except Exception:
+            pass
+
+    def _toggle_record(self):
+        """录制/停止轨迹（玩家手动操作记录——回放复现用）。
+
+        HUD 联动：开始→显眼提示+3 秒倒计时，每个操作实时显示；
+        停止→完成信息 + HUD 收起。F10 也可停止（main_window 接入）。
+        """
+        if self._recorder is not None and self._recorder.recording:
+            events = self._recorder.stop()
+            path = self._recorder.save()
+            self._recorder = None
+            if self._countdown_timer is not None:
+                self._countdown_timer.stop()
+                self._countdown_timer = None
+            self._record_btn.setText("● 录制轨迹")
+            self._record_btn.setStyleSheet("")
+            if path:
+                self.set_status(f"录制完成：{len(events)} 事件 → {path.name}")
+                self._rec_hud_append(f"[录制] 完成：{len(events)} 事件 → {path.name}")
+                # 同步自定义地图（轨迹立即在世界图/指挥台平级展示）
+                try:
+                    from knowledge.guides_loader import sync_custom_map, \
+                        custom_enabled_names
+                    # 第 9 轮：录制停止只新增自己的轨迹，不动用户勾选状态
+                    # （原无参=全量启用——会把用户取消勾选的轨迹全开回来）
+                    n = sync_custom_map(custom_enabled_names() | {path.name})
+                    self.set_status(f"录制完成：{len(events)} 事件 → {path.name}"
+                                    f"（自定义地图已同步 {n} 条）")
+                    # 世界图刷新：保持当前选中地图并重渲染右侧面板
+                    view = getattr(self, "_view", None)
+                    if view is not None and hasattr(view, "reload"):
+                        view.reload()
+                    # 指挥台联动刷新（目标下拉 + 任务队列）
+                    mw = self.window()
+                    if mw is not None and hasattr(mw, "refresh_command_deck"):
+                        mw.refresh_command_deck()
+                except Exception:
+                    pass
+            else:
+                self.set_status("录制结束：无事件（未录制到操作）")
+                self._rec_hud_append("[录制] 结束：无事件")
+            # 录制结束收起 HUD（统一走 _force_hud_cleanup——含自建回收+倒计时停）
+            self._force_hud_cleanup()
+            return
+        # 开始录制
+        from runtime.input.recorder import TrajectoryRecorder
+        from runtime.drivers.march7th.window import find_game_window
+        game = find_game_window()
+        hwnd = game["hwnd"] if game else None
+        # 修复（0.6.0）：录制开始先把游戏拉前台——录制操作要在游戏窗口
+        # 里进行（尤其视角移动——游戏前台才接收输入）
+        if hwnd:
+            try:
+                from runtime.win_capture import set_foreground_with_retry
+                set_foreground_with_retry(hwnd)
+            except Exception as e:
+                import logging
+                logging.getLogger("gui.pages.placeholder").warning(
+                    "录制前置顶失败 hwnd=%s: %s", hwnd, e)
+        # 录制灵敏度接线（0.6.0 第4轮：从设置读取，默认 4，校验 1-5）
+        rec_sens = 4
+        try:
+            from config.settings import get as _cfg_get
+            _v = _cfg_get("REPLAY_SENSITIVITY", "4")
+            if _v:
+                f = float(_v)
+                if 1 <= f <= 5:
+                    rec_sens = int(f)
+        except Exception:
+            pass
+        self._recorder = TrajectoryRecorder(game_hwnd=hwnd,
+                                            game_sensitivity=rec_sens)
+        # HUD 实时显示当前操作（游戏窗口存在则跟随窗口；不存在则自建
+        # 独立 HUD——录制提示必须有地方显示，不再静默）
+        hud = None
+        self._rec_hud_own = False  # True=自建 HUD（停止后 deleteLater 回收）
+        try:
+            mw = self.window()
+            if mw is not None and hasattr(mw, "ensure_hud"):
+                hud = mw.ensure_hud()
+            if hud is None and mw is not None:
+                # 无游戏窗口：自建录制 HUD（默认屏幕位置，带录制提示）
+                from gui.overlay import GameHudController
+                bus = getattr(mw, "event_bus", None)
+                if bus is not None:
+                    hud = GameHudController(bus, None)
+                    hud.show()
+                    self._rec_hud_own = True
+        except Exception:
+            hud = None
+        self._rec_hud = hud
+        if hud is not None:
+            try:
+                hud.show()  # 幂等：确保 overlay 可见 + 重新定位（防开始不可见）
+            except Exception:
+                pass
+
+            def _hook(ev):
+                if ev["type"] == "key":
+                    line = f"[录制] {ev['key'].upper()} 按住 {ev['duration']:.1f}s"
+                elif ev["type"] == "view":
+                    line = f"[录制] 视角 ({ev['dx']:+.3f}, {ev['dy']:+.3f})"
+                elif ev["type"] == "click":
+                    line = f"[录制] 点击 ({ev['nx']:.2f}, {ev['ny']:.2f})"
+                else:
+                    line = f"[录制] {ev.get('text', '')}"
+                hud.append_external(line)
+
+            self._recorder.set_event_hook(_hook)
+            # 显眼开始提示 + 3 秒倒计时（主线程 QTimer 每秒一条）
+            self._rec_hud_append("▶▶▶ 录制开始 —— 3 秒后正式记录 ◀◀◀")
+            from PySide6.QtCore import QTimer
+            self._countdown_timer = QTimer(self)
+            self._countdown_timer.setInterval(1000)
+            counts = iter(["3…", "2…", "1…", "开始记录！"])
+
+            def _tick():
+                try:
+                    self._rec_hud_append(f"[录制] {next(counts)}")
+                except StopIteration:
+                    self._countdown_timer.stop()
+                    self._countdown_timer = None
+
+            self._countdown_timer.timeout.connect(_tick)
+            self._countdown_timer.start()
+        if not self._recorder.start():
+            self.set_status("录制启动失败")
+            return
+        self._record_btn.setText("■ 停止录制")
+        self._record_btn.setStyleSheet("color: #E64545; font-weight: 700;")
+        self.set_status("录制中——3 秒后正式记录（请切到游戏窗口操作）"
+                        + ("，操作实时显示在 HUD" if hud is not None else ""))
 
 class ObservationPage(BasePage):
     """观察中心：游戏画面 + 事件流统计与诊断。"""

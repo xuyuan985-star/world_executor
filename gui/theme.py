@@ -1,6 +1,5 @@
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from qfluentwidgets import Theme, qconfig, setTheme, setThemeColor
+from qfluentwidgets import Theme, qconfig, setThemeColor
 
 BG_DEEP = "#0B1524"
 BG_PANEL = "#0F1B2D"
@@ -14,20 +13,6 @@ TEXT_MUTED = "#7A90B0"
 WARN = "#FFB454"
 DANGER = "#FF6B6B"
 OK = "#4FD1C5"
-
-STATE_COLORS = {
-    "INIT": TEXT_MUTED,
-    "CHECK_WORLD_STATE": "#7FB3FF",
-    "NAVIGATING": OK,
-    "PORTAL_TRANSITION": "#8E7CFF",
-    "PORTAL_TRANSITION_FAILED": DANGER,
-    "VERIFYING": WARN,
-    "INTERACTING": "#FF8FA3",
-    "EVENT_INTERRUPT": DANGER,
-    "RECOVERING": WARN,
-    "DONE": OK,
-    "ABORT": DANGER,
-}
 
 GLOBAL_QSS = f"""
 QWidget {{
@@ -55,15 +40,6 @@ QWidget {{
     color: {TEXT_MUTED};
     font-size: 10px;
     letter-spacing: 1px;
-}}
-#statusLedLabel {{
-    font-size: 11px;
-}}
-#stateLogView {{
-    background: {BG_DEEP};
-    border: 1px solid {BORDER};
-    border-radius: 8px;
-    padding: 6px;
 }}
 """
 

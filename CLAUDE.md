@@ -1,8 +1,43 @@
 # WorldExecutor 项目记忆
 
 ## 项目
-**WorldExecutor** — 崩坏：星穹铁道宝箱收集自动化助手（Windows/Python 3.11/PySide6）。
+**WorldExecutor** — 崩坏：星穹铁道宝箱收集自动化助手（Windows/Python 3.14/PySide6）。
 半自动：模板匹配定位 → SendInput 点击开箱；攻略视频 → VLM 识别 → 点位入库。
+
+## 架构（0.6.0 回滚：任务中心 = QProcess 子进程 + 项目内 m7/）
+- **宝箱收集链全自研**（运行时零依赖外部 March7thAssistant）：
+  - 截图：`runtime/win_capture`（PrintWindow 后台 → 前台 mss 兜底）
+  - OCR：`runtime/ocr_engine`（rapidocr 直连——rapidocr 3.8 返回 RapidOCROutput，
+    用 `.txts/.boxes`，勿用旧 tuple 解包）
+  - 模板匹配：`runtime/input/template_backend`（cv2 多尺度）
+  - 输入：`runtime/input/win32_backend`（SendInput）
+  - 地图传送资产：`assets/fhoe/`
+- **任务中心 = QProcess 子进程**（0.6.0 回滚——0.5.0 进程内 QThread 集成
+  反复 0xC0000409 崩溃，结构性根因：m7 是独立进程程序，塞进 GUI 进程
+  违反其架构假设）：
+  - QProcess 启动 `m7_venv\Scripts\python.exe -u m7_launcher.py <task>`
+  - m7_launcher：pylnk3 stub 注入 → runpy 跑 **项目内 `m7/main.py`**
+  - m7 在独立进程：cwd/单例/配置/Qt 全局零冲突；崩了只是子进程崩；
+    停止 = kill 即停；日志 = 管道 readyRead 实时
+  - m7 源码：项目内 `m7/`（主路径，gitignore 不入库，setup_m7 克隆官方仓库）；
+    旧外部 `March7thAssistant` 仅作更新镜像/兜底
+- `runtime/drivers/march7th/` 仅剩薄接口名（类名不变，实现全自研）。
+
+## 环境（2026-08-11 统一）
+- **唯一环境 = `m7_venv`（Python 3.12+，当前 3.14.2）**——GUI 与 m7 任务中心同环境同进程。
+  旧 `.venv`（3.11）已删除（3.11 无法进程内 `import main`——m7 用 PEP 701 f-string）。
+- 所有命令用 `m7_venv\Scripts\python.exe`（或 pythonw）。系统 `python` 缺 PySide6 勿用。
+- 启动：双击 bat 或 `m7_venv\Scripts\pythonw.exe -m app`。
+- bat 自检：m7_venv 缺失或 <3.12 → 自动重建。
+- **坑：Python 3.14 生态**——requirements 锁的旧版（numpy 2.2.6/opencv 4.11/pillow 10.4）
+  在 3.14 无预编译 wheel → pip 走源码编译必失败。必须用 requirements.txt 当前的 3.14 兼容版
+  （numpy 2.5.2/opencv 5.0/pillow 12.3 等）。升级版本前先确认有 cp314 wheel。
+- **坑：验证依赖要用真实 `import` 而非 `importlib.metadata`**（dist-info 残留会误判"已装"——
+  m7_venv 曾因 setup_m7 装依赖失败成空壳却 metadata 显示齐全）。
+- **坑：m7_venv 必须装两类依赖**——world_executor `requirements.txt` + m7 的
+  `March7thAssistant/requirements.txt`（排除 pylnk3，见 `m7_requirements_nopylnk.txt`）。
+  只装前者 → March7thVision 构造失败（缺 colorama 等）→ 指挥台实时观测/观察中心截图瘫痪
+  （异常被 except 吞成占位）。setup_m7.py 已含过滤安装逻辑。
 
 ## 术语表
 | 术语 | 含义 |

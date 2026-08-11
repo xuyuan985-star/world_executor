@@ -1,6 +1,6 @@
 # WorldExecutor — 崩坏：星穹铁道 全宝箱收集助手
 
-基于 [March7thAssistant](https://github.com/moesnow/March7thAssistant) 扩展的宝箱收集系统。全自动：任务中心跑 m7 全套任务（锄大地/体力/模拟宇宙）；宝箱收集走 模板匹配 + 坐标兜底 + 差分验证 + 轨迹录制回放。
+基于 [March7thAssistant](https://github.com/moesnow/March7thAssistant) 思路**数据内化**的宝箱收集系统（功能自研/源码迁入项目内，运行时零依赖外部目录）。全自动：任务中心跑 m7 全套任务（锄大地/体力/模拟宇宙）；宝箱收集走 模板匹配 + 坐标兜底 + 差分验证 + 轨迹录制回放。
 
 ## 新电脑启动（5 分钟）
 
@@ -11,25 +11,27 @@
 git clone https://github.com/xuyuan985-star/world_executor.git
 cd world_executor
 
-# 2. 创建虚拟环境并装依赖
-python -m venv .venv
-.venv\Scripts\activate        # Windows
+# 2. 创建唯一虚拟环境 m7_venv（Python 3.12+，m7 任务中心要求）并装依赖
+py -3.14 -m venv m7_venv       # 或 py -3.13 / -3.12 / python
+m7_venv\Scripts\activate       # Windows
 pip install -r requirements.txt
 
 # 3. 配置环境变量（无 key 也能启动，VLM 功能会降级）
 copy .env.example .env        # Windows
 # 然后编辑 .env 填入 QWEN_API_KEY（可跳过，模板匹配路径不需要）
 
-# 4. 准备 m7（任务中心依赖）
-# 在仓库同级目录放置 March7thAssistant（官方仓库最新版）
-# 首次更新：任务中心 → 更新 m7 模块（git pull + m7_venv 依赖同步）
+# 4. m7 任务模块（源码在项目内 m7/，gitignore 不入库；子进程执行）
+#    缺失时：tools/setup_m7.py 自动准备（克隆官方仓库到 m7/ + 建环境）
+#    任务中心 → 更新 m7 模块（外部镜像 git pull + 同步回项目内 m7/）
 
 # 5. 启动 GUI
 双击 启动世界执行器.bat（自动提权） 或
-python -m app
+m7_venv\Scripts\python.exe -m app
 ```
 
-> **必须使用 `.venv` 的 Python**（`python` 可能指向系统解释器而缺 PySide6）。
+> **环境已统一为 `m7_venv`（Python 3.12+）**——GUI 与 m7 任务中心同环境（m7 任务在
+> QProcess 子进程独立跑，0.6.0 起不再进程内集成）。旧 `.venv`（3.11）已废弃。
+> 所有命令用 `m7_venv\Scripts\python.exe`（不要用系统 `python`，可能缺 PySide6）。
 > 真机执行（点击游戏窗口）需要**管理员权限**——启动时按提示确认提权。
 
 ## 功能一览
@@ -66,7 +68,7 @@ gui/             PySide6 界面（指挥台/任务中心/世界图/观察中心/
 runtime/         状态机、orchestrator、执行器、输入后端、轨迹录制回放
 ingest/          离线管线：VLM 客户端、视频抽帧、模板裁剪、一键预处理
 knowledge/       地图集（guides/maps 展示库）+ 执行包（source）
-m7_venv/         m7 任务子进程专用环境（Python 3.14——m7 官方要求 >=3.12，不入库）
+m7_venv/         唯一环境（Python 3.14——GUI 与 m7 任务共享依赖，不入库）
 tools/           门禁/预处理/核查/校准等工具
 tests/           分层单测
 docs/            企划书与设计文档

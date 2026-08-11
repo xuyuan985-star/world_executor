@@ -31,19 +31,24 @@ if not defined PY_CMD (
 )
 echo [env] Using Python: %PY_CMD%
 
-REM ============ 2. Bootstrap venv (create + install deps on first run) ============
-if exist ".venv\Scripts\python.exe" goto run
+REM ============ 2. m7_venv (single unified env, Python 3.12+) ============
+if exist "m7_venv\Scripts\pythonw.exe" (
+    "m7_venv\Scripts\python.exe" -c "import sys;sys.exit(0 if sys.version_info>=(3,12) else 1)" >nul 2>nul
+    if not errorlevel 1 goto run
+    echo [warn] m7_venv is Python older than 3.12 - rebuilding...
+    rmdir /s /q m7_venv
+)
 echo.
-echo [first-run] Creating virtual env...
-%PY_CMD% -m venv .venv
+echo [first-run] Creating m7_venv...
+%PY_CMD% -m venv m7_venv
 if errorlevel 1 (
     echo [ERROR] venv creation failed - check Python installation.
     pause
     exit /b 1
 )
 echo [first-run] Installing dependencies (1-3 min, please wait)...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+"m7_venv\Scripts\python.exe" -m pip install --upgrade pip
+"m7_venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
     echo [ERROR] Dependency install failed - check network and retry.
     pause
@@ -53,6 +58,6 @@ echo [done] Dependencies installed.
 
 :run
 REM ============ 3. Launch GUI elevated ============
-powershell -NoProfile -Command "Start-Process -FilePath '.\.venv\Scripts\pythonw.exe' -ArgumentList '-m','app','--no-elevate' -WorkingDirectory '%~dp0' -Verb RunAs"
+powershell -NoProfile -Command "Start-Process -FilePath '.\m7_venv\Scripts\pythonw.exe' -ArgumentList '-m','app','--no-elevate' -WorkingDirectory '%~dp0' -Verb RunAs"
 echo Launching (confirm UAC prompt)...
 exit /b 0

@@ -7,8 +7,13 @@
 
 from pathlib import Path
 
-M7_CONFIG = (Path(__file__).resolve().parent.parent.parent.parent
-             / "March7thAssistant" / "config.yaml")
+# 数据内化：config.yaml 主路径 = 项目内 m7/（旧外部位置兜底）
+_WE_ROOT = Path(__file__).resolve().parent.parent.parent
+M7_CONFIG = _WE_ROOT / "m7" / "config.yaml"
+if not M7_CONFIG.exists():
+    _alt = _WE_ROOT.parent / "March7thAssistant" / "config.yaml"
+    if _alt.exists():
+        M7_CONFIG = _alt
 
 
 def load_config():

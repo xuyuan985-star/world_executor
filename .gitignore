@@ -22,10 +22,17 @@ runtime.db
 runtime.db-*
 *.sqlite3
 
+# 内化的 March7th 源码（66.8MB 第三方代码——不入库，运行时必须有；
+# 缺失时可用 tools/setup_m7.py 或从官方仓库拷贝）
+m7/
+
 # 运行时日志/快照/报告（不入库）
 logs/
 reports/
 dump/
+
+# 运行时失败记忆（FailureMemory 持久化，同 runtime.db 属运行时状态）
+memory/
 ingest/raw/events/*.jsonl
 
 # 原始视频/中间产物

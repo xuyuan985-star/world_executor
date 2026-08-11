@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -18,7 +19,6 @@ from gui.main_window import MainWindow
 from gui.theme import apply_theme
 from runtime.api.commands import RuntimeAPI
 from runtime.events.bus import EventBus
-from runtime.knowledge_loader import KnowledgePackage
 
 # Bug 13：单实例句柄进程级存活（模块顶层持有，防局部变量回收导致锁失效）
 SINGLE_INSTANCE = None
@@ -84,6 +84,8 @@ def _install_excepthook():
     # Bug 112：日志脱敏（API key/cookie 不落盘）
     from config.settings import install_log_redaction
     install_log_redaction()
+    # 崩溃排查：ERROR → INFO（m7 任务日志/退出路径可查，不再只记错误）
+    logging.getLogger().setLevel(logging.INFO)
     # Bug 193：依赖缺失给安装指引（ModuleNotFoundError 不裸抛）
     _PIP_HINTS = {
         "PySide6": "pip install PySide6",
@@ -253,36 +255,163 @@ def _start():
     # 此处不再重复调用，Qt 警告消除）
     app.setApplicationName("WorldExecutor Studio")
     apply_theme(app)
+    # 根治窗口消失（WER 系列排查）：lastWindowClosed 误触发（HUD/工具窗口
+    # 显示后 Qt 内部报最后窗口关闭）→ 自动 quit → 窗口消失。改为显式接管：
+    # 只有 closeEvent 走完正常流程才 quit，任何 lastWindowClosed 不再自动退出。
+    app.setQuitOnLastWindowClosed(False)
 
     # 目标 = 攻略存档真实点位（非测试包假数据 chest_A/B/C/D）
-    from knowledge.guides_loader import load_guide_targets, load_guide_regions
-    # Bug 33：地图从设置读取（新增地图经设置即可接入 GUI）
+    from knowledge.guides_loader import (load_guide_targets,
+                                         load_guide_regions,
+                                         sync_custom_map)
+    # 同步自定义地图（录制轨迹 → 08_custom 点位，与世界图/指挥台平级）
+    # 第 9 轮：启动带当前启用集——无参会把用户取消勾选的轨迹全量启用
+    # （勾选状态跨重启丢失）
     try:
-        from config.settings import default_map
-        map_id = default_map()
-    except Exception:
-        map_id = "02_herta_space_station"
+        from knowledge.guides_loader import custom_enabled_names
+        # 第 10 轮：空启用集（首次启动无 chests.json）→ None 全量启用——
+        # 否则 set() 会把全部轨迹过滤成空，首次启动自定义轨迹全隐藏
+        enabled = custom_enabled_names()
+        sync_custom_map(enabled or None)
+    except Exception as e:
+        print(f"[warn] 自定义地图同步失败: {e}")
+    # 加载全部地图目标（指挥台按地图分组显示——不再只加载默认图）
+    # Bug 33 扩展：地图从设置读取（default_map 仅作默认启动图）
     targets = []
-    try:
-        targets = load_guide_targets(map_id, types=["chest"])
-        regions = {r["id"]: r["name"] for r in load_guide_regions(map_id)}
-        # 目标附带区域中文名（指挥台展示用）+ 地图级分组
-        for t in targets:
-            t["room"] = regions.get(t["region"], t["region"])
-            t["map_name"] = "黑塔空间站"
-    except FileNotFoundError:
-        # Bug 34：库不存在 = 环境问题（可提示继续浏览），非代码损坏
-        print(f"[warn] 攻略库不存在（{map_id}）——指挥台将无目标可选")
-    except Exception:
-        # Bug 34：JSON 损坏/其他异常不再伪装成正常启动——暴露真实错误
-        raise
+    maps_dir = ROOT / "knowledge/guides/maps"
+    if maps_dir.is_dir():
+        for md in sorted(maps_dir.iterdir()):
+            if not md.is_dir():
+                continue
+            map_id = md.name
+            # 地图显示名从攻略库 map.json 读（原硬编码"黑塔空间站"——
+            # 换地图后指挥台分组名错误）
+            map_display_name = map_id
+            try:
+                _md = json.loads((md / "map.json").read_text(encoding="utf-8"))
+                map_display_name = _md.get("name") or map_id
+            except Exception:
+                pass
+            try:
+                ts = load_guide_targets(map_id, types=["chest"])
+                regions = {r["id"]: r["name"]
+                           for r in load_guide_regions(map_id)}
+                # 目标附带区域中文名（指挥台展示用）+ 地图级分组
+                for t in ts:
+                    t["room"] = regions.get(t["region"], t["region"])
+                    t["map_name"] = map_display_name
+                targets.extend(ts)
+            except FileNotFoundError:
+                # Bug 34：库不存在 = 环境问题（可提示继续浏览），非代码损坏
+                print(f"[warn] 攻略库不存在（{map_id}）——跳过该地图")
+            except Exception:
+                # Bug 34：JSON 损坏/其他异常不再伪装成正常启动——暴露真实错误
+                raise
     if not targets:
-        print(f"[warn] 攻略库无目标（{map_id}）——指挥台将无目标可选")
+        print("[warn] 攻略库无任何目标——指挥台将无目标可选")
     bus = EventBus(persist_path=str(ROOT / "ingest/raw/events/studio.jsonl"))
     api = RuntimeAPI(bus)
     window = MainWindow(targets, bus, api)
     window.show()
-    sys.exit(app.exec())
+    # 退出路径探针：aboutToQuit（正常 quit / 最后窗口关闭）vs os._exit（跳过）
+    try:
+        import time as _time
+
+        def _on_about_to_quit():
+            # 关键：dump 全部线程栈——aboutToQuit 触发瞬间谁在干什么
+            try:
+                import faulthandler
+                with open(ROOT / "logs" / "crash_trace.log", "a",
+                          encoding="utf-8") as _f:
+                    _f.write(f"\n===== aboutToQuit "
+                             f"{_time.strftime('%Y-%m-%d %H:%M:%S')} "
+                             f"all thread stacks =====\n")
+                    faulthandler.dump_traceback(all_threads=True, file=_f)
+            except Exception:
+                pass
+            _trace_exit(f"aboutToQuit fired (quitOnLastWindowClosed="
+                        f"{app.quitOnLastWindowClosed()})")
+            # 退出保护（0xC0000409 根因）：aboutToQuit 是 Qt 析构 QObject 树
+            # 前的最后必经点——任何 quit 路径（lastWindowClosed/显式 quit/
+            # 异常退出）都会先触发它。此时若有 QThread 仍在运行（m7 任务
+            # 线程/HealthWorker），后续析构必崩（WER 多次实锤：崩在
+            # app.exec() 返回前，exec 后保护来不及）。os._exit 跳过析构。
+            # 注意：只查模块级注册表（创建即注册）——topLevelWidgets 遍历
+            # 在窗口销毁中不可靠（可能抛异常），绝不依赖。
+            _alive = []
+            try:
+                from gui.tasks.runner import all_running_qthreads
+                _alive = list(all_running_qthreads())
+            except Exception as _e:
+                try:
+                    _trace_exit(f"aboutToQuit guard: qthread check EXC {_e!r}")
+                except Exception:
+                    pass
+            if _alive:
+                _trace_exit(
+                    f"aboutToQuit guard: {len(_alive)} QThread(s) running "
+                    f"→ os._exit(0)（跳过 Qt 析构，防 0xC0000409）")
+                import os as _os
+                _os._exit(0)
+
+        app.aboutToQuit.connect(_on_about_to_quit)
+        # MainWindow C++ 对象销毁探针（非 closeEvent 路径的窗口消失）
+        def _on_window_destroyed():
+            import traceback as _tb
+            try:
+                with open(ROOT / "logs" / "exit_trace.log", "a",
+                          encoding="utf-8") as _f:
+                    _f.write(f"\n===== MainWindow C++ object DESTROYED "
+                             f"{_time.strftime('%H:%M:%S')} — destroy stack =====\n")
+                    _tb.print_stack(file=_f)
+            except Exception:
+                pass
+            _trace_exit("MainWindow C++ object DESTROYED")
+            # 兜底：窗口被销毁（非 closeEvent 路径）时若任务线程在跑，
+            # Qt 析构子对象树必 0xC0000409——os._exit 跳过析构
+            try:
+                from gui.tasks.runner import all_running_qthreads
+                if all_running_qthreads():
+                    _trace_exit(
+                        "destroyed guard: QThread(s) running → os._exit(0)")
+                    import os as _os
+                    _os._exit(0)
+            except Exception:
+                pass
+
+        window.destroyed.connect(_on_window_destroyed)
+    except Exception:
+        pass
+    rc = app.exec()
+    _trace_exit(f"app.exec() returned rc={rc}")
+    # 退出保护（0xC0000409）：app.exec() 返回后 Qt 将析构 QObject 树——
+    # 若 HealthWorker 等 QThread 仍在运行，析构运行中 QThread → Qt6Core
+    # qFatal 0xC0000409。兜底：跳过 Qt 析构直接 os._exit(0)。
+    # 子进程模式（0.6.0）：m7 任务在独立 QProcess，不在此列。
+    try:
+        from gui.tasks.runner import all_running_qthreads
+        alive = all_running_qthreads()
+        if alive:
+            _trace_exit(f"exit guard: {len(alive)} QThread(s) still running "
+                        f"→ os._exit(0)（跳过 Qt 析构，防 0xC0000409）")
+            import os as _os
+            _os._exit(0)
+    except Exception:
+        pass
+    sys.exit(rc)
+
+
+def _trace_exit(msg):
+    """退出探针——直接文件写（不依赖 logging level 配置）。"""
+    try:
+        import time as _time
+        from pathlib import Path as _P
+        p = _P(__file__).resolve().parent.parent / "logs" / "exit_trace.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(f"{_time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

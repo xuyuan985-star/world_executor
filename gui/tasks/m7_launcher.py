@@ -11,24 +11,17 @@ import sys
 from pathlib import Path
 
 # world_executor 根（security.quarantine 所在）——cwd=M7 时 sys.path 不含它
-if getattr(sys, "frozen", False):
-    # exe 场景：launcher 由便携 python 在 exe 目录运行——quarantine 旁挂
-    _EXE_DIR = Path(sys.executable).resolve().parent
-    WORLD_ROOT = _EXE_DIR / "_m7_lib"
-    _EXE_DIR.joinpath("_m7_lib").mkdir(parents=True, exist_ok=True)
-else:
-    WORLD_ROOT = Path(__file__).resolve().parent.parent.parent
+WORLD_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(WORLD_ROOT))
 
 from security.quarantine import install_pylnk3_stub, require_m7_path
 
-# m7 是 world_executor 的兄弟目录——相对推导（禁止硬编码——同事/新环境路径不同）
-if getattr(sys, "frozen", False):
-    # exe 场景：launcher 会被便携 python314 直接跑（文件在 exe 目录）
-    _EXE_DIR = Path(sys.executable).resolve().parent
-    M7 = str(_EXE_DIR / "March7thAssistant")
-else:
-    M7 = str(WORLD_ROOT.parent / "March7thAssistant")
+# m7 源码在项目内 m7/（自包含——0.6.0 回滚后主路径）；旧外部位置兜底
+M7 = str(WORLD_ROOT / "m7")
+if not (Path(M7) / "main.py").exists():
+    _alt = WORLD_ROOT.parent / "March7thAssistant"
+    if (_alt / "main.py").exists():
+        M7 = str(_alt)
 
 require_m7_path(M7)
 install_pylnk3_stub(verbose=False)
