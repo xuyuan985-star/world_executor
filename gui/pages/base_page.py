@@ -3,7 +3,6 @@
 所有页面继承——消除"每页自己堆布局、风格漂移"。
 同时提供通用卡片工具，避免 placeholder/command_deck 重复定义。
 """
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from qfluentwidgets import CardWidget, StrongBodyLabel

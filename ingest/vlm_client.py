@@ -1,5 +1,4 @@
 import base64
-import json
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -76,8 +75,19 @@ class RateLimiter:
         time.sleep(wait_s)
 
 
-# 全局共享限流器（模块级单例）
-GLOBAL_RATE_LIMITER = RateLimiter(getattr(settings, "VLM_RATE_PER_MIN", 0) or 0)
+def _vlm_rate_per_min():
+    """读 VLM_RATE_PER_MIN（config.settings.get 返回原始字符串/None）。
+    审查：非法值（非数字）→ 返回 0，绝不抛 ValueError（原 int() 直接转——
+    配置写错会让 vlm_client import 失败、管线全挂）。"""
+    try:
+        return int(settings.get("VLM_RATE_PER_MIN", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+# 全局共享限流器（模块级单例）——config.settings.get() 读环境/配置
+# （原 getattr(settings, "VLM_RATE_PER_MIN", 0) 恒 0——模块无该属性，限流从未生效）
+GLOBAL_RATE_LIMITER = RateLimiter(_vlm_rate_per_min())
 
 
 class QwenVLProvider(VLMProvider):
@@ -118,7 +128,7 @@ class QwenVLProvider(VLMProvider):
 
     def _post(self, model, messages, temperature, max_tokens):
         import time as _t
-        from runtime.circuit_breaker import VLM_BREAKER, CircuitOpenError
+        from runtime.circuit_breaker import VLM_BREAKER
         from runtime.metrics import METRICS
         # Bug 507：熔断——连续失败不持续打 API（冷却后探针恢复）
         if not VLM_BREAKER.allow():

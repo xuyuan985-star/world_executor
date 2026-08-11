@@ -3,7 +3,6 @@
 所有入口（GUI/工具/CLI）调 setup_logging() 获得一致的日志行为。
 """
 import logging
-import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -25,7 +24,6 @@ def setup_logging(level="INFO", log_path=None, console=True, async_queue=False):
     async_queue=True：Bug 543 异步日志（QueueHandler——高频日志不阻塞 IO）。
     """
     import queue
-    import threading
     root = logging.getLogger()
     if getattr(root, "_we_setup", False):
         return root

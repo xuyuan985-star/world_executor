@@ -42,32 +42,45 @@ def main():
     pkg_dir = ROOT / "knowledge" / "source" / args.pkg
     pkg_dir.mkdir(parents=True, exist_ok=True)
 
-    from ingest.capture_frames import extract_frames, RESULTS_FILE
+    from ingest.capture_frames import extract_frames, RESULTS_FILE, FRAME_DIR
     from ingest.capture_frames import ask_frame
     from ingest.vlm_client import QwenVLProvider
 
     all_results = []
+    crops = {"chest": [], "door": [], "landmark": []}
     provider = QwenVLProvider() if not args.skip_vlm else None
     total_frames = 0
     for vi, video in enumerate(videos, 1):
         print(f"\n[pipeline] [{vi}/{len(videos)}] {video.name}")
-        frames = extract_frames(video, max_frames=args.max_frames)
+        # 每视频独立帧子目录——多视频批处理帧名 f_%04d 不互覆盖
+        # （extract_frames 默认全局 FRAME_DIR 会被下一视频清空）
+        vd = FRAME_DIR / f"v{vi}"
+        frames = extract_frames(video, max_frames=args.max_frames, frame_dir=vd)
         print(f"  抽帧 {len(frames)} 张")
         total_frames += len(frames)
+        video_results = []
         for fi, f in enumerate(frames):
             if args.skip_vlm:
-                all_results.append({"frame": f.name, "data": {"observation_only": True}})
+                rec = {"frame": f.name, "data": {"observation_only": True}}
+                video_results.append(rec)
                 continue
             data = ask_frame(provider, f, fi)
             found = [k for k, v in data.items()
                      if isinstance(v, dict) and v.get("found")]
             mark = f"  发现: {found}" if found else ""
             print(f"  f_{fi:04d} -> {data.get('room')}{mark}")
-            all_results.append({"frame": f.name, "data": data})
+            video_results.append({"frame": f.name, "data": data})
+        all_results += video_results
         # 每视频结果原子写（防中断丢进度）
         RESULTS_FILE.write_text(
             json.dumps(all_results, ensure_ascii=False, indent=2),
             encoding="utf-8")
+        # 每视频立即裁剪（帧目录还活着；模板名带视频前缀防覆盖）
+        if not args.skip_vlm:
+            import ingest.crop_templates as ct
+            for kind in ("chest", "door", "landmark"):
+                crops[kind] += ct.crop(vd, video_results, f"v{vi}_{kind}", kind)
+                print(f"[pipeline] 视频 {vi} 裁剪 {kind} {len(crops[kind])} 张")
 
     print(f"\n[pipeline] 共抽帧 {total_frames}，检测结果写入 results.json")
 
@@ -75,16 +88,10 @@ def main():
         print("[pipeline] --skip-vlm：裁剪/校验跳过（需先跑 VLM）")
         return
 
-    # 裁剪模板（复用 crop_templates 的裁剪逻辑）
+    # 裁剪汇总
     import ingest.crop_templates as ct
-    from ingest.capture_frames import FRAME_DIR
-    results = json.loads(RESULTS_FILE.read_text(encoding="utf-8"))
-    crops = {"chest": [], "door": [], "landmark": []}
     for kind in ("chest", "door", "landmark"):
-        crops[kind] = ct.crop(FRAME_DIR, results, kind, kind)
         print(f"[pipeline] 裁剪 {kind} 模板 {len(crops[kind])} 张")
-    ct.main  # noqa（保持 import 可见性）
-
     # 知识包校验
     from runtime.knowledge_loader import KnowledgePackage
     from ingest.compiler.validate_graph import validate

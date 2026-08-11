@@ -1,6 +1,5 @@
 import ctypes
 import time
-from ctypes import wintypes
 
 from runtime.input.base import InputBackend, InputResult
 
@@ -62,6 +61,71 @@ class Win32Backend(InputBackend):
             return InputResult(success=False, action="click", backend=self.name,
                                error="uipi_block: SendInput 被拒绝（需要管理员权限）")
         return InputResult(success=True, action="click", backend=self.name)
+
+    def click_hold(self, x, y, duration):
+        """长按点击：移动到 (x,y) → 按住 duration 秒 → 释放（长按回放用）。"""
+        r = self.move(x, y)
+        if not r.success:
+            return r
+        time.sleep(0.05)
+        if not self.click_down(x, y).success:
+            return InputResult(success=False, action="click_hold",
+                               backend=self.name,
+                               error="uipi_block: SendInput 被拒绝（需要管理员权限）")
+        time.sleep(max(0.0, float(duration or 0)))
+        up = self.click_up()
+        if not up.success:
+            return InputResult(success=False, action="click_hold",
+                               backend=self.name, error=up.error)
+        return InputResult(success=True, action="click_hold", backend=self.name)
+
+    def click_down(self, x, y):
+        """移动到 (x,y) 并按住左键（长按回放分段用——可中断）。"""
+        r = self.move(x, y)
+        if not r.success:
+            return r
+        time.sleep(0.05)
+        MOUSEEVENTF_LEFTDOWN = 0x0002
+
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
+                        ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong),
+                        ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_size_t)]
+
+        class INPUT(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
+
+        # 修复（0.6.0 第2轮审查）：不能用 (INPUT*1)(inp)——Structure 实例
+        # 被当 sequence（len=2）→ TypeError。仿 click() 用 (INPUT*1)() 逐字段
+        inputs = (INPUT * 1)()
+        inputs[0].type = 0
+        inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN
+        if not self._send_input(inputs):
+            return InputResult(success=False, action="click_down",
+                               backend=self.name,
+                               error="uipi_block: SendInput 被拒绝（需要管理员权限）")
+        return InputResult(success=True, action="click_down", backend=self.name)
+
+    def click_up(self):
+        """释放左键（长按回放分段用）。"""
+        MOUSEEVENTF_LEFTUP = 0x0004
+
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
+                        ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong),
+                        ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_size_t)]
+
+        class INPUT(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
+
+        inputs = (INPUT * 1)()
+        inputs[0].type = 0
+        inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTUP
+        if not self._send_input(inputs):
+            return InputResult(success=False, action="click_up",
+                               backend=self.name,
+                               error="uipi_block: SendInput 被拒绝（需要管理员权限）")
+        return InputResult(success=True, action="click_up", backend=self.name)
 
     def move(self, x, y):
         if not self.user32.SetCursorPos(int(x), int(y)):

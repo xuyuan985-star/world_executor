@@ -97,6 +97,11 @@ def fetch_site_counts():
     r = requests.get(BASE + "ch-bhsrd_categories.js", timeout=60)
     text = r.content.decode("gbk", errors="replace")
     m = re.search(r"func\((\{.*\})\)\s*$", text, re.DOTALL)
+    if not m:
+        # 网站格式变化/请求异常——显式失败而非 AttributeError 裸崩
+        raise RuntimeError(
+            f"网站 categories.js 格式无法解析（HTTP {r.status_code}，"
+            f"长度 {len(text)}）——站点可能改版或网络失败")
     markers = json.loads(m.group(1))
     dt_counts = {}
     for key, mk in markers.items():
@@ -153,8 +158,11 @@ def main():
         total_empty += empty
     out = "\n".join(rows)
     if not target:
-        out += (f"\n\n=== 汇总: 真实{total_real} 已有真点位{total_have} "
-                f"(覆盖率{total_have/total_real*100:.0f}%) 骨架{total_empty} ===")
+        if total_real:
+            out += (f"\n\n=== 汇总: 真实{total_real} 已有真点位{total_have} "
+                    f"(覆盖率{total_have/total_real*100:.0f}%) 骨架{total_empty} ===")
+        else:
+            out += "\n\n=== 汇总: 网站无真实点位数据（网络/站点问题），覆盖率不可计算 ==="
     report_path = ROOT / "logs" / "verify_report.txt"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(out, encoding="utf-8")

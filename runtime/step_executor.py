@@ -11,7 +11,6 @@ from runtime.observation_store import ObservationStore
 from runtime.observers.vlm_vision import VLMVisionObserver
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-M7_ROOT = ROOT / "March7thAssistant"
 
 # 只对这些动作执行自然性 sleep（#27）：查询/verify/noop 不应人为等待
 INPUT_ACTIONS = {"interact", "click_text", "move", "click"}
@@ -130,7 +129,6 @@ class RealExecutor:
         self.guard = guard
         self._entity_templates = None
         self._recent_events = deque(maxlen=100)  # #5：deque 自限长，不随运行时间增长
-        self._MAX_RECENT = 100
         # #1：method → 处理器 registry（扩展定位方式=注册，不改 execute）
         # #17-C：白名单冻结——register_method 只接受核心 method，未来插件
         # 扩展须显式审计（防"知识包注册 shell"式入口污染）
@@ -839,12 +837,12 @@ class RealExecutor:
         return "m"
 
     def _resolve_fhoe_template(self, template_ref):
-        """模板引用解析："Fhoe:xxx.png" → m7 Fhoe-Rail/picture；否则知识包。"""
+        """模板引用解析："Fhoe:xxx.png" → 项目内 assets/fhoe（数据内化——
+        资产已从 March7thAssistant/3rdparty/Fhoe-Rail/picture 拷入）；否则知识包。"""
         if template_ref.startswith("Fhoe:"):
             name = template_ref[len("Fhoe:"):]
             pic = (Path(__file__).resolve().parent.parent.parent
-                   / "March7thAssistant" / "3rdparty" / "Fhoe-Rail"
-                   / "picture" / name)
+                   / "assets" / "fhoe" / name)
             return str(pic) if pic.exists() else None
         return self._resolve_template_path(template_ref)
 

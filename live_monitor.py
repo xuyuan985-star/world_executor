@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-M7 = ROOT.parent / "March7thAssistant"
+M7 = (ROOT / "m7" if (ROOT / "m7" / "main.py").exists() else ROOT.parent / "March7thAssistant")
 
 ROOM_CANDIDATES = ["基座舱段", "收容舱段", "支援舱段", "禁闭舱段", "黑塔空间站其他区域", "雅利洛VI", "仙舟", "匹诺康尼", "未知场景"]
 

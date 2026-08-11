@@ -38,7 +38,10 @@ def probe_sendinput():
         class _MOUSEINPUT(ctypes.Structure):
             _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
                         ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong),
-                        ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+                        ("time", ctypes.c_ulong),
+                        # CLAUDE.md 教训：dwExtraInfo 必须 ULONG_PTR（64 位下 c_size_t）
+                        # ——c_ulong/POINTER(c_ulong) 结构错位 → SendInput 拒收
+                        ("dwExtraInfo", ctypes.c_size_t)]
 
         _fields_ = [("type", ctypes.c_ulong), ("data", _MOUSEINPUT)]
 

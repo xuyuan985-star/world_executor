@@ -96,7 +96,6 @@ class ResourceMonitor(threading.Thread):
                                 ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
                                 ("PagefileUsage", ctypes.c_size_t),
                                 ("PeakPagefileUsage", ctypes.c_size_t)]
-                from ctypes import wintypes
                 c = PROCESS_MEMORY_COUNTERS()
                 c.cb = ctypes.sizeof(c)
                 if ctypes.windll.psapi.GetProcessMemoryInfo(

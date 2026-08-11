@@ -228,4 +228,10 @@ def runtime_db_path():
 
 
 def march7_root():
-    return ROOT / "March7thAssistant"
+    """数据内化：m7 主路径 = 项目内 m7/（旧 March7thAssistant 兜底）。"""
+    p = ROOT / "m7"
+    if not (p / "main.py").exists():
+        _alt = ROOT / "March7thAssistant"
+        if (_alt / "main.py").exists():
+            return _alt
+    return p

@@ -34,8 +34,3 @@ class ExecutionResult:
         if self.error:
             ctx["error"] = self.error
         return ctx
-
-
-def execution_failure(error, retryable=False, category="F1", code=None):
-    return ExecutionResult(success=False, error=error, retryable=retryable,
-                           category=category, code=code)

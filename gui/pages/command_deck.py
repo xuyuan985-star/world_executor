@@ -1,10 +1,10 @@
 """CommandDeck（重构版）：BasePage 框架 + 指挥台业务。"""
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QTreeWidget,
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from gui.pages.base_page import BasePage, card_layout, card_title
-from qfluentwidgets import CardWidget, ComboBox, PrimaryPushButton, PushButton, StrongBodyLabel
+from qfluentwidgets import CardWidget, ComboBox, PrimaryPushButton, PushButton
 
 
 # ---- 状态常量 ----
@@ -53,59 +53,10 @@ def category_text(code):
 
 
 def _status_color(status):
+    """统一查 STATUS_COLOR（键：pending/running/done/failed/skipped）——
+    runtime 的 target_progress 发的是 done，不是 succeeded（曾致完成目标不显示绿色）。"""
     from PySide6.QtGui import QColor
-    return QColor({"running": "#4FD1C5", "succeeded": "#3BA55D",
-                   "failed": "#E64545", "interrupted": "#FFB020"}.get(status, "#7A90B0"))
-
-
-# ---- 目标行 ----
-
-class TargetRow(QFrame):
-    def __init__(self, target_id, room, name=None, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(44)
-        self.setObjectName("targetRow")
-        self.setStyleSheet(
-            "#targetRow { background: #16283F; border: 1px solid #24405F; border-radius: 8px; }")
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(14, 0, 14, 0)
-        self.name_label = StrongBodyLabel(name or target_id)
-        self.room_label = QLabel(room)
-        self.room_label.setStyleSheet("color: #7A90B0;")
-        self.status_label = QLabel("待命")
-        self.status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        lay.addWidget(self.name_label)
-        lay.addWidget(self.room_label)
-        lay.addStretch(1)
-        lay.addWidget(self.status_label)
-        self.set_status("pending")
-
-    VALID_TRANSITIONS = {
-        # BUG-013：补全终态（failed/succeeded 为终态不再迁移；running→pending 重跑复位）
-        "pending": {"running"},
-        "running": {"succeeded", "failed", "interrupted"},
-        "interrupted": {"running", "succeeded", "failed"},
-        "succeeded": {"pending"},
-        "failed": {"pending"},
-    }
-
-    ALL_STATUS = {"pending", "running", "succeeded", "failed", "interrupted"}
-
-    def set_status(self, status):
-        if status not in self.ALL_STATUS:
-            return
-        cur = getattr(self, "_status", "pending")
-        allowed = self.VALID_TRANSITIONS.get(cur, set())
-        if cur != "pending" and status not in allowed:
-            # BUG-014：非法转换不静默——日志可查（runtime 状态 vs UI 状态漂移排查）
-            import logging
-            logging.getLogger("gui.command_deck").warning(
-                "非法状态转换 %s -> %s（目标 %s）", cur, status, getattr(self, "target_id", "?"))
-            return
-        self._status = status
-        color = STATUS_COLOR.get(status, "#7A90B0")
-        self.status_label.setText(STATUS_TEXT.get(status, status))
-        self.status_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+    return QColor(STATUS_COLOR.get(status, "#7A90B0"))
 
 
 # ---- 实时观测卡片 ----
@@ -287,26 +238,8 @@ class CommandDeck(BasePage):
 
         self.target_combo = ComboBox()
         self._map_groups = {}
-        self._region_groups = {}
         self._combo_data = []  # 每项结构化数据 (kind, payload)，防同名串区
-        combo_items = ["全部目标"]
-        self._combo_data.append(("all", None))
-        for t in self._targets:
-            map_name = t.get("map_name") or "未分组"
-            region = t.get("room") or t.get("region") or "未知区域"
-            if map_name not in self._map_groups:
-                self._map_groups[map_name] = []
-                combo_items.append(f"〔地图〕{map_name}")
-                self._combo_data.append(("map", map_name))
-            self._map_groups[map_name].append(t)
-            key = (map_name, region)
-            if key not in self._region_groups:
-                self._region_groups[key] = []
-                combo_items.append(f"    〔区域〕{region}")
-                self._combo_data.append(("region", key))
-            self._region_groups[key].append(t)
-        self.target_combo.addItems(combo_items)
-
+        self._rebuild_combo()
         self.start_btn = PrimaryPushButton("开始任务")
         self.start_btn.setFixedWidth(120)
         self.stop_btn = PushButton("停止")
@@ -334,23 +267,9 @@ class CommandDeck(BasePage):
         self.rows = {}
         self._map_nodes = {}
         self._region_nodes = {}
-        for t in self._targets:
-            map_name = t.get("map_name") or "未分组"
-            region = t.get("room") or t.get("region") or "未知区域"
-            if map_name not in self._map_nodes:
-                node = QTreeWidgetItem([map_name, ""])
-                self.target_tree.addTopLevelItem(node)
-                self._map_nodes[map_name] = node
-            rkey = (map_name, region)
-            if rkey not in self._region_nodes:
-                rnode = QTreeWidgetItem([f"  {region}", ""])
-                self._map_nodes[map_name].addChild(rnode)
-                self._region_nodes[rkey] = rnode
-            name = t.get("name") or t["id"]
-            leaf = QTreeWidgetItem([f"    {name}", "待命"])
-            self._region_nodes[rkey].addChild(leaf)
-            self.rows[t["id"]] = leaf
-            leaf.setData(0, Qt.UserRole, t["id"])
+        # 队列树跟随目标选择动态过滤（初始=全部目标）
+        self._rebuild_tree([t["id"] for t in self._targets])
+        self.target_combo.currentIndexChanged.connect(self._on_target_filter)
         self.target_tree.expandToDepth(1)
         card_layout(queue_card).addWidget(self.target_tree)
         bottom.addWidget(queue_card, 2)
@@ -372,7 +291,6 @@ class CommandDeck(BasePage):
         self.health_toggle = PushButton("系统状态 ▼")
         self.health_toggle.setFixedWidth(110)
         self.health_toggle.clicked.connect(self._toggle_health)
-        hrow.addWidget(self.health_toggle)
         hrow.addStretch(1)
         footer_layout.addLayout(hrow)
         self.health_bar = RuntimeHealthBar()
@@ -448,8 +366,33 @@ class CommandDeck(BasePage):
         self.run_status.setStyleSheet(
             f"font-size: 15px; font-weight: 700; color: {color};")
 
+    def _rebuild_combo(self):
+        """重建目标下拉（全部目标 + 各大地图）——刷新 targets 后调用。"""
+        self._map_groups = {}
+        self._combo_data = []
+        self.target_combo.clear()
+        # 目标选择只到地图级（全部目标 / 各大地图）——区域/点位选择在任务队列树里
+        self._combo_data.append(("all", None))
+        combo_items = ["全部目标"]
+        for t in self._targets:
+            map_name = t.get("map_name") or "未分组"
+            if map_name not in self._map_groups:
+                self._map_groups[map_name] = []
+                combo_items.append(map_name)
+                self._combo_data.append(("map", map_name))
+            self._map_groups[map_name].append(t)
+        self.target_combo.addItems(combo_items)
+
+    def refresh_targets(self, new_targets):
+        """外部刷新目标数据（录制同步后指挥台联动）——重建 combo + 队列树。"""
+        self._targets = new_targets or []
+        self._rebuild_combo()
+        self._rebuild_tree([t["id"] for t in self._targets])
+        self.target_tree.expandToDepth(1)
+        self.run_status.setText(f"● 已刷新 {len(self._targets)} 个目标")
+
     def _resolve_selection(self, idx):
-        """按 itemData 精确解析（地图/区域同名不串区）。"""
+        """按 itemData 精确解析（当前仅 all/地图 两级）。"""
         data = self._combo_data[idx] if 0 <= idx < len(self._combo_data) else None
         if data is None:
             return []
@@ -458,9 +401,55 @@ class CommandDeck(BasePage):
             return [t["id"] for t in self._targets]
         if kind == "map":
             return [t["id"] for t in self._map_groups.get(payload, [])]
-        if kind == "region":
-            return [t["id"] for t in self._region_groups.get(payload, [])]
         return []
+
+    def _on_target_filter(self, idx):
+        """目标下拉变化 → 队列树动态过滤（只显示选中地图/全部）。"""
+        self._rebuild_tree(self._resolve_selection(idx))
+        self.target_tree.expandToDepth(1)
+
+    def _rebuild_tree(self, ids):
+        """按目标 id 集合重建队列树（地图 → 区域 → 点位，状态行待命）。
+
+        自定义地图（map_name="自定义"）跳过区域级——点位直接挂地图节点
+        （用户要求：不要 地图>区域>点位 三级，只要 自定义>自定义-N 两级）。
+        """
+        self.target_tree.clear()
+        self.rows = {}
+        self._map_nodes = {}
+        self._region_nodes = {}
+        want = set(ids)
+        for t in self._targets:
+            if t["id"] not in want:
+                continue
+            map_name = t.get("map_name") or "未分组"
+            if map_name not in self._map_nodes:
+                node = QTreeWidgetItem([map_name, ""])
+                self.target_tree.addTopLevelItem(node)
+                self._map_nodes[map_name] = node
+            name = t.get("name") or t["id"]
+            # 自定义地图：点位直接挂地图下（无区域级）
+            if map_name == "自定义":
+                leaf = QTreeWidgetItem([f"    {name}", "待命"])
+                self._map_nodes[map_name].addChild(leaf)
+                self.rows[t["id"]] = leaf
+                leaf.setData(0, Qt.UserRole, t["id"])
+                continue
+            region = t.get("room") or t.get("region") or "未知区域"
+            rkey = (map_name, region)
+            if rkey not in self._region_nodes:
+                rnode = QTreeWidgetItem([f"  {region}", ""])
+                self._map_nodes[map_name].addChild(rnode)
+                self._region_nodes[rkey] = rnode
+            leaf = QTreeWidgetItem([f"    {name}", "待命"])
+            self._region_nodes[rkey].addChild(leaf)
+            self.rows[t["id"]] = leaf
+            leaf.setData(0, Qt.UserRole, t["id"])
+
+    def find_region_index(self, english_region):
+        """英文区域 id → 下拉框 index。目标选择已收敛为地图级（区域不进 combo），
+        执行由 _on_guide_run 直接走 matched——返回 None 表示不切换 combo。"""
+        return None
 
     def _on_start(self):
         sel = self.target_combo.currentIndex()
@@ -525,6 +514,11 @@ class CommandDeck(BasePage):
             self.stop_btn.setEnabled(False)
         elif event.type == "state_changed":
             self._last_state = event.to_state
+            # 启动进度反馈（ready:checking:N/6 → 界面归一化进度）
+            d = event.detail or ""
+            if d.startswith("ready:checking:"):
+                self.set_run_status(
+                    f"● 准备游戏画面（{d.split(':')[2]}）…", busy=True)
         elif event.type == "target_progress":
             ctx = event.context
             status = ctx.get("status")
@@ -539,6 +533,19 @@ class CommandDeck(BasePage):
                     action="—", input_info="—",
                     reason=ctx.get("reason") or "目标失败",
                     category=category_text(ctx.get("category")))
+        elif event.type == "fail_recorded":
+            # 失败事件直达检查器（修复：orchestrator 发 fail_recorded，
+            # 原只监听 target_progress/action_executed——检查器永远收不到）
+            ctx = event.context or {}
+            cat = category_text(ctx.get("category")) \
+                or (event.detail or "").split(":")[0]
+            self.inspector.on_failure(
+                run_no=self._run_no, state=self._last_state,
+                observation=self.snapshot.text(),
+                action=event.detail or "—",
+                input_info=f"target={ctx.get('target') or '—'}",
+                reason=ctx.get("error") or event.detail or "未知失败",
+                category=cat)
         elif event.type == "observation":
             ctx = event.context
             self.snapshot.update_snapshot(

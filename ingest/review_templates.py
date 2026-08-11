@@ -6,7 +6,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ingest.vlm_client import QwenVLProvider
 
-TEMPLATE_DIR = Path("knowledge/source/black_tower_test/templates")
+# Bug：目录基于仓库根绝对定位（任意 cwd 启动不写错位置）——原相对路径
+# 在 Desktop 下运行时读写错目录
+TEMPLATE_DIR = (Path(__file__).resolve().parent.parent
+                / "knowledge" / "source" / "black_tower_test" / "templates")
 BATCH = 6
 
 PROMPT = (

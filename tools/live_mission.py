@@ -51,7 +51,6 @@ def _run():
     from runtime.events.bus import EventBus
     from runtime.knowledge_loader import KnowledgePackage
     from runtime.orchestrator import WorkflowOrchestrator
-    from runtime.state_machine import State
 
     _log("=== M1-A 真机单点闭环 ===")
     if _restore_game_window():

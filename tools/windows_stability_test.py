@@ -34,7 +34,7 @@ def main():
     ctypes.windll.user32.SetProcessDPIAware()
 
     # Test 1：窗口枚举与评分
-    from runtime.platform.windows.window import find_best_window, score_window
+    from runtime.platform.windows.window import find_best_window
     from runtime.win_capture import process_identity
     gw = find_best_window()
     if gw is None:
@@ -68,6 +68,8 @@ def main():
             shot = vision.take_screenshot()
             q = getattr(vision, "last_quality", None)
             valid = False
+            dark = 1.0   # 审查：shot 为 None 时必须有默认值（原 UnboundLocalError）
+            var = 0.0
             if shot is not None:
                 arr = np.asarray(shot[0].convert("L")).astype(int)
                 dark = float((arr < 30).mean())

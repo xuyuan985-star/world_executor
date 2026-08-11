@@ -23,7 +23,10 @@ def norm_box(box, w, h, pad=8):
     return [max(0, int(x1) - pad), max(0, int(y1) - pad), min(w, int(x2) + pad), min(h, int(y2) + pad)]
 
 
-def crop(frames, results, out_prefix, kind_name):
+def crop(frames, results, out_prefix, kind_name, capture_dir=None):
+    """裁剪模板。capture_dir：多视频批处理时传对应帧子目录（默认全局 CAPTURE_DIR）——
+    否则帧名 f_%04d 跨视频碰撞/错配。"""
+    capture_dir = capture_dir or CAPTURE_DIR
     out = []
     for r in results:
         data = r.get("data", {})
@@ -49,7 +52,7 @@ def crop(frames, results, out_prefix, kind_name):
                     label = "unknown"
                 if not box or isinstance(box, str):
                     continue
-                img_path = CAPTURE_DIR / r["frame"]
+                img_path = capture_dir / r["frame"]
                 if not img_path.exists():
                     continue
                 # Bug 56：with 打开防文件句柄泄漏（批量裁剪可能锁文件）

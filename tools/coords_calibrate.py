@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-M7 = ROOT.parent / "March7thAssistant"
+M7 = (ROOT / "m7" if (ROOT / "m7" / "main.py").exists() else ROOT.parent / "March7thAssistant")
 
 
 def main():

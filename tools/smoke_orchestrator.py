@@ -4,7 +4,6 @@
 场景2：interact 持续失败 → retry 用尽 → fail_recorded(F1) + target failed。
 """
 import sys
-import time
 from pathlib import Path
 from unittest import mock
 
@@ -589,7 +588,6 @@ def main():
     print(f"[ok] 目标级验证：全局词命中但目标词{target_kw}未命中 → 拒绝 PASS")
 
     # 场景13（#23）：崩溃注入——输入层抛异常 → F1_EXEC 可观测失败（不黑盒崩溃）
-    from runtime.input.replay import ReplayInput as _RI
     bus = EventBus()
     seen = []
     bus.subscribe(lambda e: seen.append((e.type, e.context)))

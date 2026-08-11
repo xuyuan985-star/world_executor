@@ -149,7 +149,6 @@ def _download_resumable(dest, url, cookie, rate_limit_kbps=0, timeout=60):
 
     中断后保留已完成部分，下次从 Range 续传；完成前校验 Content-Length。
     """
-    import os
     import time
     existing = dest.stat().st_size if dest.exists() else 0
     headers = {"User-Agent": UA, "Referer": REFERER, "Cookie": cookie,

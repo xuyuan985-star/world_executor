@@ -8,7 +8,10 @@ from config.version import APP_VERSION
 
 
 def _check_python_version():
-    # Bug 203：Python 版本门槛（3.11+）
+    # Bug 203：GUI 基础门槛 3.11+（pythonw 启动 GUI 本身不依赖 m7 语法）。
+    # 注意：m7 任务中心进程内集成需 3.12+（PEP 701）——但那是任务启动时的
+    # 单独检查（gui/tasks/runner.py），绝不能拦整个 GUI（3.11 环境下 GUI
+    # 打不开 = 功能瘫痪）。
     if sys.version_info < (3, 11):
         raise RuntimeError(
             f"需要 Python 3.11+（当前 {sys.version_info.major}.{sys.version_info.minor}）")

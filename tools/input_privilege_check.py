@@ -35,15 +35,8 @@ def main():
     ctypes.windll.user32.SetProcessDPIAware()
 
     from runtime.win_capture import find_game_window
-    from security.quarantine import install_pylnk3_stub, require_m7_path
-    install_pylnk3_stub()
-    try:
-        from runtime.drivers.march7th.window import ensure_march7th_env
-        require_m7_path(ROOT.parent / "March7thAssistant")
-        ensure_march7th_env()
-    except Exception as e:
-        print(f"[input] march7th env: FAIL ({e!r})")
-        return 1
+    # 数据内化：输入/视觉已自研（win32_backend/template_backend）——
+    # 不再 require March7thAssistant 目录；pylnk3 stub 已随 quarantine 注入
 
     admin = is_admin()
     print(f"[input] process integrity : {'HIGH' if admin else 'LOW'}")
@@ -78,20 +71,26 @@ def main():
                                         ("Attributes", ctypes.c_ulong)]
                         class _TOKEN_MANDATORY_LABEL(ctypes.Structure):
                             _fields_ = [("Label", _SID_AND_ATTRIBUTES)]
-                        label = _TOKEN_MANDATORY_LABEL()
-                        sz = ctypes.wintypes.DWORD()
+                        # 两段式：先查所需大小，再分配足够缓冲——结构体 16 字节
+                        # 装不下 SID 数据（INSUFFICIENT_BUFFER 时 Sid 恒 0）
+                        size = ctypes.wintypes.DWORD()
                         ctypes.windll.advapi32.GetTokenInformation(
-                            tok, 25, ctypes.byref(label),
-                            ctypes.sizeof(label), ctypes.byref(sz))
-                        # 解析完整性 SID 子权威（0x1000=Low, 0x2000=Medium, 0x3000=High）
-                        # SID 布局：Revision(1)+Count(1)+Authority(6)+SubAuthorities[]——偏移 8 起
-                        sid = label.Label.Sid
-                        if sid:
-                            sub_auth = ctypes.cast(
-                                ctypes.c_void_p(sid + 8),
-                                ctypes.POINTER(ctypes.c_ulong))
-                            il = sub_auth[0]
-                            game_integrity = il >= 0x3000
+                            tok, 25, None, 0, ctypes.byref(size))
+                        buf = ctypes.create_string_buffer(size.value or 64)
+                        ok_info = ctypes.windll.advapi32.GetTokenInformation(
+                            tok, 25, buf, len(buf), ctypes.byref(size))
+                        game_integrity = False
+                        if ok_info:
+                            # 解析完整性 SID 子权威（0x1000=Low, 0x2000=Medium, 0x3000=High）
+                            # SID 布局：Revision(1)+Count(1)+Authority(6)+SubAuthorities[]——偏移 8 起
+                            label = ctypes.cast(
+                                buf, ctypes.POINTER(_TOKEN_MANDATORY_LABEL)).contents
+                            sid = label.Label.Sid
+                            if sid:
+                                sub_auth = ctypes.cast(
+                                    ctypes.c_void_p(sid + 8),
+                                    ctypes.POINTER(ctypes.c_ulong))
+                                game_integrity = sub_auth[0] >= 0x3000
                         ctypes.windll.kernel32.CloseHandle(tok)
                 finally:
                     ctypes.windll.kernel32.CloseHandle(handle)

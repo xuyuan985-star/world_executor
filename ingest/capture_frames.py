@@ -5,7 +5,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import json
-import re
 import subprocess
 
 from ingest.vlm_client import QwenVLProvider
@@ -46,17 +45,21 @@ def video_fps(video):
         return None
 
 
-def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
+def extract_frames(video, scale=SCALE, interval=None, max_frames=300,
+                   frame_dir=None):
     """Bug 172：2s 密集固定采样（默认）不漏短现目标；Bug 171：帧数上限。
 
     间隔与上限互斥保障：短间隔 = 不漏关键帧；上限 = 长视频不爆 VLM 请求。
     Bug 226：高帧率视频（120fps）按比例加密采样。
+    frame_dir：多视频批处理时传独立子目录（默认全局 FRAME_DIR）——否则
+    后视频清空帧目录，前视频 results 的帧文件丢失（run_pipeline 多视频 bug）。
     """
+    frame_dir = frame_dir or FRAME_DIR
     # Bug 221：抽帧前磁盘检查（防写一半爆盘）
     check_disk_space()
-    FRAME_DIR.mkdir(parents=True, exist_ok=True)
+    frame_dir.mkdir(parents=True, exist_ok=True)
     # Bug 47：抽帧前清空旧帧（防第二次处理混入上次视频残留）
-    for f in FRAME_DIR.glob("f_*.jpg"):
+    for f in frame_dir.glob("f_*.jpg"):
         f.unlink()
     iv = min(interval or FPS_INTERVAL, 2)  # Bug 172：默认 2s 采样（不漏 1-2s 短现目标）
     fps = video_fps(video)
@@ -67,12 +70,12 @@ def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
             "-vf", vf,
-            str(FRAME_DIR / "f_%04d.jpg"),
+            str(frame_dir / "f_%04d.jpg"),
         ], check=True)
     except subprocess.CalledProcessError as e:
         # Bug 48：抽帧失败带视频上下文（用户知道哪个视频/什么命令失败）
         raise RuntimeError(f"视频抽帧失败: {video}（ffmpeg 返回 {e.returncode}）") from e
-    frames = sorted(FRAME_DIR.glob("f_*.jpg"))
+    frames = sorted(frame_dir.glob("f_*.jpg"))
     # Bug 171：单视频帧数上限（超长视频均匀采样，防 VLM 请求爆炸）
     if len(frames) > max_frames:
         step = len(frames) / max_frames
@@ -80,7 +83,7 @@ def extract_frames(video, scale=SCALE, interval=None, max_frames=300):
         for f in frames:
             if f not in keep:
                 f.unlink()
-        frames = sorted(FRAME_DIR.glob("f_*.jpg"))
+        frames = sorted(frame_dir.glob("f_*.jpg"))
     return frames
 
 

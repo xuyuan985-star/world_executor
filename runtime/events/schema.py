@@ -1,7 +1,6 @@
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from enum import Enum
 from typing import Optional
 
 # #12：事件 schema 版本——字段演化时 bump；replay 按版本兼容解析

@@ -72,6 +72,9 @@ def main():
         print(f"  [{info['status']}] 地图 {name} (areas={info['areas']}, points={info['point_files']})")
     if "--report" in sys.argv:
         i = sys.argv.index("--report")
+        if i + 1 >= len(sys.argv):
+            print("用法: python tools/validate_all.py --report <输出路径>")
+            return 2
         out = Path(sys.argv[i + 1])
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2),
                        encoding="utf-8")

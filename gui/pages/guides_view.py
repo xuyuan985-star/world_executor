@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
                                QListWidgetItem, QPushButton, QSplitter,
                                QVBoxLayout, QWidget)
 
-from qfluentwidgets import CardWidget, StrongBodyLabel
+from qfluentwidgets import CardWidget
 
 from gui.pages.base_page import BasePage, card_title
 
@@ -72,6 +72,9 @@ class GuidesView(BasePage):
         self._reload_timer.start()
 
     def _do_reload(self):
+        # 记住当前选中地图——重载后恢复选中并重渲染右侧（录制后刷新不跳图）
+        cur = self.map_list.currentItem()
+        keep = cur.data(Qt.UserRole) if cur is not None else None
         self.map_list.clear()
         self._maps = {}
         if not GUIDES.exists():
@@ -119,7 +122,19 @@ class GuidesView(BasePage):
             item.setData(Qt.UserRole, md.name)
             self.map_list.addItem(item)
         if self.map_list.count():
-            self.map_list.setCurrentRow(0)
+            # 恢复之前选中的地图（录制/同步后刷新不跳图）；无则回第一张
+            target = 0
+            if keep:
+                for i in range(self.map_list.count()):
+                    if self.map_list.item(i).data(Qt.UserRole) == keep:
+                        target = i
+                        break
+            self.map_list.setCurrentRow(target)
+            # 强制重渲染右侧（setCurrentRow 相同行不触发信号——
+            # "刷新/应用选择"后右侧面板必须重绘，否则看起来无用）
+            cur = self.map_list.currentItem()
+            if cur is not None:
+                self._on_map_selected(cur, None)
 
     def _on_map_selected(self, cur, _prev):
         # 清空区域容器
@@ -131,6 +146,10 @@ class GuidesView(BasePage):
         if cur is None:
             return
         mdir = cur.data(Qt.UserRole)
+        # 自定义地图 → 轨迹管理面板（增删/多选启用）
+        if mdir == "08_custom":
+            self._render_custom_panel()
+            return
         info = self._maps.get(mdir)
         if info is None:
             return
@@ -170,3 +189,110 @@ class GuidesView(BasePage):
 
     def _on_run(self, mdir, region):
         self.run_requested.emit(mdir, region)
+
+    # ---------- 自定义地图（轨迹管理） ----------
+
+    def _render_custom_panel(self):
+        """自定义地图：轨迹文件管理面板——多选启用为目标 + 增删文件。"""
+        from PySide6.QtWidgets import (QCheckBox, QPushButton, QVBoxLayout,
+                                       QHBoxLayout, QLabel as _QL)
+        from gui.pages.placeholder import card_layout
+        from knowledge.guides_loader import (sync_custom_map,
+                                             custom_enabled_names)
+        self.set_status("自定义 — 勾选启用为目标（指挥台可见），可删除轨迹")
+        enabled = custom_enabled_names()
+
+        card = CardWidget()
+        card_title(card, "轨迹文件（勾选 = 作为目标展示）")
+        # 复用统一布局（card_title 已初始化——切勿再 new QVBoxLayout 替换）
+        v = card_layout(card)
+
+        traj_dir = Path(__file__).resolve().parent.parent.parent \
+            / "knowledge" / "trajectories"
+        files = sorted(traj_dir.glob("*.json")) if traj_dir.exists() else []
+        if not files:
+            v.addWidget(_QL("暂无轨迹——先在世界图点「● 录制轨迹」录一段"))
+            self.region_layout.addWidget(card)
+            self.region_layout.addStretch(1)
+            return
+
+        # 全选/全不选
+        top = QHBoxLayout()
+        sel_all = QPushButton("全选")
+        sel_none = QPushButton("全不选")
+        top.addWidget(sel_all)
+        top.addWidget(sel_none)
+        top.addStretch(1)
+        v.addLayout(top)
+
+        checks = []
+        for tf in files:
+            cb = QCheckBox(tf.name)
+            cb.setChecked(tf.name in enabled)
+            checks.append((tf, cb))
+            v.addWidget(cb)
+
+        # 底部操作：应用选择 / 删除选中 / 刷新
+        bottom = QHBoxLayout()
+        apply_btn = QPushButton("应用选择")
+        del_btn = QPushButton("删除选中")
+        refresh_btn = QPushButton("刷新")
+        for b in (apply_btn, del_btn, refresh_btn):
+            bottom.addWidget(b)
+        bottom.addStretch(1)
+        v.addLayout(bottom)
+        self.region_layout.addWidget(card)
+
+        def _apply():
+            sel = [tf.name for tf, cb in checks if cb.isChecked()]
+            n = sync_custom_map(sel)
+            self.set_status(f"已应用：{n} 条轨迹作为目标（指挥台已刷新）")
+            self.reload()
+            # 指挥台联动刷新（目标下拉 + 任务队列）
+            try:
+                mw = self.window()
+                if mw is not None and hasattr(mw, "refresh_command_deck"):
+                    mw.refresh_command_deck()
+            except Exception:
+                pass
+
+        def _delete():
+            import os
+            removed = 0
+            for tf, cb in checks:
+                if cb.isChecked():
+                    try:
+                        os.remove(tf)
+                        removed += 1
+                    except Exception:
+                        pass
+            if removed:
+                # 删除后按剩余勾选同步（修复：原 sync_custom_map() 不带
+                # enabled——"应用选择"的启用子集被重置为全部启用）
+                sel = [tf.name for tf, cb in checks if cb.isChecked()]
+                sync_custom_map(sel)
+                self.set_status(f"已删除 {removed} 条轨迹")
+                self.reload()
+                # 指挥台联动刷新（删除后目标/队列同步移除）
+                try:
+                    mw = self.window()
+                    if mw is not None and hasattr(mw, "refresh_command_deck"):
+                        mw.refresh_command_deck()
+                except Exception:
+                    pass
+            else:
+                self.set_status("未选择任何轨迹")
+
+        def _refresh():
+            self.reload()
+
+        def _toggle_all(v):
+            for _, cb in checks:
+                cb.setChecked(v)
+
+        apply_btn.clicked.connect(_apply)
+        del_btn.clicked.connect(_delete)
+        refresh_btn.clicked.connect(_refresh)
+        sel_all.clicked.connect(lambda: _toggle_all(True))
+        sel_none.clicked.connect(lambda: _toggle_all(False))
+        self.region_layout.addStretch(1)

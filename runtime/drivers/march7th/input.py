@@ -1,12 +1,10 @@
-"""March7th 输入桥接：实现 InputBackend 协议 + execute(ActionIntent)。
+"""March7th 输入桥接（数据内化）：全自研——不再 import m7 的 module.automation。
 
-官方原语（automation.py 源码确认）：
-  auto.click_element(path, "image", threshold, max_retries)   # 模板点击
-  auto.click_element(text, "text", include, max_retries, crop) # 文字点击
-  auto.press_key(key, wait_time)                               # 按键
-内部完成 截图→查找→坐标换算→pyautogui 点击，坐标体系由 March7th 保证。
+click/move/press_key/release_key → runtime.input.win32_backend（SendInput）
+click_template → runtime.input.template_backend（cv2 多尺度 + Win32 点击）
+click_text → 自研 OCR 定位（ocr_engine）+ 点击
 """
-from runtime.drivers.march7th.window import ensure_march7th_env
+
 from runtime.input.base import InputBackend, InputResult
 
 
@@ -14,67 +12,34 @@ class March7thInputBackend(InputBackend):
     name = "march7th"
 
     def __init__(self):
-        ensure_march7th_env()
-        from module.automation import auto
-        self.auto = auto
+        # 数据内化：构造零外部依赖（不再 ensure_march7th_env / import module）
+        from runtime.input.win32_backend import Win32Backend
+        self.backend = Win32Backend()
 
     def _wrap(self, action, fn, *args, **kw):
         try:
-            fn(*args, **kw)
+            r = fn(*args, **kw)
+            if getattr(r, "success", None) is False:
+                return r
             return InputResult(success=True, action=action, backend=self.name)
         except Exception as e:
             return InputResult(success=False, action=action, backend=self.name,
                                error=f"{type(e).__name__}: {e}")
 
     def click(self, x, y):
-        return self._wrap("click", self.auto.mouse_click, int(x), int(y))
+        return self._wrap("click", self.backend.click, int(x), int(y))
 
     def move(self, x, y):
-        return self._wrap("move", self.auto.mouse_move, int(x), int(y))
+        return self._wrap("move", self.backend.move, int(x), int(y))
 
     def press_key(self, key, wait_time=0.2):
-        """#43/BUG-06：最低层组合 keyDown→sleep→finally keyUp——
-        March7th press_key 内部 keyDown→sleep→keyUp 一体且无 finally，
-        sleep 卡死/异常时按键会卡死；此处用独立原语组合保证 finally 释放。
-        BUG-027：keyUp 失败必须报失败（否则 W 键卡住还报成功——实体输入 P0）。
-        """
-        import time
-        try:
-            self.auto.press_key_down(key)
-        except Exception as e:
-            return InputResult(success=False, action="press_key", backend=self.name,
-                               error=f"keydown:{type(e).__name__}: {e}")
-        released = False
-        try:
-            time.sleep(wait_time)
-        finally:
-            try:
-                self.auto.press_key_up(key)
-                released = True
-            except Exception:
-                # 最后兜底：pyautogui keyUp（March7th 依赖保证可用）
-                try:
-                    import pyautogui
-                    pyautogui.keyUp(key)
-                    released = True
-                except Exception:
-                    released = False
-        if not released:
-            return InputResult(success=False, action="press_key", backend=self.name,
-                               error="keyup_failed")
-        return InputResult(success=True, action="press_key", backend=self.name,
-                           method="key")
+        """最低层组合 keyDown→sleep→finally keyUp（win32_backend 内部保证
+        finally 释放——卡死/异常时按键不卡住）。"""
+        return self.backend.press_key(key, wait_time)
 
     def release_key(self, key):
-        """#42：兜底 keyup（防卡键），pyautogui 由 March7th 依赖保证可用。"""
-        try:
-            import pyautogui
-            pyautogui.keyUp(key)
-            return InputResult(success=True, action="release_key", backend=self.name,
-                               method="key")
-        except Exception as e:
-            return InputResult(success=False, action="release_key", backend=self.name,
-                               error=f"{type(e).__name__}: {e}")
+        """兜底 keyup（防卡键）。"""
+        return self.backend.release_key(key)
 
     def execute(self, intent):
         """执行 ActionIntent（不接触坐标的动作语义）。"""
@@ -92,8 +57,7 @@ class March7thInputBackend(InputBackend):
                            error=f"unknown_method:{intent.method}")
 
     def click_template(self, path, threshold, max_retries, scale_range=None):
-        # 模板点击走自研 cv2 多尺度匹配（March7th 匹配在部分环境导入链
-        # 被 security stub 污染且分数偏低）——见 runtime/input/template_backend.py
+        # 模板点击走自研 cv2 多尺度匹配（见 runtime/input/template_backend.py）
         from runtime.input.template_backend import TemplateMatcher
         try:
             result = TemplateMatcher(threshold=threshold).click_template(
@@ -108,8 +72,19 @@ class March7thInputBackend(InputBackend):
         result.detail["backend"] = self.name + "+win32"
         return result
 
-    def click_text(self, text, include, max_retries, crop):
-        ok = bool(self.auto.click_element(text, "text", max_retries=max_retries,
-                                          include=include, crop=crop))
-        return InputResult(success=ok, action="click_text", backend=self.name,
-                           error=None if ok else "click_text_failed")
+    def click_text(self, text, include=True, max_retries=3, crop=None):
+        """自研：OCR 定位文本 → 框中心点击（替代 m7 auto.click_element text）。"""
+        import time
+        from runtime.drivers.march7th.vision import March7thVision
+        vision = March7thVision()
+        for _ in range(max(1, max_retries or 1)):
+            box = vision.find_text(text, include=include, crop=crop)
+            if box:
+                (lx, ty), (rx, by) = box
+                r = self.backend.click((lx + rx) // 2, (ty + by) // 2)
+                if r.success:
+                    return InputResult(success=True, action="click_text",
+                                       backend=self.name)
+            time.sleep(0.5)
+        return InputResult(success=False, action="click_text", backend=self.name,
+                           error="click_text_failed")

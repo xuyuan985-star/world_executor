@@ -8,16 +8,18 @@
   --check-only：只报告状态不执行（诊断用）
 """
 import argparse
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# m7：优先同级（Desktop/March7thAssistant），兜底 WorldExecutor 内
+# 数据内化：m7 主路径 = 项目内 m7/（clone 进来，运行时零外部依赖）；
+# 外部 March7thAssistant 仅作更新源兜底
+M7_INNER = ROOT / "m7"
 M7_SIBLING = ROOT.parent / "March7thAssistant"
-M7_INNER = ROOT / "March7thAssistant"
-M7 = M7_SIBLING if (M7_SIBLING / "main.py").exists() else M7_INNER
+M7 = M7_INNER if (M7_INNER / "main.py").exists() else M7_SIBLING
 M7_VENV = ROOT / "m7_venv"
 
 REQUIREMENTS = M7 / "requirements.txt"
@@ -60,17 +62,17 @@ def ensure_m7_repo():
     if not shutil.which("git"):
         log("[错误] 未找到 git——无法拉取 March7thAssistant（请安装 git 后重试）")
         return False
-    # 目标目录：同级优先，失败再 WorldExecutor 内
-    target = M7_SIBLING
-    log("克隆 March7thAssistant（官方仓库）…")
+    # 目标：项目内 m7/ 优先（数据内化），失败再外部同级
+    target = M7_INNER
+    log(f"克隆 March7thAssistant（官方仓库）→ {target} …")
     r = run(["git", "clone", "--depth", "1",
              "https://github.com/moesnow/March7thAssistant.git", str(target)],
             ROOT, timeout=1800)
     if r.returncode == 0 and (target / "main.py").exists():
         return True
-    # 同级失败（权限/路径）→ WorldExecutor 内
-    log("同级克隆失败——尝试克隆到程序目录内…")
-    target = M7_INNER
+    # 项目内失败（权限/路径）→ 外部同级兜底
+    log("项目内克隆失败——尝试克隆到同级目录…")
+    target = M7_SIBLING
     r = run(["git", "clone", "--depth", "1",
              "https://github.com/moesnow/March7thAssistant.git", str(target)],
             ROOT, timeout=1800)
@@ -86,7 +88,9 @@ def ensure_m7_venv():
         log("[错误] 未找到 Python 3.12+（m7 官方要求）——请安装 Python 3.12+ 后重试")
         return False
     log(f"创建 m7_venv（{py}）…")
-    r = run(py.split() + ["-m", "venv", str(M7_VENV)], ROOT, timeout=300)
+    # py 可能为 "py -3.14" 或含空格的 sys.executable 路径——shlex 正确拆分
+    # （原 py.split() 会把 "C:\Program Files\Python312\python.exe" 按空格拆断）
+    r = run(shlex.split(py) + ["-m", "venv", str(M7_VENV)], ROOT, timeout=300)
     if r.returncode != 0 or not (M7_VENV / "Scripts" / "python.exe").exists():
         return False
     # 依赖（排除 pylnk3 投毒包）

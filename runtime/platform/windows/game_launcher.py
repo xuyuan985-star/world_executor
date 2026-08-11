@@ -4,7 +4,7 @@
 360s）→ 窗口就绪后尝试点"点击进入"（m7 click_enter.png 资产——游戏启动
 后的进入界面按钮）。点进入失败不阻塞（登录态/加载慢——用户手动处理）。
 
-game_path 来源：m7 config.yaml（任务中心与 m7 共用配置）。
+game_path 来源：项目内 m7/config.yaml（数据内化——m7 源码已迁入）。
 """
 import subprocess
 import time
@@ -13,11 +13,21 @@ from pathlib import Path
 from runtime.win_capture import GAME_TITLE, find_game_window
 
 
+def _m7_root():
+    """数据内化：m7 主路径 = world_executor/m7（旧 March7thAssistant 兜底）。"""
+    root = Path(__file__).resolve().parent.parent.parent.parent / "m7"
+    if not (root / "config.yaml").exists():
+        _alt = (Path(__file__).resolve().parent.parent.parent.parent.parent
+                / "March7thAssistant")
+        if (_alt / "config.yaml").exists():
+            return _alt
+    return root
+
+
 def m7_config_value(key, default=None, m7_root=None):
     """读 m7 config.yaml 任意键（ruamel 保类型；失败返回 default）。"""
     if m7_root is None:
-        m7_root = (Path(__file__).resolve().parent.parent.parent.parent.parent
-                   / "March7thAssistant")
+        m7_root = _m7_root()
     cfg_path = Path(m7_root) / "config.yaml"
     if not cfg_path.exists():
         return default
@@ -34,10 +44,7 @@ def m7_config_value(key, default=None, m7_root=None):
 def game_executable(m7_root=None):
     """m7 config.yaml 的 game_path（本地游戏可执行文件路径）。"""
     if m7_root is None:
-        # game_launcher 在 world_executor/runtime/platform/windows/——
-        # 上溯 5 级到 Open Code/，m7 是 world_executor 的兄弟目录
-        m7_root = (Path(__file__).resolve().parent.parent.parent.parent.parent
-                   / "March7thAssistant")
+        m7_root = _m7_root()
     cfg_path = Path(m7_root) / "config.yaml"
     if not cfg_path.exists():
         return None
@@ -53,14 +60,17 @@ def game_executable(m7_root=None):
 
 
 def launch_game_process(executable):
-    """启动游戏 exe（m7 同款：cmd start 带工作目录；失败 Popen 兜底）。"""
+    """启动游戏 exe（m7 同款：cmd start 带工作目录；失败 Popen 兜底）。
+
+    参数化 argv 传递（不拼 shell 字符串、不用 shell=True——架构 lint 禁
+    subprocess.call/shell=True，且消除注入面）。
+    """
     folder = str(Path(executable).parent)
     try:
-        code = subprocess.call(
-            f'cmd /C start "" /D "{folder}" "{executable}"',
-            shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        if code == 0:
-            return True
+        subprocess.Popen(
+            ["cmd", "/C", "start", "", "/D", folder, executable],
+            cwd=folder, creationflags=subprocess.CREATE_NO_WINDOW)
+        return True
     except Exception:
         pass
     try:
@@ -89,7 +99,7 @@ def click_enter_if_present(max_tries=5, interval=10.0):
     返回是否点过。
     """
     m7_assets = (Path(__file__).resolve().parent.parent.parent.parent
-                 / "March7thAssistant" / "assets" / "images" / "screen" / "click_enter.png")
+                 / "m7" / "assets" / "images" / "screen" / "click_enter.png")
     if not m7_assets.exists():
         return False
     from runtime.input.template_backend import TemplateMatcher

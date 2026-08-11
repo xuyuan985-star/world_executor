@@ -114,10 +114,10 @@ def check_gui_smoke():
         app = QApplication.instance() or QApplication([])
         from gui.pages.command_deck import CommandDeck
         from gui.pages.placeholder import (KnowledgePage, ObservationPage,
-                                           SettingsPage, StudioPage,
+                                           SettingsPage, TaskCenterPage,
                                            WorldGraphPage)
         for cls in (CommandDeck, KnowledgePage, ObservationPage, SettingsPage,
-                    StudioPage, WorldGraphPage):
+                    TaskCenterPage, WorldGraphPage):
             p = cls([]) if cls is CommandDeck else cls()
             p.deleteLater()
     except Exception as e:

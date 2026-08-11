@@ -2,9 +2,8 @@ import threading
 from dataclasses import dataclass
 from typing import Optional
 
-from runtime import db
 from runtime.events.bus import EventBus
-from runtime.events.schema import WorldEvent, make_event
+from runtime.events.schema import make_event
 
 
 @dataclass
@@ -44,6 +43,11 @@ class RuntimeAPI:
         self._state = new_state
 
     def start_mission(self, spec: MissionSpec, runner_factory=None):
+        # 审查：runtime 层防重入（UI 防重入是前端，这里双保险）——
+        # 旧 runner 线程未退出时启动新线程会双执行（paused/stopped 收尾期）
+        if self._thread is not None and self._thread.is_alive():
+            raise RuntimeError(
+                f"任务仍在运行（state={self._state}）——请先停止再启动")
         self._pending_requires = spec.requires
         self._stop_event.clear()  # #6
 
@@ -61,8 +65,7 @@ class RuntimeAPI:
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "invalid", "errors": len(errors)}))
                 self._set_state("idle")  # Bug 5：清理状态，下次点击不受污染
-                self._runner = None
-                self._thread = None
+                self._clear_runner()
                 return "invalid"
 
             # 自动置顶/拉起：gate 检查前先激活游戏窗口（否则 foreground=False
@@ -87,12 +90,14 @@ class RuntimeAPI:
                     game = find_game_window()
                 if game:
                     set_foreground_with_retry(game["hwnd"])
+                    # 修复（0.6.0 排查）：SetForegroundWindow 异步——前台切换
+                    # 有延迟，立即 gate 检查 foreground 会误判 False 拦截。
+                    # 等前台稳定（0.5s）再检查。
+                    import time as _time
+                    _time.sleep(0.5)
             except Exception:
                 pass
-            gate = self._gate_check(bus, execution_id, pkg)
-            if gate is not None:
-                return gate
-
+            gate = None
             targets = spec.target_ids or [c["id"] for c in pkg.chests]
             # 7×24 防御：空目标 → 明确 no_targets（不能空跑后误报 all_done——
             # all(空dict) 恒 True 是误操作源头）
@@ -100,9 +105,38 @@ class RuntimeAPI:
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "no_targets"}))
                 self._set_state("idle")
-                self._runner = None
-                self._thread = None
+                self._clear_runner()
                 return "no_targets"
+            # 纯轨迹回放（自定义地图目标）：跳过 G3 环境门槛——
+            # 纯播放不需要 OCR/视觉/环境检测，秒开（0.6.0 修复）
+            replay_only = True
+            try:
+                from pathlib import Path as _P
+                _traj_dir = _P(__file__).resolve().parent.parent.parent \
+                    / "knowledge" / "trajectories"
+                for _tid in targets:
+                    _wf = pkg.workflow(_tid)
+                    if _wf is not None:
+                        _steps = _wf.get("steps") or []
+                        if not _steps or not all(
+                                _s.get("type") == "trajectory"
+                                for _s in _steps):
+                            replay_only = False
+                            break
+                    elif not (_traj_dir / f"{_tid}.json").exists():
+                        replay_only = False
+                        break
+            except Exception:
+                replay_only = False
+            if not replay_only:
+                gate = self._gate_check(bus, execution_id, pkg)
+                if gate is not None:
+                    self._clear_runner()
+                    return gate
+            else:
+                bus.publish(make_event("state_changed", execution_id,
+                                       detail="replay_only:skip_gate",
+                                       context={"action": "replay_only"}))
             self._set_state("running")
             bus.publish(make_event("run_started", execution_id,
                                    context={"knowledge": knowledge_dir,
@@ -117,6 +151,14 @@ class RuntimeAPI:
                                             execution_id=execution_id,
                                             use_vlm=True,
                                             stop_check=self._stop_event.is_set)
+                # 修复（0.6.0 F10 急停审查）：orchestrator 创建后、执行前
+                # 再检查——F10 在启动期按下 → 不开始任何执行
+                if self._stop_event.is_set():
+                    self._set_state("stopped")
+                    bus.publish(make_event("run_finished", execution_id,
+                                           context={"result": "stopped"}))
+                    self._clear_runner()
+                    return "stopped"
                 results, completed = orch.run_mission(targets)
                 result = ("stopped" if self._stop_event.is_set()
                           else ("all_done" if all(results.values())
@@ -125,17 +167,30 @@ class RuntimeAPI:
                                        context={"results": results,
                                                 "completed_targets": completed,
                                                 "records": orch.session_summary()}))
-                self._set_state("done")
+                # 审查：stopped 必须保留 stopped 状态（原无条件设 done——
+                # 停止后 runtime state 被覆盖成 done，语义错误）
+                self._set_state("stopped" if result == "stopped" else "done")
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": result}))
+                self._clear_runner()
                 return result
             except Exception as e:  # #9：real 执行异常 → 显式 run_finished(crashed)，GUI 不永久卡运行
                 import traceback
                 traceback.print_exc()
+                # 修复（0.6.0 F10 急停审查）：异常由外部停止引起（界面归一化
+                # 期 F10）→ 归 stopped 而非 crashed（急停≠崩溃，UI 不该报故障）
+                if self._stop_event.is_set():
+                    self._set_state("stopped")
+                    bus.publish(make_event("run_finished", execution_id,
+                                           context={"result": "stopped",
+                                                    "error": str(e)}))
+                    self._clear_runner()
+                    return "stopped"
                 self._set_state("crashed")
                 bus.publish(make_event("run_finished", execution_id,
                                        context={"result": "crashed",
                                                 "error": str(e)}))
+                self._clear_runner()
                 return "crashed"
 
         import uuid
@@ -160,11 +215,15 @@ class RuntimeAPI:
         return str(root / knowledge_dir)
 
     def _gate_check(self, bus, execution_id, pkg):
-        """G3 门槛：health 全绿才进 real mission（企划 v0.12.2 §2.4）。
+        """G3 门槛：健康检查（企划 v0.12.2 §2.4）。
 
-        含 Capability Gate（第四批审查 P0）：window/capture/ocr/vlm + foreground/admin + input L0/L1，
-        L2 失败即拦——避免"点击失败→重试→点击失败→F1"死循环（根因：权限/前台未满足）。
-        #15：spec.requires 可追加任务必需能力键。
+        0.6.0 调整：只硬拦"缺了真没法跑"的能力——
+          critical = window/capture/ocr/vlm（无窗口/截不了图/认不了字）
+          warning  = foreground/admin/input L0-L2（提示风险，不拦截：
+            非管理员对同权限游戏 SendInput 有效（UIPI 只拦低→高）；
+            前台拉置顶失败执行中会自然重试——硬拦导致"点开始就环境
+            不对"的挫败感，且把可尝试的任务全挡）
+        #15：spec.requires 可追加任务必需能力键（仍硬拦）。
         """
         from runtime.health import check_health
         from runtime.capability import detect_capability
@@ -172,11 +231,13 @@ class RuntimeAPI:
         #（会按 ESC 并抢前台——GUI 启动的健康检查不能打扰用户）
         h = check_health(input_probe=True, auto_activate=True)
         cap = h["capability"]
-        critical = ["window", "capture", "ocr", "vlm", "foreground", "admin"]
-        fails = [k for k in critical if not cap.get(k)] + [k for k in ("input_l0", "input_l1")
-                                                           if not cap.get(k)]
+        critical = ["window", "capture", "ocr", "vlm"]
+        fails = [k for k in critical if not cap.get(k)]
+        # 非硬性项：提示但不拦截（前台/管理员/输入注入）
+        warns = [k for k in ("foreground", "admin", "input_l0", "input_l1")
+                 if cap.get(k) is False]
         if cap.get("input_l2") is False:
-            fails.append("input_l2")
+            warns.append("input_l2")
         for req in (self._pending_requires or []):
             if req not in cap or not cap.get(req):
                 fails.append(req)
@@ -193,6 +254,12 @@ class RuntimeAPI:
                                             "errors": h["errors"]}))
             self._set_state("gate_blocked")
             return "gate_blocked"
+        if warns:
+            # 非硬性警告：随 run_started 发出（GUI 提示，不拦截）
+            bus.publish(make_event("state_changed", execution_id,
+                                   detail="gate_warnings",
+                                   context={"warns": warns,
+                                            "errors": h["errors"]}))
         return None
 
     def pause(self):
@@ -220,12 +287,18 @@ class RuntimeAPI:
         """公开状态（Bug 24：GUI 不直接读私有 _state）。"""
         return self._state
 
+    def _clear_runner(self):
+        """runner 线程完成 → 清引用（防重入检查依赖 _thread.is_alive）。"""
+        self._runner = None
+        self._thread = None
+
     def stop(self):
         # #6：真停止——置信号；orchestrator 每 step 检查 stop_check 即中断
         self._stop_event.set()
-        # Bug 80：停止即清理运行上下文（防下次启动残留旧任务状态）
+        # Bug 80：停止即清理运行上下文（防下次启动残留旧任务状态）。
+        # 审查：保留 _thread 引用（不置 None）——start_mission 防重入靠
+        # is_alive() 判断旧线程是否真退出（置 None 后无法判断 → 双执行风险）
         self._runner = None
-        self._thread = None
         self._set_state("stopped")
         return self._state
 

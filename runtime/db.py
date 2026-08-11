@@ -1,6 +1,5 @@
 import sqlite3
 import threading
-from pathlib import Path
 
 from config import settings
 
@@ -105,38 +104,11 @@ def record_event(event):
     db.commit()
 
 
-def replay_events(execution_id, limit=500):
-    db = conn()
-    rows = db.execute(
-        "SELECT * FROM events WHERE execution_id=? ORDER BY id DESC LIMIT ?",
-        (execution_id, limit),
-    ).fetchall()
-    return [dict(r) for r in reversed(rows)]
-
-
 def record_state_observation(target_id, value, observer, confidence=None):
     db = conn()
     db.execute(
         "INSERT INTO state_observation (target_id, value, observer, confidence) VALUES (?, ?, ?, ?)",
         (target_id, value, observer, confidence),
-    )
-    db.commit()
-
-
-def record_fail(execution_id, target_id, fail_type, reason, screenshot_path=None):
-    db = conn()
-    db.execute(
-        "INSERT INTO fail_log (execution_id, target_id, fail_type, fail_reason, screenshot_path) VALUES (?, ?, ?, ?, ?)",
-        (execution_id, target_id, fail_type, reason, screenshot_path),
-    )
-    db.commit()
-
-
-def record_progress(execution_id, target_id, room, status):
-    db = conn()
-    db.execute(
-        "UPDATE progress SET status=?, room=?, ended_at=CASE WHEN ? IN ('DONE','ABORT') THEN datetime('now','localtime') ELSE ended_at END WHERE execution_id=? AND target_id=?",
-        (status, room, status, execution_id, target_id),
     )
     db.commit()
 

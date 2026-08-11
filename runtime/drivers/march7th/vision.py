@@ -1,18 +1,9 @@
-"""March7th 视觉桥接：后台截图 / OCR / 模板匹配封装。
+"""March7th 视觉桥接（数据内化）：截图 / OCR / 模板匹配 / 坐标全自研。
 
-坐标体系（源码确认）：截图内坐标 + screenshot_pos（客户区左上角绝对屏幕坐标）= 绝对坐标；
+坐标体系：截图内坐标 + screenshot_pos（客户区左上角绝对屏幕坐标）= 绝对坐标；
 >1920px 截图由 screenshot_scale_factor 归一化。执行器不感知 relative/DPI。
+不依赖 March7thAssistant 目录（win_capture / ocr_engine / template_backend）。
 """
-import os
-import sys
-import threading
-
-from runtime.drivers.march7th.window import ensure_march7th_env
-
-# Bug 5：March7th 构造需要 cwd=M7_ROOT（读 ./config.yaml），但 os.chdir 是
-# 进程级——多线程（GUI HealthWorker/FrameWorker）会互相污染 cwd。
-# 锁内构造 + 构造完立即恢复：cwd 只在瞬态窗口内处于 M7。
-_M7_INIT_LOCK = threading.Lock()
 
 # Bug 155：OCR 文本清洗（形近字归一：宝箱O→宝箱0，全角→半角）
 _OCR_TRANSLATE = str.maketrans({
@@ -161,19 +152,20 @@ def merge_ocr_lines(results, y_tol=16.0):
 
 
 class March7thVision(VisionInterface):
+    """视觉桥接（数据内化：全自研栈——不再 import m7 的 module.*）。
+
+    截图：runtime/win_capture（PrintWindow 后台 → 前台 mss 兜底）
+    OCR：runtime/ocr_engine（rapidocr 直连）
+    模板匹配：runtime/input/template_backend（cv2 多尺度）
+    窗口：runtime/win_capture（自研枚举）
+    """
+
     name = "march7th"
 
     def __init__(self):
-        with _M7_INIT_LOCK:
-            saved = os.getcwd()
-            try:
-                ensure_march7th_env()
-                from module.automation import auto
-                from module.ocr import ocr
-            finally:
-                os.chdir(saved)  # 构造完成即恢复（后续截图/OCR 不依赖 cwd）
-        self.auto = auto
-        self.ocr = ocr
+        # 数据内化：构造零外部依赖（不再 ensure_march7th_env / import module）
+        self._ocr_engine = None
+        self._matcher = None
         # #17-G：最近一次截图的结构质量（成功 ≠ 正确，供调用方在进 VLM 前决策）
         self.last_quality = None
         self._validator = None
@@ -185,54 +177,65 @@ class March7thVision(VisionInterface):
             self._validator = FrameValidator()
         return self._validator
 
-    def take_screenshot(self, crop=None):
-        """#39 截图降级链：PrintWindow 后台 → 前台 mss（失败不裸崩）。
+    @property
+    def matcher(self):
+        """自研 cv2 多尺度模板匹配器（懒加载）。"""
+        if self._matcher is None:
+            from runtime.input.template_backend import TemplateMatcher
+            self._matcher = TemplateMatcher()
+        return self._matcher
 
-        返回 (PIL.Image, screenshot_pos, scale_factor)。
-        crop：截图内归一化裁剪（0-1 四元组），仅 PrintWindow 路径支持；
-        前台 mss 降级时忽略 crop（整帧）。
-        #17-G：返回前做结构质量校验（全黑/全白/黑边），记入 self.last_quality——
-        不抛异常（截图本身成功），由调用方在进 OCR/VLM 前决策。
-        BUG-26：降级原因记录进 last_quality.meta.fallback_chain——排查
-        "为什么一直走 mss"有据可查。
-        """
-        source = "print_window"
-        chain = []
-        try:
-            if crop is None:
-                out = self.auto.take_screenshot()
-            else:
-                out = self.auto.take_screenshot(crop=crop)
-        except Exception as e:
-            chain.append(f"print_window_failed:{type(e).__name__}")
-            out = None
-        if out is None:
+    @property
+    def ocr(self):
+        """OCR 引擎（懒加载——rapidocr 模型首次调用加载）；不可用返回 None。"""
+        if self._ocr_engine is None:
             try:
-                from runtime.win_capture import capture_game_foreground
-                from runtime.drivers.march7th.window import find_game_window
-                import win32gui
-                game = find_game_window()
-                if game is None:
-                    raise RuntimeError("no game window for foreground capture")
-                img = capture_game_foreground(game)
-                # BUG-017：game["client"] 是 (宽,高) 不是 (left,top)——必须
-                # ClientToScreen 取客户区左上角绝对屏幕坐标，否则降级路径
-                # 坐标全错（视觉正确/点击偏移——最危险故障）
-                left, top = win32gui.ClientToScreen(game["hwnd"], (0, 0))
-                w, h = game["client"]
-                out = (img, (left, top, left + w, top + h), 1.0)
-                source = "foreground_mss"
-            except Exception as e:
-                chain.append(f"foreground_mss_failed:{type(e).__name__}")
-                raise RuntimeError("截图降级链失败：PrintWindow 与前台 mss 均不可用")
-        img = out[0]
-        self.last_quality = self.validator.validate(img, source=source)
-        if chain:
-            self.last_quality.meta["fallback_chain"] = chain
+                from runtime.ocr_engine import _get_engine
+                self._ocr_engine = _get_engine()
+            except Exception:
+                self._ocr_engine = None
+        return self._ocr_engine
+
+    def _capture(self, crop=None):
+        """自研截图：PrintWindow 后台优先 → 前台 mss 兜底。
+
+        返回 (PIL.Image, client_pos, scale)；client_pos = (left, top, right, bottom)
+        客户区绝对屏幕坐标。crop（截图内归一化 0-1 四元组）在 PrintWindow
+        路径支持；前台兜底路径忽略 crop（整帧）。
+        """
+        from runtime.win_capture import (find_game_window, try_capture_window,
+                                         capture_game_foreground)
+        import win32gui
+        game = find_game_window()
+        if game is None:
+            raise RuntimeError("no game window")
+        try:
+            img = try_capture_window(game)
+            source = "print_window"
+        except Exception:
+            img = capture_game_foreground(game)
+            source = "foreground_mss"
+        left, top = win32gui.ClientToScreen(game["hwnd"], (0, 0))
+        w, h = game["client"]
+        if crop is not None and source == "print_window":
+            x1, y1, x2, y2 = crop
+            iw, ih = img.size
+            img = img.crop((int(x1 * iw), int(y1 * ih),
+                            int(x2 * iw), int(y2 * ih)))
+        return img, (left, top, left + w, top + h), 1.0
+
+    def take_screenshot(self, crop=None):
+        """截图 → (PIL.Image, screenshot_pos, scale_factor)。
+
+        #17-G：返回前做结构质量校验（全黑/全白/黑边），记入 last_quality——
+        不抛异常（截图本身成功），由调用方在进 OCR/VLM 前决策。
+        """
+        out = self._capture(crop=crop)
+        self.last_quality = self.validator.validate(out[0], source="self")
         return out
 
     def screenshot_path(self, out_dir):
-        """后台截图落盘，返回路径（VLM 观测帧用）。"""
+        """截图落盘，返回路径（VLM 观测帧用）。"""
         import time
         from pathlib import Path
         shot = self.take_screenshot()
@@ -243,30 +246,50 @@ class March7thVision(VisionInterface):
         return p
 
     def ocr_lines(self, crop=(0, 0, 1, 1)):
-        """OCR 返回 [(text, box), ...]，box 为四点 [(x,y),...] 截图内坐标。
+        """OCR 返回 [(text, box)]，box 为四点 [(x,y),...] 截图内坐标。
 
-        Bug 155：文本经 normalize_ocr 清洗（全角/形近字归一）。
-        借鉴 March7th Tasks._merge_ocr_blocks：同一行被 OCR 切碎的碎片
-        （"宝""箱"两段）按 y 同行合并——否则 join 匹配时关键词断列
-        （verify/ready 关键词命中率低）。
+        rapidocr 直连 + normalize_ocr 清洗（全角/形近字归一）+ 同行碎片合并
+        （merge_ocr_lines——避免"宝""箱"两段导致关键词断列）。
         """
-        import numpy as np
-        # crop 仅对 March7th 后台截图有效（前台 mss 降级路径不支持裁剪）
         img, _, _ = self.take_screenshot(crop=crop)
-        raw = []
-        for t in self.ocr.run(np.asarray(img)) or []:
-            if isinstance(t, dict) and t.get("txt"):
-                raw.append((normalize_ocr(t["txt"]), t["box"]))
-        return merge_ocr_lines(raw)
+        from runtime.ocr_engine import ocr_image
+        raw = ocr_image(img)
+        return merge_ocr_lines([(normalize_ocr(t), b) for t, b in raw])
 
     def find_text(self, text, include=True, max_retries=1, crop=None):
-        """find_element("文字", "text") → ((left,top),(right,bottom)) 绝对坐标或 None。"""
-        return self.auto.find_element(text, "text", max_retries=max_retries,
-                                      include=include, crop=crop)
+        """OCR 定位文本 → 绝对坐标框 ((left,top),(right,bottom)) 或 None。
+
+        include=True：文本包含目标词即命中；False：不包含。
+        """
+        import time
+        from runtime.ocr_engine import ocr_image
+        for _ in range(max(1, max_retries or 1)):
+            try:
+                # 单次截图：pos 与 OCR 同一帧（审查：原实现 take_screenshot 后
+                # 再调 ocr_lines 会二次截图——两帧间窗口移动则坐标错位）
+                img, pos, _ = self.take_screenshot(crop=crop)
+                left0, top0, _, _ = pos
+                raw = ocr_image(img)
+                for t, box in merge_ocr_lines(
+                        [(normalize_ocr(x), b) for x, b in raw]):
+                    hit = (text in t) if include else (text not in t)
+                    if hit and box:
+                        xs = [p[0] for p in box]
+                        ys = [p[1] for p in box]
+                        return ((left0 + min(xs), top0 + min(ys)),
+                                (left0 + max(xs), top0 + max(ys)))
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return None
 
     def find_template(self, path, threshold=0.8, max_retries=1):
-        """find_element(图片, "image") → 绝对坐标框或 None。"""
-        return self.auto.find_element(path, "image", threshold, max_retries=max_retries)
+        """模板匹配 → 绝对坐标框或 None（自研 TemplateMatcher.locate）。
+
+        返回 (val, cx, cy) 中心坐标（与原 m7 find_element 语义兼容——调用方
+        只判 None / 取坐标）。
+        """
+        return self.matcher.locate(path) if self.matcher is not None else None
 
     def to_absolute(self, norm_x, norm_y):
         """归一化坐标(0-1) → 绝对屏幕坐标（vlm 定位结果消费，执行细节）。

@@ -180,7 +180,7 @@ class VisionGate:
             threshold = self.threshold
         else:
             # VLM 缺失：OCR-only 降档（允许低风险动作）
-            score = OCR_WEIGHT * ocr_score / OCR_WEIGHT * 0.55  # 近似归一
+            score = ocr_score * 0.55  # OCR 权重归一后的单通道分数
             threshold = self.ocr_only_threshold
         # 帧质量惩罚：结构异常（黑屏/黑边/白屏/尺寸）→ 直接压分
         if evidence.frame_quality not in (None, "ok"):
@@ -231,7 +231,8 @@ class VisionGate:
         )
         d = self.evaluate(ev, frame_confidence=frame_confidence)
         return {"valid": d["allowed"], "reason": d["reason"],
-                "signals": d["signals"], "confidence": d["score"]}
+                "signals": d["signals"], "confidence": d["score"],
+                "mode": d["mode"], "score": d["score"]}
 
 
 def dump_vision_decision(out_dir, frame_id, evidence, decision):

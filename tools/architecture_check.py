@@ -46,8 +46,13 @@ RUNTIME_ADAPTER_MODULES = {
     "runtime.win_capture",
 }
 
-# #24：第三方/产物目录不扫描（CI 不应因 vendor/March7th 代码炸）
-IGNORE_DIRS = {"__pycache__", ".venv", "node_modules", "vendor", "March7thAssistant", "tests", "examples"}
+# #24：第三方/产物目录不扫描（CI 不应因 vendor/March7th/m7_venv/m7 代码炸）
+# m7_venv 是 m7 专用虚拟环境（Python 3.14）——site-packages 含 PyInstaller
+# hook/依赖源码的 exec/shell 调用，必须忽略；m7/ 是内化的 March7th 源码
+# （第三方代码，不参与本项目架构判定）；build/dist 为打包产物。
+IGNORE_DIRS = {"__pycache__", ".venv", "m7_venv", "m7", "node_modules",
+               "vendor", "March7thAssistant", "tests", "examples", "build",
+               "dist", ".git", "dump", "failure_reports", "logs", "reports"}
 
 # Part 2-2.5：动态导入禁止（importlib.import_module / __import__ 绕过静态依赖图）
 DYNAMIC_IMPORT_CALLS = {"import_module", "__import__"}

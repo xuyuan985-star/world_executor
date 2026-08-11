@@ -13,18 +13,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-from runtime.action_intent import ActionIntent, ActionMethod, ActionType
+from runtime.action_intent import ActionType
 from runtime.events.schema import make_event
 from runtime.execution import ExecutionResult
 from runtime.observation import Observation
 from runtime.planner import Planner
 from runtime.state_machine import Event, State, StateMachine
 
-TARGET_ALIVE = ("running", "succeeded", "failed")
-
 # #44：workflow 步骤类型白名单——未知类型 fail-fast（F3），
-# 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，无其他执行语义
-STEP_TYPES = {"move", "visual_guided_move", "interact", "verify", "portal"}
+# 知识包注入面收窄：步骤只能是 move/visual_guided_move/interact/verify，
+# 无其他执行语义；trajectory = 点位关联的录制轨迹回放（机关/复杂路径）
+STEP_TYPES = {"move", "visual_guided_move", "interact", "verify", "portal",
+              "trajectory"}
 # Bug 83：单目标恢复/重试尝试硬上限（防 recover→retry 无限循环）
 MAX_TARGET_ATTEMPTS = 3
 
@@ -131,15 +131,13 @@ class WorkflowOrchestrator:
         self._watchdog = None
         self._records = {}
         self._foreground_retried = False  # BUG-24：失焦激活只尝试一次
+        self._last_beat_time = None  # 回放心跳时间节流（0.6.0 第3轮）
         self.foreground_check = True      # BUG-24：前台锁定（mock 环境关闭）
         self._stop_check = stop_check     # #6：外部停止信号（RuntimeAPI.stop）
         # #20-7：决策层——Planner 输入 Observation 输出 ActionIntent（零坐标）
         self.planner = Planner()
         self.observer = None  # 观察器（FakeObserver/真实观察器，由调用方注入）
         self.vision_gate = None  # Sprint B：内容可信度门（None=跳过）
-        # BUG-36：视觉稳定窗口——N 帧连续 PASS 才执行（UI 动画/残影防误点）
-        self.stable_required = 1
-        self._stable = None
         # 三大策略配置：遇怪处理（auto=自动战斗 / kill=秒杀角色战技键）
         self.battle_strategy = "auto"
 
@@ -215,6 +213,9 @@ class WorkflowOrchestrator:
     # ---------- 主流程 ----------
 
     def run_target(self, target_id):
+        # 修复（0.6.0 F10 急停审查）：目标开始前检查外部停止
+        if self._stop_check is not None and self._stop_check():
+            return False
         record = self._records.get(target_id) or TargetRecord(target_id)
         self._records[target_id] = record
         record.status = "running"
@@ -261,14 +262,34 @@ class WorkflowOrchestrator:
     def _run_target_inner(self, target_id, record):
         wf = self.pkg.workflow(target_id)
         if wf is None:
-            record.status = "failed"
-            record.last_error = "workflow_not_found"
-            record.category = "F3"
-            self._emit("fail_recorded", detail=f"F3:no_workflow:{target_id}",
-                       context={"category": "F3", "target": target_id,
-                                "error": "workflow_not_found"})
-            return False
+            # 自定义轨迹目标（指挥台"自定义"地图）：目标 id = 轨迹文件名，
+            # knowledge/trajectories/<id>.json 存在 → 构造纯轨迹 workflow
+            from pathlib import Path as _P
+            traj_dir = _P(__file__).resolve().parent.parent \
+                / "knowledge" / "trajectories"
+            if (traj_dir / f"{target_id}.json").exists():
+                wf = {"target_id": target_id,
+                      "steps": [{"type": "trajectory",
+                                 "file": f"{target_id}.json"}]}
+            else:
+                record.status = "failed"
+                record.last_error = "workflow_not_found"
+                record.category = "F3"
+                self._emit("fail_recorded",
+                           detail=f"F3:no_workflow:{target_id}",
+                           context={"category": "F3", "target": target_id,
+                                    "error": "workflow_not_found"})
+                return False
         steps = wf.get("steps", [])
+        # 一键混合执行：点位有关联轨迹（chests.json 的 trajectory 字段）→
+        # 前插 trajectory 步骤——录制的点位用轨迹回放，其余走模板/坐标，
+        # 用户零选择（视频预处理点位 + 手动录制点位混合执行）
+        if not any(s.get("type") == "trajectory" for s in steps):
+            for chest in (self.pkg.chests or []):
+                if chest.get("id") == target_id and chest.get("trajectory"):
+                    steps = [{"type": "trajectory",
+                              "file": chest["trajectory"]}] + steps
+                    break
 
         def logger(prev, new, action, reason):
             self._emit("state_changed", from_state=prev, to_state=new,
@@ -329,7 +350,9 @@ class WorkflowOrchestrator:
                         record.retry_count += 1  # Bug 380：重试次数统计
                         # Bug 106：指数退避（1s→2s→4s）——失败重试不高频占资源
                         # Bug 144：退避可中断（stop/abort 期间不再空等）
-                        if not self._interruptible_wait(2 ** attempt):
+                        # 0.6.0：退避上限 1.5s——F10 急停更快生效（原 4s）
+                        if not self._interruptible_wait(
+                                min(2 ** attempt, 1.5)):
                             break
                         self._retry_transition()
                         result = self._run_step(step, idx, wf)
@@ -410,9 +433,8 @@ class WorkflowOrchestrator:
                     self._emit("state_changed", detail="battle:engage",
                                context={"action": "battle",
                                         "strategy": strategy, "key": key})
-                self._interruptible_wait(3)
-                if not self._interruptible_wait(0):
-                    return False
+                if not self._interruptible_wait(3):
+                    return False  # 等待期间 stop/emergency/stall → 退出战斗循环
             return False  # 超轮次未结算
         except Exception:
             return True  # 异常不阻断（保守放行）
@@ -490,6 +512,8 @@ class WorkflowOrchestrator:
             return self._step_move(step)
         if step_type == "portal":
             return self._step_portal(step)
+        if step_type == "trajectory":
+            return self._step_trajectory(step)
         if step_type == "visual_guided_move":
             return self._step_vgm(step, wf)
         if step_type == "interact":
@@ -507,6 +531,105 @@ class WorkflowOrchestrator:
         # 纯移动步骤不推进状态机：TARGET_VISIBLE 语义由 interact 步骤确认（#36 严格迁移）
         return self.executor.interact_template(lm_id, threshold=0.8)
 
+    def _step_trajectory(self, step):
+        """轨迹回放步骤（点位关联的手动录制轨迹——机关/复杂路径）。
+
+        workflow/chest: {"type": "trajectory", "file": "traj_xxx.json"}
+        回放按录制灵敏度（game_sensitivity 记录在轨迹内，不换算）；
+        游戏窗口缺失时轨迹点击/视角按 1920x1080 默认基准（近似）。
+        """
+        fname = step.get("file")
+        if not fname:
+            return ExecutionResult(success=False, error="trajectory:no_file",
+                                   retryable=False, category="F3")
+        from pathlib import Path
+        traj_dir = Path(__file__).resolve().parent.parent / "knowledge" / "trajectories"
+        tpath = traj_dir / fname
+        if not tpath.exists():
+            return ExecutionResult(success=False, error=f"trajectory:missing:{fname}",
+                                   retryable=False, category="F3")
+        try:
+            from runtime.input.replayer import TrajectoryReplayer
+            from runtime.drivers.march7th.window import find_game_window
+            # 回放前检查外部停止（F10 在启动期按下 → 不开始播放）
+            if self._stop_check is not None and self._stop_check():
+                return ExecutionResult(success=False, error="trajectory:stopped",
+                                       retryable=False, category="F1")
+            game = find_game_window()
+            hwnd = game["hwnd"] if game else None
+            # 灵敏度换算接线（0.6.0 第3轮：原 sensitivity=None 恒不换算——
+            # 设置项接入前，默认用录制值；未来设置 REPLAY_SENSITIVITY
+            # 后自动按 录制/回放 比例缩放视角）
+            replay_sens = None
+            try:
+                from config.settings import get as _cfg_get
+                _v = _cfg_get("REPLAY_SENSITIVITY", "")
+                if _v:
+                    f = float(_v)
+                    # 校验：0/负数会导致 replayer 除零（0.6.0 第4轮）
+                    if f > 0:
+                        replay_sens = f
+            except Exception:
+                pass
+            rp = TrajectoryReplayer(game_hwnd=hwnd, sensitivity=replay_sens)
+            rp.load(str(tpath))
+            # 回放期间暂停 EmergencyMonitor 鼠标检测（回放自身的鼠标移动
+            # 会触发 cursor_moved 误判"人工介入"→ 后续目标全被误杀）；
+            # 回放结束恢复。审查 blocking（0.6.0 全量）。
+            monitor = getattr(self, "_monitor", None)
+            if monitor is not None:
+                try:
+                    monitor.suspend_mouse()
+                except Exception:
+                    pass
+
+            def _progress(i, total):
+                # 回放心跳：防 SessionWatchdog 120s 静默误判卡死。
+                # 修复（0.6.0 第3轮）：时间节流——原 i%20 过滤在长等待
+                # 期间 i 不变 → 心跳全被吞 → watchdog trip + _stall_detected
+                # 误中断回放（与 abort_check 并入互相连锁成新 bug）
+                if self._last_beat_time is None or \
+                        time.monotonic() - self._last_beat_time >= 15:
+                    self._last_beat_time = time.monotonic()
+                    self._emit("state_changed",
+                               detail=f"trajectory_progress:{i}/{total}",
+                               context={"target": getattr(
+                                   self, "_current_target", None),
+                                   "file": fname})
+            try:
+                ok = rp.replay(
+                    abort_check=(self._abort_condition
+                                 if hasattr(self, "_abort_condition")
+                                 else (self._stop_check
+                                       if self._stop_check is not None
+                                       else (lambda: False))),
+                    progress=_progress)
+            finally:
+                if monitor is not None:
+                    try:
+                        monitor.resume_mouse()
+                    except Exception:
+                        pass
+            if not ok:
+                return ExecutionResult(success=False, error="trajectory:aborted",
+                                       retryable=False, category="F1")
+            self._emit("state_changed", detail="trajectory_done",
+                       context={"target": getattr(self, "_current_target", None),
+                                "file": fname})
+            return ExecutionResult(success=True)
+        except Exception as e:
+            return ExecutionResult(success=False,
+                                   error=f"trajectory:err:{type(e).__name__}:{e}",
+                                   retryable=False, category="F1")
+
+    def _abort_condition(self):
+        """统一中止条件（0.6.0 F10 急停审查）：人工介入 / 卡死检测 /
+        外部停止（F10）——原多处 abort_check 只查前两者，F10 后 verify
+        最长阻塞 30s、portal 8s+ 才生效。"""
+        if self._stop_check is not None and self._stop_check():
+            return True
+        return self._emergency_paused() or self._stall_detected()
+
     def _step_portal(self, step):
         """地图传送步骤（抄 Fhoe-Rail 传送链：打开地图→点传送点→点传送→等加载）。
 
@@ -521,11 +644,14 @@ class WorkflowOrchestrator:
                                    retryable=False, category="F3")
         if portal.get("kind") == "map_transfer":
             ok = self.executor.map_transfer(
-                portal, abort_check=lambda: self._emergency_paused()
-                or self._stall_detected())
+                portal, abort_check=self._abort_condition)
         else:
             ok = self.executor.portal_transition(
                 portal, wait_base=portal.get("load_wait", 8))
+        # portal_transition 可能返回 ExecutionResult（无验证模板 fail-closed）——
+        # 透传原结果（准确错误码/retryable），不一律转成 portal_failed（可重试）
+        if isinstance(ok, ExecutionResult):
+            return ok
         if ok is True:
             # 未解锁检测：传送后画面出现解锁提示词 → 标记该地图 locked
             locked = self._check_map_locked()
@@ -547,7 +673,7 @@ class WorkflowOrchestrator:
         # #41：循环可中断（emergency / watchdog stall）
         return self.executor.move_visual_guided(
             f"{wf.get('target_id')} 附近的可互动宝箱实体", ticks, step_seconds,
-            abort_check=lambda: self._emergency_paused() or self._stall_detected())
+            abort_check=self._abort_condition)
 
     def _step_interact(self, step, wf):
         tid = wf.get("target_id")
@@ -591,7 +717,7 @@ class WorkflowOrchestrator:
         # #41：验证循环可中断（emergency / watchdog stall 立即退出）
         ok = self.executor.verify_signal(
             template, expected, timeout,
-            abort_check=lambda: self._emergency_paused() or self._stall_detected())
+            abort_check=self._abort_condition)
         if ok:
             # 审查 P0：只有 INTERACTING 态才有 INTERACT_OK 迁移——NAVIGATING 等
             # 状态下 verify 通过不应推进状态机（否则 ValueError 非法迁移崩溃）
@@ -623,20 +749,6 @@ class WorkflowOrchestrator:
         vision_conf = 0.0
         evidence_id = None
         if self.vision_gate is not None:
-            # BUG-36：稳定窗口——连续 N 帧相同 (room, ui_state) 才放行
-            if self.stable_required > 1:
-                    if self._stable is None:
-                        from runtime.observation_memory import StableState
-                        self._stable = StableState(required=self.stable_required)
-                    if not self._stable.update(observation):
-                        self._emit("observation",
-                                   context={"observer": observation.source,
-                                            "target": target,
-                                            "gate": "VISION_CONFIRMING",
-                                            "stable": self._stable.label,
-                                            **observation.to_context()})
-                        return self.executor.execute_intent(
-                            self.planner.plan_wait(f"vision confirming ({self._stable.label})"))
             gate = self.vision_gate.validate(
                 frame_quality=getattr(observation, "frame_quality", None),
                 ocr_texts=observation.text,
@@ -753,19 +865,55 @@ class WorkflowOrchestrator:
         except Exception:
             return False
 
+    def _replay_only(self, target_ids):
+        """纯轨迹回放目标判定：所有目标都是 trajectory 步骤（自定义地图
+        录制的操作回放）——不需要界面归一化/前台激活/环境门槛。
+
+        判定：workflow 存在且 steps 全为 trajectory；或无 workflow 但
+        knowledge/trajectories/<id>.json 存在（自定义轨迹目标）。
+        """
+        from pathlib import Path as _P
+        traj_dir = _P(__file__).resolve().parent.parent / "knowledge" / "trajectories"
+        for tid in target_ids:
+            wf = self.pkg.workflow(tid)
+            if wf is not None:
+                steps = wf.get("steps") or []
+                if not steps or not all(
+                        s.get("type") == "trajectory" for s in steps):
+                    return False
+            elif not (traj_dir / f"{tid}.json").exists():
+                return False
+        return True
+
     def run_mission(self, target_ids, emergency=True):
+        # 修复（0.6.0 F10 急停审查）：启动阶段检查外部停止——
+        # F10 在启动期按下（回放尚未开始）→ 直接返回，不启动任何环节
+        if self._stop_check is not None and self._stop_check():
+            self._emit("state_changed", detail="stopped_at_start",
+                       context={"action": "user_stopped"})
+            return {}, []
         if emergency:  # #10：emergency=False 不启动安全线程
             self.start_emergency()
         self.start_watchdog()
         try:
-            # 开始即激活游戏窗口（自主锁定窗口——不再"检测到失焦才处理"）
+            # 纯轨迹回放：跳过前台激活与界面归一化（无需游戏画面——
+            # 0.6.0：纯播放秒开，不再走 OCR 环境链）
+            replay_only = self._replay_only(target_ids)
+            # 修复（0.6.0）：纯回放也先拉游戏置顶——回放移动鼠标/按键
+            # 必须发给游戏窗口；跳过 _ensure_game_ready（OCR 界面归一化
+            # 15s 静默）但 _ensure_foreground 仅 0.5s，不牺牲秒开
             self._foreground_retried = False
             self._ensure_foreground()
-            # 借鉴 March7th Screen._handle_autotry：任务开始前界面归一化——
-            # 用户在战斗/菜单/弹窗/剧情中开始任务时，先 ESC/点弹窗退出到
-            # 可执行画面（m7"识别不到界面就 ESC 重试"的适配版）。失败抛异常
-            # → crashed（诚实；空结果返回会误报 all_done——已知坑）。
-            self._ensure_game_ready()
+            if not replay_only:
+                # 借鉴 March7th Screen._handle_autotry：任务开始前界面归一化——
+                # 用户在战斗/菜单/弹窗/剧情中开始任务时，先 ESC/点弹窗退出到
+                # 可执行画面（m7"识别不到界面就 ESC 重试"的适配版）。失败抛异常
+                # → crashed（诚实；空结果返回会误报 all_done——已知坑）。
+                self._ensure_game_ready()
+            else:
+                self._emit("state_changed",
+                           detail="replay_only:skip_ready",
+                           context={"action": "replay_only"})
             # Bug 533：目标去重（同目标不重复执行——保持输入顺序）
             target_ids = list(dict.fromkeys(target_ids))
             results = {}
@@ -825,6 +973,10 @@ class WorkflowOrchestrator:
             for i in range(max_rounds):
                 if self._stop_check is not None and self._stop_check():
                     raise RuntimeError("任务开始前被停止（界面归一化中）")
+                # 进度反馈（0.6.0：界面归一化静默 15s=用户感知"没动静"）
+                self._emit("state_changed",
+                           detail=f"ready:checking:{i + 1}/{max_rounds}",
+                           context={"action": "ready_check"})
                 try:
                     texts = [t for t, _ in executor.driver.vision.ocr_lines()]
                 except AttributeError:
@@ -928,6 +1080,10 @@ class WorkflowOrchestrator:
         self._interrupted(target_id)
 
     def _aborted(self):
+        # 修复（0.6.0 F10 急停审查）：外部 stop 信号（RuntimeAPI.stop/F10）
+        # 也是中止条件——原只查内部 ABORT 状态，F10 后目标循环继续跑
+        if self._stop_check is not None and self._stop_check():
+            return True
         return self._machine is not None and self._machine.state == State.ABORT
 
     def _emergency_paused(self):

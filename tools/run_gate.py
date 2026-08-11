@@ -58,9 +58,12 @@ def run():
     def units():
         import ast
         bad = []
+        # m7/m7_venv：内化的 March7th 源码 + 专用环境（数千第三方文件——
+        # 不扫，否则 AST 全库遍历慢到像卡死）
+        skip = ("__pycache__", ".venv", "m7", "m7_venv", "March7thAssistant",
+                "failure_reports", "docs", "build", "dist", ".git")
         for p in ROOT.rglob("*.py"):
-            if any(part in ("__pycache__", ".venv", "March7thAssistant",
-                            "failure_reports", "docs") for part in p.parts):
+            if any(part in skip for part in p.parts):
                 continue
             try:
                 # utf-8-sig：容忍历史 PowerShell 写入的 BOM（U+FEFF）

@@ -24,13 +24,22 @@ def main():
         if not tid or tid in existing:
             continue
         step = (wf.get("steps") or [{}])[0]
+        # verify.ocr 兼容 list 与 dict（must/forbid/text 表达）——dict 时
+        # 原 [None][0] 会 KeyError
+        ocr = step.get("verify", {}).get("ocr")
+        if isinstance(ocr, dict):
+            verify_signal = ocr.get("must") or ocr.get("forbid") or ocr.get("text")
+        elif isinstance(ocr, list):
+            verify_signal = ocr[0] if ocr else None
+        else:
+            verify_signal = ocr
         items.append({
             "id": tid,
             "room": wf.get("room", "base_zone"),
             "template": step.get("template"),
             "threshold": step.get("threshold", 0.8),
             "scale_range": step.get("scale_range", [0.9, 1.1]),
-            "verify_signal": step.get("verify", {}).get("ocr", [None])[0],
+            "verify_signal": verify_signal,
         })
         existing.add(tid)
         added += 1
