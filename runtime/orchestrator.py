@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 from runtime.action_intent import ActionType
+from runtime.errors import ErrorCode
 from runtime.events.schema import make_event
 from runtime.execution import ExecutionResult
 from runtime.observation import Observation
