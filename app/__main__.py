@@ -80,9 +80,12 @@ def main():
             pass
         # 退出保护：异常退出前若有运行中 QThread（任务线程等），Qt 析构必
         # 0xC0000409——os._exit 跳过析构
+        # 修复：active_task_threads 不存在（runner.py 重写后从未有此函数，
+        # 原保护静默失效）——改用 all_running_qthreads（模块级注册表，
+        # 与 gui/run.py 的 aboutToQuit 保护同一查询函数）
         try:
-            from gui.tasks.runner import active_task_threads
-            if active_task_threads():
+            from gui.tasks.runner import all_running_qthreads
+            if all_running_qthreads():
                 import os as _os
                 _os._exit(0)
         except Exception:
